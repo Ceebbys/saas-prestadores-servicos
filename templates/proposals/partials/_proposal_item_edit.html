@@ -1,0 +1,48 @@
+{% load ui_tags %}
+
+<tr id="proposal-item-{{ item.pk }}" class="bg-indigo-50/50">
+    <form hx-put="{% url 'proposals:item_edit' proposal.pk item.pk %}"
+          hx-target="#proposal-items-container"
+          hx-swap="innerHTML">
+        {% csrf_token %}
+        <td class="px-5 py-3">
+            <input type="text" name="description" value="{{ item.description }}" required
+                   class="block w-full rounded-lg border-0 py-1.5 px-3 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+            <input type="text" name="details" value="{{ item.details|default:'' }}" placeholder="Detalhes (opcional)"
+                   class="block w-full rounded-lg border-0 py-1.5 px-3 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 mt-1">
+        </td>
+        <td class="px-5 py-3">
+            <input type="number" name="quantity" value="{{ item.quantity }}" min="1" step="0.01" required
+                   class="block w-full rounded-lg border-0 py-1.5 px-3 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-center">
+        </td>
+        <td class="px-5 py-3">
+            <input type="text" name="unit" value="{{ item.unit|default:'un' }}"
+                   class="block w-full rounded-lg border-0 py-1.5 px-3 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-center">
+        </td>
+        <td class="px-5 py-3">
+            <input type="number" name="unit_price" value="{{ item.unit_price }}" step="0.01" min="0" required
+                   class="block w-full rounded-lg border-0 py-1.5 px-3 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-right">
+        </td>
+        <td class="px-5 py-3 text-right text-sm font-medium text-slate-900">
+            {{ item.total|currency }}
+        </td>
+        <td class="px-5 py-3 text-right">
+            <div class="flex items-center justify-end gap-1">
+                <button type="submit"
+                        class="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-colors"
+                        title="Salvar">
+                    {% icon "check" "w-4 h-4" %}
+                </button>
+                <button type="button"
+                        hx-get="{% url 'proposals:detail' proposal.pk %}"
+                        hx-target="#proposal-items-container"
+                        hx-select="#proposal-items-container"
+                        hx-swap="innerHTML"
+                        class="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                        title="Cancelar">
+                    {% icon "x-mark" "w-4 h-4" %}
+                </button>
+            </div>
+        </td>
+    </form>
+</tr>

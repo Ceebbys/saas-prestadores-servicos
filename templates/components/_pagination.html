@@ -1,0 +1,37 @@
+{% if page_obj.has_other_pages %}
+<nav class="flex items-center justify-between border-t border-slate-200 px-2 py-4 mt-4">
+    <div class="hidden sm:block">
+        <p class="text-sm text-slate-500">
+            Mostrando <span class="font-medium text-slate-700">{{ page_obj.start_index }}</span>
+            a <span class="font-medium text-slate-700">{{ page_obj.end_index }}</span>
+            de <span class="font-medium text-slate-700">{{ page_obj.paginator.count }}</span> resultados
+        </p>
+    </div>
+    <div class="flex items-center gap-1">
+        {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}{% for key, val in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ val }}{% endif %}{% endfor %}"
+           class="px-3 py-1.5 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
+            Anterior
+        </a>
+        {% endif %}
+
+        {% for num in page_obj.paginator.page_range %}
+            {% if page_obj.number == num %}
+            <span class="px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-lg">{{ num }}</span>
+            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+            <a href="?page={{ num }}{% for key, val in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ val }}{% endif %}{% endfor %}"
+               class="px-3 py-1.5 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
+                {{ num }}
+            </a>
+            {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% for key, val in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ val }}{% endif %}{% endfor %}"
+           class="px-3 py-1.5 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
+            Próximo
+        </a>
+        {% endif %}
+    </div>
+</nav>
+{% endif %}

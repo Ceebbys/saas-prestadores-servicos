@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <title>{% block title %}ServiçoPro{% endblock %}</title>
+
+    <!-- Tailwind CSS -->
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/output.css' %}?v=3">
+
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="h-full bg-slate-50 text-slate-900 antialiased" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+    {% block body %}{% endblock %}
+
+    <!-- Toast Messages -->
+    <div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col gap-2">
+        {% include "components/_messages.html" %}
+    </div>
+
+    <!-- Modal Container -->
+    <div id="modal-container"></div>
+
+    <!-- Scripts -->
+    <script src="{% static 'js/htmx.min.js' %}"></script>
+    <script src="{% static 'js/alpine.min.js' %}" defer></script>
+    <script src="{% static 'js/app.js' %}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,226 @@
+{% extends "layouts/authenticated.html" %}
+{% load ui_tags %}
+
+{% block title %}{{ lead.name }} — Leads — ServiçoPro{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm text-slate-500 mb-4">
+    <a href="{% url 'crm:lead_list' %}" class="hover:text-indigo-600">Leads</a>
+    {% icon "chevron-right" "w-3 h-3" %}
+    <span class="text-slate-900 font-medium">{{ lead.name }}</span>
+</nav>
+{% endblock %}
+
+{% block page_header %}
+<div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+    <div class="flex items-start gap-4">
+        <div class="w-14 h-14 rounded-xl bg-indigo-100 flex items-center justify-center text-xl font-bold text-indigo-700">
+            {{ lead.name|make_list|first|upper }}
+        </div>
+        <div>
+            <div class="flex items-center gap-3">
+                <h1 class="text-2xl font-bold text-slate-900">{{ lead.name }}</h1>
+                {% status_badge lead.status %}
+            </div>
+            {% if lead.company %}
+            <p class="mt-1 text-sm text-slate-500">{{ lead.company }}</p>
+            {% endif %}
+        </div>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+        <!-- Status change dropdown -->
+        <div x-data="{ open: false }" class="relative">
+            <button @click="open = !open" type="button"
+                    class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50 transition-colors">
+                {% icon "funnel" "w-4 h-4" %}
+                Mudar Status
+                {% icon "chevron-right" "w-3 h-3" %}
+            </button>
+            <div x-show="open" @click.outside="open = false"
+                 x-transition:enter="transition ease-out duration-100"
+                 x-transition:enter-start="opacity-0 scale-95"
+                 x-transition:enter-end="opacity-100 scale-100"
+                 x-transition:leave="transition ease-in duration-75"
+                 x-transition:leave-start="opacity-100 scale-100"
+                 x-transition:leave-end="opacity-0 scale-95"
+                 class="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg ring-1 ring-slate-200 py-1 z-20">
+                {% for value, label in status_choices %}
+                {% if value != lead.status %}
+                <form method="post" action="{% url 'crm:lead_status' lead.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="status" value="{{ value }}">
+                    <button type="submit" class="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                        {{ label }}
+                    </button>
+                </form>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+        <a href="{% url 'crm:lead_update' lead.pk %}"
+           class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50 transition-colors">
+            {% icon "pencil" "w-4 h-4" %}
+            Editar
+        </a>
+        <a href="{% url 'crm:opportunity_create' %}?lead_id={{ lead.pk }}"
+           class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50 transition-colors">
+            {% icon "currency-dollar" "w-4 h-4" %}
+            Nova Oportunidade
+        </a>
+        <a href="{% url 'proposals:create' %}?lead_id={{ lead.pk }}"
+           class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm">
+            {% icon "document-text" "w-4 h-4" %}
+            Criar Proposta
+        </a>
+        <form method="post" action="{% url 'crm:lead_delete' lead.pk %}"
+              onsubmit="return confirm('Tem certeza que deseja excluir este lead? Esta ação não pode ser desfeita.')">
+            {% csrf_token %}
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-sm font-medium text-red-600 ring-1 ring-red-200 hover:bg-red-50 transition-colors">
+                {% icon "trash" "w-4 h-4" %}
+                Excluir
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Contact Info -->
+    <div class="lg:col-span-1 space-y-6">
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-4">Informações de Contato</h3>
+            <dl class="space-y-3">
+                {% if lead.email %}
+                <div>
+                    <dt class="text-xs text-slate-400">E-mail</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">{{ lead.email }}</dd>
+                </div>
+                {% endif %}
+                {% if lead.phone %}
+                <div>
+                    <dt class="text-xs text-slate-400">Telefone</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">{{ lead.phone|phone_format }}</dd>
+                </div>
+                {% endif %}
+                <div>
+                    <dt class="text-xs text-slate-400">Origem</dt>
+                    <dd class="mt-0.5">{% status_badge lead.source %}</dd>
+                </div>
+                {% if lead.assigned_to %}
+                <div>
+                    <dt class="text-xs text-slate-400">Responsável</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">{{ lead.assigned_to.full_name }}</dd>
+                </div>
+                {% endif %}
+                <div>
+                    <dt class="text-xs text-slate-400">Criado em</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">{{ lead.created_at|date:"d/m/Y H:i" }}</dd>
+                </div>
+                {% if lead.updated_at %}
+                <div>
+                    <dt class="text-xs text-slate-400">Atualizado em</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">{{ lead.updated_at|date:"d/m/Y H:i" }}</dd>
+                </div>
+                {% endif %}
+            </dl>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="lg:col-span-2 space-y-6">
+        <!-- Notes -->
+        {% if lead.notes %}
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">Observações</h3>
+            <p class="text-sm text-slate-600 whitespace-pre-wrap">{{ lead.notes }}</p>
+        </div>
+        {% endif %}
+
+        <!-- Related Opportunities -->
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                <h3 class="text-sm font-semibold text-slate-700">Oportunidades</h3>
+                <a href="{% url 'crm:opportunity_create' %}?lead_id={{ lead.pk }}"
+                   class="text-xs text-indigo-600 hover:text-indigo-700 font-medium">+ Nova</a>
+            </div>
+            {% if lead.opportunities.exists %}
+            <ul class="divide-y divide-slate-100">
+                {% for opp in lead.opportunities.all %}
+                <li>
+                    <a href="{% url 'crm:opportunity_detail' opp.pk %}" class="flex items-center justify-between px-5 py-3 hover:bg-slate-50 transition-colors">
+                        <div>
+                            <p class="text-sm font-medium text-slate-900">{{ opp.title }}</p>
+                            <p class="text-xs text-slate-400">{{ opp.current_stage.name|default:"Sem etapa" }} · {{ opp.created_at|date:"d/m/Y" }}</p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm font-semibold text-slate-700">{{ opp.value|currency }}</span>
+                            {% status_badge opp.priority %}
+                        </div>
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="px-5 py-6 text-center text-sm text-slate-400">Nenhuma oportunidade vinculada</div>
+            {% endif %}
+        </div>
+
+        <!-- Related Proposals -->
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                <h3 class="text-sm font-semibold text-slate-700">Propostas</h3>
+                <a href="{% url 'proposals:create' %}?lead_id={{ lead.pk }}"
+                   class="text-xs text-indigo-600 hover:text-indigo-700 font-medium">+ Nova</a>
+            </div>
+            {% if lead.proposals.exists %}
+            <ul class="divide-y divide-slate-100">
+                {% for proposal in lead.proposals.all %}
+                <li>
+                    <a href="{% url 'proposals:detail' proposal.pk %}" class="flex items-center justify-between px-5 py-3 hover:bg-slate-50 transition-colors">
+                        <div>
+                            <p class="text-sm font-medium text-slate-900">{{ proposal.title }}</p>
+                            <p class="text-xs text-slate-400">{{ proposal.number }} · {{ proposal.created_at|date:"d/m/Y" }}</p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm font-semibold text-slate-700">{{ proposal.total|currency }}</span>
+                            {% status_badge proposal.status %}
+                        </div>
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="px-5 py-6 text-center text-sm text-slate-400">Nenhuma proposta vinculada</div>
+            {% endif %}
+        </div>
+
+        <!-- Related Work Orders -->
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                <h3 class="text-sm font-semibold text-slate-700">Ordens de Serviço</h3>
+                <a href="{% url 'operations:work_order_create' %}?lead_id={{ lead.pk }}"
+                   class="text-xs text-indigo-600 hover:text-indigo-700 font-medium">+ Nova</a>
+            </div>
+            {% if lead.work_orders.exists %}
+            <ul class="divide-y divide-slate-100">
+                {% for wo in lead.work_orders.all %}
+                <li>
+                    <a href="{% url 'operations:work_order_detail' wo.pk %}" class="flex items-center justify-between px-5 py-3 hover:bg-slate-50 transition-colors">
+                        <div>
+                            <p class="text-sm font-medium text-slate-900">{{ wo.title }}</p>
+                            <p class="text-xs text-slate-400">{{ wo.number }} · {{ wo.scheduled_date|date:"d/m/Y"|default:"Sem data" }}</p>
+                        </div>
+                        {% status_badge wo.status %}
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="px-5 py-6 text-center text-sm text-slate-400">Nenhuma OS vinculada</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

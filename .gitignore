@@ -1,0 +1,41 @@
+__pycache__/
+*.py[cod]
+*.pyc
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Django
+*.log
+db.sqlite3
+media/
+staticfiles/
+
+# Environment
+.env
+.venv/
+venv/
+env/
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+tailwindcss.exe
+*.exe
+
+# Node (Tailwind)
+node_modules/
+theme/static_src/node_modules/
+
+# Coverage
+htmlcov/
+.coverage

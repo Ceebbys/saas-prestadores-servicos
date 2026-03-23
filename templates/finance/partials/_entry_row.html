@@ -1,0 +1,44 @@
+{% load ui_tags humanize %}
+
+<tr class="hover:bg-slate-50 transition-colors">
+    <td class="px-5 py-3.5">
+        <p class="text-sm font-medium text-slate-900">{{ entry.description }}</p>
+    </td>
+    <td class="px-5 py-3.5">
+        {% status_badge entry.type %}
+    </td>
+    <td class="px-5 py-3.5 text-sm text-slate-600 hidden md:table-cell">
+        {{ entry.category.name|default:"—" }}
+    </td>
+    <td class="px-5 py-3.5 text-right">
+        <span class="text-sm font-semibold {% if entry.type == 'income' %}text-emerald-600{% else %}text-rose-600{% endif %}">
+            {{ entry.amount|currency }}
+        </span>
+    </td>
+    <td class="px-5 py-3.5 text-sm text-slate-500 hidden lg:table-cell">
+        {{ entry.date|date:"d/m/Y" }}
+    </td>
+    <td class="px-5 py-3.5">
+        {% status_badge entry.status %}
+    </td>
+    <td class="px-5 py-3.5 text-right">
+        <div class="flex items-center justify-end gap-1">
+            <a href="{% url 'finance:entry_update' entry.pk %}"
+               class="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+               title="Editar">
+                {% icon "pencil" "w-4 h-4" %}
+            </a>
+            {% if entry.status == 'pending' or entry.status == 'overdue' %}
+            <button hx-post="{% url 'finance:entry_pay' entry.pk %}"
+                    hx-target="closest tr"
+                    hx-swap="outerHTML"
+                    hx-confirm="Marcar este lançamento como pago?"
+                    hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                    class="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+                    title="Marcar como pago">
+                {% icon "check-circle" "w-4 h-4" %}
+            </button>
+            {% endif %}
+        </div>
+    </td>
+</tr>

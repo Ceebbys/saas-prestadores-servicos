@@ -1,0 +1,47 @@
+{% extends "layouts/public.html" %}
+{% load ui_tags %}
+
+{% block title %}Login — ServiçoPro{% endblock %}
+
+{% block content %}
+<div>
+    <h2 class="text-2xl font-bold text-slate-900 mb-1">Entrar na sua conta</h2>
+    <p class="text-sm text-slate-500 mb-8">Acesse seu painel de gestão</p>
+
+    {% if form.errors %}
+    <div class="mb-6 rounded-lg bg-rose-50 border border-rose-200 p-4">
+        <div class="flex items-center gap-2">
+            <svg class="w-5 h-5 text-rose-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+            </svg>
+            <p class="text-sm text-rose-700">E-mail ou senha incorretos.</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <form method="post" class="space-y-5">
+        {% csrf_token %}
+        {% form_field form.username %}
+        {% form_field form.password %}
+
+        <div class="flex items-center justify-between">
+            <label class="flex items-center gap-2">
+                <input type="checkbox" name="remember" class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600">
+                <span class="text-sm text-slate-600">Lembrar de mim</span>
+            </label>
+        </div>
+
+        <button type="submit"
+                class="w-full flex justify-center py-2.5 px-4 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-600 transition-colors shadow-sm">
+            Entrar
+        </button>
+    </form>
+
+    <p class="mt-8 text-center text-sm text-slate-500">
+        Não tem conta?
+        <a href="{% url 'accounts:register' %}" class="font-semibold text-indigo-600 hover:text-indigo-700">
+            Crie sua conta grátis
+        </a>
+    </p>
+</div>
+{% endblock %}

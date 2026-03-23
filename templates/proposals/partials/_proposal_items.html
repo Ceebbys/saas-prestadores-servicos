@@ -1,0 +1,117 @@
+{% load ui_tags humanize %}
+
+{% if items %}
+<div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-slate-200">
+        <thead class="bg-slate-50">
+            <tr>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Descrição</th>
+                <th class="px-5 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider w-20">Qtd</th>
+                <th class="px-5 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider w-16">Un</th>
+                <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider w-32">Preço Unit.</th>
+                <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider w-32">Total</th>
+                <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider w-24">Ações</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+            {% for item in items %}
+            <tr class="hover:bg-slate-50 transition-colors" id="proposal-item-{{ item.pk }}">
+                <td class="px-5 py-3.5">
+                    <p class="text-sm font-medium text-slate-900">{{ item.description }}</p>
+                    {% if item.details %}
+                    <p class="text-xs text-slate-400 mt-0.5">{{ item.details }}</p>
+                    {% endif %}
+                </td>
+                <td class="px-5 py-3.5 text-center text-sm text-slate-600">{{ item.quantity }}</td>
+                <td class="px-5 py-3.5 text-center text-sm text-slate-600">{{ item.unit|default:"un" }}</td>
+                <td class="px-5 py-3.5 text-right text-sm text-slate-600">{{ item.unit_price|currency }}</td>
+                <td class="px-5 py-3.5 text-right text-sm font-medium text-slate-900">{{ item.total|currency }}</td>
+                <td class="px-5 py-3.5 text-right">
+                    <div class="flex items-center justify-end gap-1">
+                        <button hx-get="{% url 'proposals:item_edit' proposal.pk item.pk %}"
+                                hx-target="#proposal-item-{{ item.pk }}"
+                                hx-swap="outerHTML"
+                                class="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                                title="Editar item">
+                            {% icon "pencil" "w-4 h-4" %}
+                        </button>
+                        <button hx-post="{% url 'proposals:item_delete' proposal.pk item.pk %}"
+                                hx-target="#proposal-items-container"
+                                hx-confirm="Deseja realmente remover este item?"
+                                hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                                class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                title="Remover item">
+                            {% icon "trash" "w-4 h-4" %}
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Totals -->
+<div class="px-5 py-4 border-t border-slate-200 bg-slate-50/50">
+    <div class="flex flex-col items-end gap-1">
+        <div class="flex items-center gap-8">
+            <span class="text-sm text-slate-500">Subtotal</span>
+            <span class="text-sm font-medium text-slate-700 w-32 text-right">{{ proposal.subtotal|currency }}</span>
+        </div>
+        {% if proposal.discount_percent %}
+        <div class="flex items-center gap-8">
+            <span class="text-sm text-slate-500">Desconto ({{ proposal.discount_percent }}%)</span>
+            <span class="text-sm font-medium text-red-600 w-32 text-right">-{{ discount_amount|currency }}</span>
+        </div>
+        {% endif %}
+        <div class="flex items-center gap-8 pt-2 border-t border-slate-200 mt-1">
+            <span class="text-sm font-semibold text-slate-700">Total</span>
+            <span class="text-lg font-bold text-slate-900 w-32 text-right">{{ proposal.total|currency }}</span>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="px-5 py-8 text-center text-sm text-slate-400">
+    Nenhum item adicionado
+</div>
+{% endif %}
+
+<!-- Add Item Form -->
+<div class="px-5 py-4 border-t border-slate-200 bg-white rounded-b-xl">
+    <form hx-post="{% url 'proposals:item_add' proposal.pk %}"
+          hx-target="#proposal-items-container"
+          hx-swap="innerHTML"
+          class="space-y-3">
+        {% csrf_token %}
+        <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Adicionar Item</h4>
+        <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
+            <div class="sm:col-span-4">
+                <input type="text" name="description" placeholder="Descrição do item" required
+                       class="block w-full rounded-lg border-0 py-2 px-3 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+            </div>
+            <div class="sm:col-span-2">
+                <input type="text" name="details" placeholder="Detalhes (opcional)"
+                       class="block w-full rounded-lg border-0 py-2 px-3 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+            </div>
+            <div class="sm:col-span-1">
+                <input type="number" name="quantity" placeholder="Qtd" value="1" min="1" step="0.01" required
+                       class="block w-full rounded-lg border-0 py-2 px-3 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+            </div>
+            <div class="sm:col-span-1">
+                <input type="text" name="unit" placeholder="Un" value="un"
+                       class="block w-full rounded-lg border-0 py-2 px-3 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+            </div>
+            <div class="sm:col-span-2">
+                <input type="number" name="unit_price" placeholder="Preço unitário" step="0.01" min="0" required
+                       class="block w-full rounded-lg border-0 py-2 px-3 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+            </div>
+            <div class="sm:col-span-2 flex items-start">
+                <button type="submit"
+                        class="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm">
+                    {% icon "plus" "w-4 h-4" %}
+                    Adicionar
+                </button>
+            </div>
+        </div>
+    </form>
+</div>

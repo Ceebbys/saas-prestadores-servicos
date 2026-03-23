@@ -1,0 +1,97 @@
+{% load ui_tags %}
+
+<!-- Logo -->
+<div class="flex items-center gap-3 px-5 py-5 border-b border-slate-800">
+    <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+        <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+        </svg>
+    </div>
+    <div>
+        <h2 class="text-sm font-bold text-white tracking-wide">ServiçoPro</h2>
+        {% if current_empresa %}
+        <p class="text-xs text-slate-400 truncate max-w-[160px]">{{ current_empresa.name }}</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Navigation -->
+<nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+    <!-- Principal -->
+    <p class="px-3 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Principal</p>
+
+    <a href="{% url 'dashboard:index' %}"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+              {% if request.resolver_match.app_name == 'dashboard' %}bg-slate-800 text-white{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+        {% icon "home" "w-5 h-5" %}
+        <span>Dashboard</span>
+    </a>
+
+    <!-- Comercial -->
+    <p class="px-3 mt-6 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Comercial</p>
+
+    <a href="{% url 'crm:lead_list' %}"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+              {% if request.resolver_match.url_name == 'lead_list' or request.resolver_match.url_name == 'lead_detail' or request.resolver_match.url_name == 'lead_create' %}bg-slate-800 text-white{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+        {% icon "users" "w-5 h-5" %}
+        <span>Leads</span>
+    </a>
+
+    <a href="{% url 'crm:pipeline_board' %}"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+              {% if 'pipeline' in request.resolver_match.url_name|default:'' or 'opportunity' in request.resolver_match.url_name|default:'' %}bg-slate-800 text-white{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+        {% icon "funnel" "w-5 h-5" %}
+        <span>Pipeline</span>
+    </a>
+
+    <a href="{% url 'proposals:list' %}"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+              {% if request.resolver_match.app_name == 'proposals' %}bg-slate-800 text-white{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+        {% icon "document-text" "w-5 h-5" %}
+        <span>Propostas</span>
+    </a>
+
+    <a href="{% url 'contracts:list' %}"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+              {% if request.resolver_match.app_name == 'contracts' %}bg-slate-800 text-white{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+        {% icon "clipboard" "w-5 h-5" %}
+        <span>Contratos</span>
+    </a>
+
+    <!-- Operacional -->
+    <p class="px-3 mt-6 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Operacional</p>
+
+    <a href="{% url 'operations:work_order_list' %}"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+              {% if request.resolver_match.app_name == 'operations' and 'calendar' not in request.resolver_match.url_name|default:'' %}bg-slate-800 text-white{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+        {% icon "wrench" "w-5 h-5" %}
+        <span>Ordens de Serviço</span>
+    </a>
+
+    <a href="{% url 'operations:calendar' %}"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+              {% if 'calendar' in request.resolver_match.url_name|default:'' %}bg-slate-800 text-white{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+        {% icon "calendar" "w-5 h-5" %}
+        <span>Calendário</span>
+    </a>
+
+    <!-- Financeiro -->
+    <p class="px-3 mt-6 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Financeiro</p>
+
+    <a href="{% url 'finance:finance_overview' %}"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+              {% if request.resolver_match.app_name == 'finance' %}bg-slate-800 text-white{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+        {% icon "banknotes" "w-5 h-5" %}
+        <span>Financeiro</span>
+    </a>
+</nav>
+
+<!-- Bottom: Settings -->
+<div class="border-t border-slate-800 px-3 py-3">
+    <a href="{% url 'settings_app:index' %}"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+              {% if request.resolver_match.app_name == 'settings_app' %}bg-slate-800 text-white{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+        {% icon "cog" "w-5 h-5" %}
+        <span>Configurações</span>
+    </a>
+</div>

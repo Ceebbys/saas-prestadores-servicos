@@ -1,0 +1,48 @@
+{% load ui_tags %}
+
+{% if object_list %}
+<div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 overflow-hidden">
+    <table class="min-w-full divide-y divide-slate-200">
+        <thead class="bg-slate-50">
+            <tr>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Nome</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Tipo</th>
+                <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Ações</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+            {% for category in object_list %}
+            <tr class="hover:bg-slate-50 transition-colors">
+                <td class="px-5 py-3.5">
+                    <span class="text-sm font-medium text-slate-900">{{ category.name }}</span>
+                </td>
+                <td class="px-5 py-3.5">
+                    {% status_badge category.type %}
+                </td>
+                <td class="px-5 py-3.5 text-right">
+                    <div class="inline-flex items-center gap-1">
+                        <a href="{% url 'settings_app:category_update' category.pk %}"
+                           class="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors inline-flex"
+                           title="Editar">
+                            {% icon "pencil" "w-4 h-4" %}
+                        </a>
+                        <form method="post" action="{% url 'settings_app:category_delete' category.pk %}"
+                              onsubmit="return confirm('Excluir esta categoria?')" class="inline-flex">
+                            {% csrf_token %}
+                            <button type="submit" class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors" title="Excluir">
+                                {% icon "trash" "w-4 h-4" %}
+                            </button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% include "components/_pagination.html" %}
+
+{% else %}
+{% include "components/_empty_state.html" with icon="banknotes" title="Nenhuma categoria encontrada" description="Adicione categorias para organizar seus lançamentos financeiros." %}
+{% endif %}

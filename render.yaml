@@ -1,0 +1,29 @@
+databases:
+  - name: saas-prestadores-db
+    plan: free
+    databaseName: saas_prestadores
+    user: saas_user
+
+services:
+  - type: web
+    name: saas-prestadores-servicos
+    runtime: python
+    plan: free
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
+    healthCheckPath: /healthz/
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: saas-prestadores-db
+          property: connectionString
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.prod
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com"
+      - key: PYTHON_VERSION
+        value: "3.12.10"
+      - key: DEMO_SEED
+        value: "true"

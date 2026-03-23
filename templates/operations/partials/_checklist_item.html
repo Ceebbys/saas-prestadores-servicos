@@ -1,0 +1,18 @@
+{% load ui_tags %}
+
+<div class="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors"
+     hx-post="{% url 'operations:checklist_toggle' wo_pk=work_order.pk item_pk=item.pk %}"
+     hx-target="closest li"
+     hx-swap="innerHTML"
+     hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+    <button type="button"
+            class="flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors
+                   {% if item.is_completed %}bg-indigo-600 border-indigo-600{% else %}border-slate-300 hover:border-indigo-400{% endif %}">
+        {% if item.is_completed %}
+        {% icon "check" "w-3 h-3 text-white" %}
+        {% endif %}
+    </button>
+    <span class="text-sm {% if item.is_completed %}text-slate-400 line-through{% else %}text-slate-700{% endif %}">
+        {{ item.description }}
+    </span>
+</div>

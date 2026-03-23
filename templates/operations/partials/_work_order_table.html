@@ -1,0 +1,70 @@
+{% load ui_tags %}
+
+{% if object_list %}
+<div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 overflow-hidden">
+    <table class="min-w-full divide-y divide-slate-200">
+        <thead class="bg-slate-50">
+            <tr>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Número</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Título</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Lead</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Tipo</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Data Agendada</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Prioridade</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Ações</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+            {% for wo in object_list %}
+            <tr class="hover:bg-slate-50 transition-colors">
+                <td class="px-5 py-3.5">
+                    <a href="{% url 'operations:work_order_detail' wo.pk %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+                        {{ wo.number }}
+                    </a>
+                </td>
+                <td class="px-5 py-3.5">
+                    <a href="{% url 'operations:work_order_detail' wo.pk %}" class="group">
+                        <p class="text-sm font-medium text-slate-900 group-hover:text-indigo-600">{{ wo.title }}</p>
+                    </a>
+                </td>
+                <td class="px-5 py-3.5 text-sm text-slate-600 hidden md:table-cell">
+                    {{ wo.lead.name|default:"—" }}
+                </td>
+                <td class="px-5 py-3.5 text-sm text-slate-600 hidden lg:table-cell">
+                    {{ wo.service_type.name|default:"—" }}
+                </td>
+                <td class="px-5 py-3.5 text-sm text-slate-500 hidden lg:table-cell">
+                    {{ wo.scheduled_date|date:"d/m/Y"|default:"—" }}
+                </td>
+                <td class="px-5 py-3.5">
+                    {% status_badge wo.priority %}
+                </td>
+                <td class="px-5 py-3.5">
+                    {% status_badge wo.status %}
+                </td>
+                <td class="px-5 py-3.5 text-right">
+                    <div class="flex items-center justify-end gap-1">
+                        <a href="{% url 'operations:work_order_detail' wo.pk %}"
+                           class="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                           title="Ver detalhes">
+                            {% icon "eye" "w-4 h-4" %}
+                        </a>
+                        <a href="{% url 'operations:work_order_update' wo.pk %}"
+                           class="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                           title="Editar">
+                            {% icon "pencil" "w-4 h-4" %}
+                        </a>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% include "components/_pagination.html" %}
+
+{% else %}
+{% include "components/_empty_state.html" with icon="clipboard" title="Nenhuma ordem de serviço encontrada" description="Comece criando sua primeira ordem de serviço." action_url=create_url action_label="Nova OS" %}
+{% endif %}

@@ -1,0 +1,29 @@
+{% load ui_tags humanize %}
+
+{% if object_list %}
+<div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 overflow-hidden">
+    <table class="min-w-full divide-y divide-slate-200">
+        <thead class="bg-slate-50">
+            <tr>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Descrição</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Tipo</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Categoria</th>
+                <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Valor</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Vencimento</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Ações</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+            {% for entry in object_list %}
+            {% include "finance/partials/_entry_row.html" %}
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% include "components/_pagination.html" %}
+
+{% else %}
+{% include "components/_empty_state.html" with icon="banknotes" title="Nenhum lançamento encontrado" description="Comece adicionando seu primeiro lançamento financeiro." %}
+{% endif %}

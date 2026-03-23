@@ -1,0 +1,39 @@
+{# Dashboard stat card #}
+{# Variables: title, value, subtitle, icon_name, color (indigo/emerald/amber/rose/slate), trend_up (bool), trend_value #}
+
+<div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6">
+    <div class="flex items-start justify-between">
+        <div class="flex-1">
+            <p class="text-sm font-medium text-slate-500">{{ title }}</p>
+            <p class="mt-2 text-2xl font-bold text-slate-900">{{ value }}</p>
+            {% if subtitle %}
+            <p class="mt-1 text-xs text-slate-400">{{ subtitle }}</p>
+            {% endif %}
+            {% if trend_value %}
+            <div class="mt-2 flex items-center gap-1">
+                {% if trend_up %}
+                <svg class="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941" />
+                </svg>
+                <span class="text-xs font-medium text-emerald-600">{{ trend_value }}</span>
+                {% else %}
+                <svg class="w-4 h-4 text-rose-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6 9 12.75l4.286-4.286a11.948 11.948 0 0 1 4.306 6.43l.776 2.898m0 0 3.182-5.511m-3.182 5.51-5.511-3.181" />
+                </svg>
+                <span class="text-xs font-medium text-rose-600">{{ trend_value }}</span>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+        {% if icon_name %}
+        <div class="w-10 h-10 rounded-lg flex items-center justify-center
+                    {% if color == 'emerald' %}bg-emerald-50 text-emerald-600
+                    {% elif color == 'amber' %}bg-amber-50 text-amber-600
+                    {% elif color == 'rose' %}bg-rose-50 text-rose-600
+                    {% elif color == 'sky' %}bg-sky-50 text-sky-600
+                    {% else %}bg-indigo-50 text-indigo-600{% endif %}">
+            {% load ui_tags %}{% icon icon_name "w-5 h-5" %}
+        </div>
+        {% endif %}
+    </div>
+</div>

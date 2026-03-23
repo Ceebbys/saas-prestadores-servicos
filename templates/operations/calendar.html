@@ -1,0 +1,60 @@
+{% extends "layouts/authenticated.html" %}
+{% load ui_tags %}
+
+{% block title %}Calendário — ServiçoPro{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm text-slate-500 mb-4">
+    <a href="{% url 'dashboard:index' %}" class="hover:text-indigo-600">Dashboard</a>
+    {% icon "chevron-right" "w-3 h-3" %}
+    <span class="text-slate-900 font-medium">Calendário</span>
+</nav>
+{% endblock %}
+
+{% block page_header %}
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+        <h1 class="text-2xl font-bold text-slate-900">Calendário</h1>
+        <p class="mt-1 text-sm text-slate-500">Visualize suas ordens de serviço no calendário</p>
+    </div>
+    <a href="{% url 'operations:work_order_create' %}"
+       class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm">
+        {% icon "plus" "w-4 h-4" %}
+        Nova OS
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Month Navigation -->
+<div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 mb-6">
+    <div class="flex items-center justify-between px-5 py-4">
+        <button hx-get="{% url 'operations:calendar' %}?year={{ prev_year }}&month={{ prev_month }}"
+                hx-target="#calendar-container"
+                hx-indicator="#calendar-loading"
+                class="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+            {% icon "chevron-left" "w-5 h-5" %}
+        </button>
+        <h2 class="text-lg font-semibold text-slate-900">{{ month_name }} {{ year }}</h2>
+        <button hx-get="{% url 'operations:calendar' %}?year={{ next_year }}&month={{ next_month }}"
+                hx-target="#calendar-container"
+                hx-indicator="#calendar-loading"
+                class="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+            {% icon "chevron-right" "w-5 h-5" %}
+        </button>
+    </div>
+</div>
+
+<!-- Loading Indicator -->
+<div id="calendar-loading" class="htmx-indicator flex justify-center py-4">
+    <svg class="animate-spin h-5 w-5 text-indigo-600" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    </svg>
+</div>
+
+<!-- Calendar Grid -->
+<div id="calendar-container">
+    {% include "operations/partials/_calendar.html" %}
+</div>
+{% endblock %}

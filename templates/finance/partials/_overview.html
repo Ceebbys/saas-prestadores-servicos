@@ -1,0 +1,105 @@
+{% load ui_tags humanize %}
+
+<!-- Stat Cards -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    {% include "components/_stat_card.html" with title="Receitas do Mês" value=total_income|currency icon_name="arrow-trending-up" color="emerald" subtitle=current_month|date:"F/Y" %}
+    {% include "components/_stat_card.html" with title="Despesas do Mês" value=total_expense|currency icon_name="arrow-trending-down" color="rose" subtitle=current_month|date:"F/Y" %}
+    {% if balance >= 0 %}
+        {% include "components/_stat_card.html" with title="Saldo" value=balance|currency icon_name="banknotes" color="emerald" %}
+    {% else %}
+        {% include "components/_stat_card.html" with title="Saldo" value=balance|currency icon_name="banknotes" color="rose" %}
+    {% endif %}
+    {% include "components/_stat_card.html" with title="Pendentes" value=pending_count icon_name="clock" color="amber" %}
+</div>
+
+<!-- Overdue Alert -->
+{% if overdue_count > 0 %}
+<div class="mb-6 rounded-xl bg-rose-50 ring-1 ring-rose-200/60 p-4">
+    <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-rose-100 flex items-center justify-center">
+            {% icon "exclamation-triangle" "w-5 h-5 text-rose-600" %}
+        </div>
+        <div class="flex-1">
+            <p class="text-sm font-semibold text-rose-800">{{ overdue_count }} lançamento{{ overdue_count|pluralize:"s" }} vencido{{ overdue_count|pluralize:"s" }}</p>
+            <p class="text-xs text-rose-600 mt-0.5">Existem lançamentos pendentes com data de vencimento ultrapassada.</p>
+        </div>
+        <a href="{% url 'finance:entry_list' %}?status=overdue"
+           class="text-sm font-medium text-rose-700 hover:text-rose-800 transition-colors whitespace-nowrap">
+            Ver vencidos
+        </a>
+    </div>
+</div>
+{% endif %}
+
+<!-- Recent Entries -->
+<div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+        <h3 class="text-sm font-semibold text-slate-700">Lançamentos Recentes</h3>
+        <a href="{% url 'finance:entry_list' %}"
+           class="text-xs text-indigo-600 hover:text-indigo-700 font-medium">Ver todos</a>
+    </div>
+    {% if recent_entries %}
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200">
+            <thead class="bg-slate-50">
+                <tr>
+                    <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Descrição</th>
+                    <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Tipo</th>
+                    <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Categoria</th>
+                    <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Valor</th>
+                    <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Vencimento</th>
+                    <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                    <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Ações</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+                {% for entry in recent_entries %}
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="px-5 py-3.5">
+                        <p class="text-sm font-medium text-slate-900">{{ entry.description }}</p>
+                    </td>
+                    <td class="px-5 py-3.5">
+                        {% status_badge entry.type %}
+                    </td>
+                    <td class="px-5 py-3.5 text-sm text-slate-600 hidden md:table-cell">
+                        {{ entry.category.name|default:"—" }}
+                    </td>
+                    <td class="px-5 py-3.5 text-right">
+                        <span class="text-sm font-semibold {% if entry.type == 'income' %}text-emerald-600{% else %}text-rose-600{% endif %}">
+                            {{ entry.amount|currency }}
+                        </span>
+                    </td>
+                    <td class="px-5 py-3.5 text-sm text-slate-500 hidden lg:table-cell">
+                        {{ entry.date|date:"d/m/Y" }}
+                    </td>
+                    <td class="px-5 py-3.5">
+                        {% status_badge entry.status %}
+                    </td>
+                    <td class="px-5 py-3.5 text-right">
+                        <div class="inline-flex items-center gap-1">
+                            <a href="{% url 'finance:entry_update' entry.pk %}"
+                               class="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors inline-flex"
+                               title="Editar">
+                                {% icon "pencil" "w-4 h-4" %}
+                            </a>
+                            {% if entry.status == 'pending' %}
+                            <form method="post" action="{% url 'finance:entry_pay' entry.pk %}" class="inline-flex">
+                                {% csrf_token %}
+                                <button type="submit"
+                                        class="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+                                        title="Marcar como pago">
+                                    {% icon "check" "w-4 h-4" %}
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="px-5 py-12 text-center text-sm text-slate-400">Nenhum lançamento registrado este mês</div>
+    {% endif %}
+</div>

@@ -1,0 +1,33 @@
+{# Base modal wrapper. Usage: wrap your form content with this. #}
+{# Variables: modal_title, modal_size (sm/md/lg/xl, default md) #}
+
+<div class="fixed inset-0 z-50 overflow-y-auto" aria-modal="true">
+    <!-- Backdrop -->
+    <div id="modal-backdrop" class="modal-backdrop fixed inset-0 bg-slate-900/60 transition-opacity"></div>
+
+    <!-- Modal Panel -->
+    <div class="flex min-h-full items-center justify-center p-4">
+        <div class="modal-panel relative w-full
+                    {% if modal_size == 'sm' %}max-w-sm
+                    {% elif modal_size == 'lg' %}max-w-2xl
+                    {% elif modal_size == 'xl' %}max-w-4xl
+                    {% else %}max-w-lg{% endif %}
+                    rounded-2xl bg-white shadow-2xl" @click.stop="">
+
+            <!-- Header -->
+            <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+                <h3 class="text-lg font-semibold text-slate-900">{{ modal_title|default:"" }}</h3>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 transition-colors">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Body -->
+            <div class="px-6 py-4">
+                {% block modal_body %}{{ modal_body }}{% endblock %}
+            </div>
+        </div>
+    </div>
+</div>

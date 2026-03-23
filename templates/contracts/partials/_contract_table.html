@@ -1,0 +1,76 @@
+{% load ui_tags humanize %}
+
+{% if object_list %}
+<div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 overflow-hidden">
+    <table class="min-w-full divide-y divide-slate-200">
+        <thead class="bg-slate-50">
+            <tr>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Número</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Título</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Lead</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Proposta</th>
+                <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Valor</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Data</th>
+                <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Ações</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+            {% for contract in object_list %}
+            <tr class="hover:bg-slate-50 transition-colors">
+                <td class="px-5 py-3.5">
+                    <a href="{% url 'contracts:detail' contract.pk %}" class="text-sm font-mono font-medium text-indigo-600 hover:text-indigo-700">
+                        {{ contract.number }}
+                    </a>
+                </td>
+                <td class="px-5 py-3.5">
+                    <a href="{% url 'contracts:detail' contract.pk %}" class="group">
+                        <p class="text-sm font-medium text-slate-900 group-hover:text-indigo-600">{{ contract.title }}</p>
+                    </a>
+                </td>
+                <td class="px-5 py-3.5 text-sm text-slate-600 hidden md:table-cell">
+                    {{ contract.lead.name|default:"—" }}
+                </td>
+                <td class="px-5 py-3.5 hidden lg:table-cell">
+                    {% if contract.proposal %}
+                    <a href="{% url 'proposals:detail' contract.proposal.pk %}" class="text-sm text-indigo-600 hover:text-indigo-700 font-mono">
+                        {{ contract.proposal.number }}
+                    </a>
+                    {% else %}
+                    <span class="text-sm text-slate-400">—</span>
+                    {% endif %}
+                </td>
+                <td class="px-5 py-3.5 text-right hidden lg:table-cell">
+                    <span class="text-sm font-semibold text-slate-700">{{ contract.value|currency }}</span>
+                </td>
+                <td class="px-5 py-3.5">
+                    {% status_badge contract.status %}
+                </td>
+                <td class="px-5 py-3.5 text-sm text-slate-500 hidden lg:table-cell">
+                    {{ contract.created_at|date:"d/m/Y" }}
+                </td>
+                <td class="px-5 py-3.5 text-right">
+                    <div class="flex items-center justify-end gap-1">
+                        <a href="{% url 'contracts:detail' contract.pk %}"
+                           class="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                           title="Ver detalhes">
+                            {% icon "eye" "w-4 h-4" %}
+                        </a>
+                        <a href="{% url 'contracts:edit' contract.pk %}"
+                           class="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                           title="Editar">
+                            {% icon "pencil" "w-4 h-4" %}
+                        </a>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% include "components/_pagination.html" %}
+
+{% else %}
+{% include "components/_empty_state.html" with icon="document-check" title="Nenhum contrato encontrado" description="Crie seu primeiro contrato ou gere um a partir de uma proposta aceita." action_url=create_url action_label="Novo Contrato" %}
+{% endif %}

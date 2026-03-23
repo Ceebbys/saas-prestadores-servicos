@@ -1,0 +1,239 @@
+{% extends "layouts/authenticated.html" %}
+{% load ui_tags humanize %}
+
+{% block title %}{{ contract.number }} — Contratos — ServiçoPro{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm text-slate-500 mb-4">
+    <a href="{% url 'contracts:list' %}" class="hover:text-indigo-600">Contratos</a>
+    {% icon "chevron-right" "w-3 h-3" %}
+    <span class="text-slate-900 font-medium">{{ contract.number }}</span>
+</nav>
+{% endblock %}
+
+{% block page_header %}
+<div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+    <div class="flex items-start gap-4">
+        <div class="w-14 h-14 rounded-xl bg-emerald-100 flex items-center justify-center">
+            {% icon "document-check" "w-7 h-7 text-emerald-700" %}
+        </div>
+        <div>
+            <div class="flex items-center gap-3">
+                <h1 class="text-2xl font-bold text-slate-900">{{ contract.title }}</h1>
+                <div id="contract-status-badge">
+                    {% include "contracts/partials/_contract_status.html" %}
+                </div>
+            </div>
+            <p class="mt-1 text-sm text-slate-500 font-mono">{{ contract.number }}</p>
+        </div>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+        {% if contract.status == 'draft' %}
+        <form hx-post="{% url 'contracts:status' contract.pk %}" hx-target="#contract-status-badge" hx-swap="innerHTML">
+            {% csrf_token %}
+            <input type="hidden" name="status" value="sent">
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm">
+                {% icon "paper-airplane" "w-4 h-4" %}
+                Enviar
+            </button>
+        </form>
+        {% endif %}
+        {% if contract.status == 'sent' %}
+        <form hx-post="{% url 'contracts:status' contract.pk %}" hx-target="#contract-status-badge" hx-swap="innerHTML">
+            {% csrf_token %}
+            <input type="hidden" name="status" value="signed">
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 transition-colors shadow-sm">
+                {% icon "pencil-square" "w-4 h-4" %}
+                Assinar
+            </button>
+        </form>
+        {% endif %}
+        {% if contract.status == 'signed' %}
+        <form hx-post="{% url 'contracts:status' contract.pk %}" hx-target="#contract-status-badge" hx-swap="innerHTML">
+            {% csrf_token %}
+            <input type="hidden" name="status" value="active">
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition-colors shadow-sm">
+                {% icon "check-circle" "w-4 h-4" %}
+                Ativar
+            </button>
+        </form>
+        {% endif %}
+        {% if contract.status == 'active' %}
+        <form hx-post="{% url 'contracts:status' contract.pk %}" hx-target="#contract-status-badge" hx-swap="innerHTML">
+            {% csrf_token %}
+            <input type="hidden" name="status" value="completed">
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-600 text-white text-sm font-medium hover:bg-slate-700 transition-colors shadow-sm">
+                {% icon "flag" "w-4 h-4" %}
+                Concluir
+            </button>
+        </form>
+        <a href="{% url 'operations:work_order_create' %}?from_contract={{ contract.pk }}"
+           class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors shadow-sm">
+            {% icon "wrench-screwdriver" "w-4 h-4" %}
+            Criar OS
+        </a>
+        {% endif %}
+        {% if contract.status == 'sent' or contract.status == 'signed' or contract.status == 'active' %}
+        <form hx-post="{% url 'contracts:status' contract.pk %}" hx-target="#contract-status-badge" hx-swap="innerHTML"
+              onsubmit="return confirm('Tem certeza que deseja cancelar este contrato?')">
+            {% csrf_token %}
+            <input type="hidden" name="status" value="cancelled">
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-sm font-medium text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50 transition-colors">
+                {% icon "x-mark" "w-4 h-4" %}
+                Cancelar
+            </button>
+        </form>
+        {% endif %}
+        {% if contract.status == 'draft' or contract.status == 'sent' %}
+        <a href="{% url 'contracts:edit' contract.pk %}"
+           class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50 transition-colors">
+            {% icon "pencil" "w-4 h-4" %}
+            Editar
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Sidebar Info -->
+    <div class="lg:col-span-1 space-y-6">
+        <!-- Lead Info -->
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-4">Lead</h3>
+            <dl class="space-y-3">
+                {% if contract.lead %}
+                <div>
+                    <dt class="text-xs text-slate-400">Nome</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">
+                        <a href="{% url 'crm:lead_detail' contract.lead.pk %}" class="text-indigo-600 hover:text-indigo-700 font-medium">
+                            {{ contract.lead.name }}
+                        </a>
+                    </dd>
+                </div>
+                {% if contract.lead.email %}
+                <div>
+                    <dt class="text-xs text-slate-400">E-mail</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">{{ contract.lead.email }}</dd>
+                </div>
+                {% endif %}
+                {% if contract.lead.phone %}
+                <div>
+                    <dt class="text-xs text-slate-400">Telefone</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">{{ contract.lead.phone }}</dd>
+                </div>
+                {% endif %}
+                {% else %}
+                <div class="text-sm text-slate-400">Nenhum lead vinculado</div>
+                {% endif %}
+            </dl>
+        </div>
+
+        <!-- Linked Proposal -->
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-4">Proposta Vinculada</h3>
+            {% if contract.proposal %}
+            <a href="{% url 'proposals:detail' contract.proposal.pk %}" class="flex items-center gap-3 p-3 rounded-lg bg-slate-50 hover:bg-indigo-50 transition-colors group">
+                <div class="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+                    {% icon "document-text" "w-5 h-5 text-indigo-600" %}
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-slate-900 group-hover:text-indigo-600">{{ contract.proposal.title }}</p>
+                    <p class="text-xs text-slate-400 font-mono">{{ contract.proposal.number }}</p>
+                </div>
+            </a>
+            {% else %}
+            <p class="text-sm text-slate-400">Nenhuma proposta vinculada</p>
+            {% endif %}
+        </div>
+
+        <!-- Value -->
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-4">Valor</h3>
+            <p class="text-2xl font-bold text-slate-900">{{ contract.value|currency }}</p>
+        </div>
+
+        <!-- Dates -->
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-4">Datas</h3>
+            <dl class="space-y-3">
+                <div>
+                    <dt class="text-xs text-slate-400">Criado em</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">{{ contract.created_at|date:"d/m/Y H:i" }}</dd>
+                </div>
+                {% if contract.start_date %}
+                <div>
+                    <dt class="text-xs text-slate-400">Início</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">{{ contract.start_date|date:"d/m/Y" }}</dd>
+                </div>
+                {% endif %}
+                {% if contract.end_date %}
+                <div>
+                    <dt class="text-xs text-slate-400">Término</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">{{ contract.end_date|date:"d/m/Y" }}</dd>
+                </div>
+                {% endif %}
+                {% if contract.signed_at %}
+                <div>
+                    <dt class="text-xs text-slate-400">Assinado em</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">{{ contract.signed_at|date:"d/m/Y H:i" }}</dd>
+                </div>
+                {% endif %}
+            </dl>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="lg:col-span-2 space-y-6">
+        <!-- Contract Content -->
+        {% if contract.content %}
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">Conteúdo do Contrato</h3>
+            <div class="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed">{{ contract.content }}</div>
+        </div>
+        {% endif %}
+
+        <!-- Notes -->
+        {% if contract.notes %}
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">Observações</h3>
+            <p class="text-sm text-slate-600 whitespace-pre-wrap">{{ contract.notes }}</p>
+        </div>
+        {% endif %}
+
+        <!-- Related Work Orders -->
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                <h3 class="text-sm font-semibold text-slate-700">Ordens de Serviço</h3>
+                {% if contract.status == 'active' %}
+                <a href="{% url 'operations:work_order_create' %}?from_contract={{ contract.pk }}"
+                   class="text-xs text-indigo-600 hover:text-indigo-700 font-medium">+ Nova OS</a>
+                {% endif %}
+            </div>
+            {% if contract.work_orders.exists %}
+            <ul class="divide-y divide-slate-100">
+                {% for wo in contract.work_orders.all %}
+                <li>
+                    <a href="{% url 'operations:work_order_detail' wo.pk %}" class="flex items-center justify-between px-5 py-3 hover:bg-slate-50 transition-colors">
+                        <div>
+                            <p class="text-sm font-medium text-slate-900">{{ wo.title }}</p>
+                            <p class="text-xs text-slate-400">{{ wo.number }} · {{ wo.scheduled_date|date:"d/m/Y"|default:"Sem data" }}</p>
+                        </div>
+                        {% status_badge wo.status %}
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="px-5 py-6 text-center text-sm text-slate-400">Nenhuma OS vinculada</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
