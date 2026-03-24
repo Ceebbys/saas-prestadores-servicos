@@ -46,7 +46,19 @@
       "Bash(for dir:*)",
       "Bash(do basename:*)",
       "Bash(python manage.py collectstatic --noinput)",
-      "Bash(DJANGO_SETTINGS_MODULE=config.settings.prod ALLOWED_HOSTS=localhost SECRET_KEY=test-key-for-check DATABASE_URL=sqlite:///tmp/test.db python manage.py check --deploy)"
+      "Bash(DJANGO_SETTINGS_MODULE=config.settings.prod ALLOWED_HOSTS=localhost SECRET_KEY=test-key-for-check DATABASE_URL=sqlite:///tmp/test.db python manage.py check --deploy)",
+      "Bash(find C:/Users/MyPC/Documents/Development/saas_prestadores_servicos -maxdepth 2 -type f \\\\\\(-name package.json -o -name *.config.js -o -name *.config.ts \\\\\\))",
+      "Bash(grep -E \"\\\\.\\(json|js|ts\\)$\")",
+      "Bash(find C:/Users/MyPC/Documents/Development/saas_prestadores_servicos -maxdepth 2 -type f \\\\\\(-name *.json -o -name *.js -o -name *.ts \\\\\\))",
+      "Bash(grep -r tailwind C:/Users/MyPC/Documents/Development/saas_prestadores_servicos --include=*.py --include=*.json --include=*.js --include=*.ts --include=*.txt)",
+      "Bash(find C:/Users/MyPC/Documents/Development/saas_prestadores_servicos -name *.html -exec grep -l \"css\\\\|tailwind\\\\|style\" {})",
+      "Bash(2)",
+      "Bash(find C:/Users/MyPC/Documents/Development/saas_prestadores_servicos -maxdepth 1 -type f \\\\\\(-name *.py -o -name *.json -o -name *.js -o -name *.ts -o -name *.md \\\\\\))",
+      "Bash(rm static/css/input.css)",
+      "Bash(rm -f staticfiles/css/input.css)",
+      "Bash(./tailwindcss.exe -i src/css/input.css -o static/css/output.css --minify)",
+      "Bash(rm -rf staticfiles/)",
+      "Bash(DJANGO_SETTINGS_MODULE=config.settings.prod SECRET_KEY=test-key-prod ALLOWED_HOSTS=localhost DATABASE_URL=sqlite:///tmp/test.db python manage.py collectstatic --noinput)"
     ]
   }
 }

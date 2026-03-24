@@ -18,10 +18,28 @@ O ServiçoPro é deployado no Render como um **Web Service** com **PostgreSQL** 
 | Arquivo | Função |
 |---|---|
 | `render.yaml` | Blueprint — define serviços, banco, variáveis |
-| `build.sh` | Script de build — instala deps, migra, collectstatic |
+| `build.sh` | Script de build — Tailwind, deps, migrate, collectstatic |
 | `runtime.txt` | Fixa versão do Python |
 | `requirements/base.txt` | Dependências de produção |
 | `config/settings/prod.py` | Settings de produção |
+
+### Estrutura CSS / Tailwind
+
+```
+src/css/input.css          ← Fonte Tailwind (NÃO servido como static)
+static/css/output.css      ← CSS compilado final (servido pelo WhiteNoise)
+templates/base.html        ← Referencia {% static 'css/output.css' %}
+```
+
+O `input.css` contém `@import "tailwindcss"` e diretivas `@source` — ele NÃO pode estar dentro de `static/` porque o WhiteNoise tenta processá-lo como CSS final e falha ao resolver o import.
+
+**Build local (Windows):**
+```bash
+./tailwindcss.exe -i src/css/input.css -o static/css/output.css --minify
+```
+
+**Build no Render (Linux):**
+O `build.sh` baixa automaticamente o binário Tailwind CLI para Linux e compila antes do `collectstatic`.
 
 ---
 
@@ -159,9 +177,15 @@ Para **produção real**, configure um serviço de storage externo (AWS S3, Clou
 
 ## Troubleshooting
 
+### collectstatic falha com erro de @import "tailwindcss"
+- O arquivo `input.css` (fonte Tailwind) NÃO deve estar em `static/css/`
+- Ele deve ficar em `src/css/input.css`
+- O `build.sh` compila para `static/css/output.css` antes do `collectstatic`
+
 ### CSS não carrega / página sem estilo
 - Verifique se `collectstatic` rodou no build (ver logs do deploy)
 - Verifique se `WhiteNoise` está no MIDDLEWARE
+- Verifique nos logs se o Tailwind CLI compilou com sucesso
 
 ### 500 Internal Server Error
 - Verifique os logs no Render Dashboard

@@ -19,6 +19,7 @@ staticfiles/
 venv/
 env/
 .env.*
+!.env.example
 
 # IDE
 .vscode/
@@ -35,6 +36,9 @@ tailwindcss.exe
 # Node (Tailwind)
 node_modules/
 theme/static_src/node_modules/
+
+# Tailwind CLI binaries (any platform)
+tailwindcss-linux-*
 
 # Coverage
 htmlcov/
