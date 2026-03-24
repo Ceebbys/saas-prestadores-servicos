@@ -20,4 +20,7 @@ python manage.py migrate --noinput
 echo "==> Collecting static files..."
 python manage.py collectstatic --noinput
 
+echo "==> Seeding demo data (skips if already exists)..."
+python manage.py seed_demo_data || true
+
 echo "==> Build complete!"
