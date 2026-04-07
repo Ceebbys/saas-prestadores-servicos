@@ -3,6 +3,70 @@ from django.db import models
 from apps.core.models import TenantOwnedModel
 
 
+class BankAccount(TenantOwnedModel):
+    """Conta bancária da empresa (PJ ou PF)."""
+
+    class AccountType(models.TextChoices):
+        CHECKING = "checking", "Conta Corrente"
+        SAVINGS = "savings", "Poupança"
+        PAYMENT = "payment", "Conta de Pagamento"
+
+    class PersonType(models.TextChoices):
+        PJ = "pj", "Pessoa Jurídica"
+        PF = "pf", "Pessoa Física"
+
+    name = models.CharField("Apelido", max_length=100, help_text="Ex: Conta PJ Itaú")
+    bank_name = models.CharField("Banco", max_length=100)
+    bank_code = models.CharField("Código do banco", max_length=10, blank=True)
+    agency = models.CharField("Agência", max_length=20, blank=True)
+    account_number = models.CharField("Número da conta", max_length=30, blank=True)
+    account_type = models.CharField(
+        "Tipo de conta",
+        max_length=20,
+        choices=AccountType.choices,
+        default=AccountType.CHECKING,
+    )
+    person_type = models.CharField(
+        "Tipo de pessoa",
+        max_length=5,
+        choices=PersonType.choices,
+        default=PersonType.PJ,
+    )
+    holder_name = models.CharField("Titular", max_length=200, blank=True)
+    holder_document = models.CharField(
+        "CPF/CNPJ do titular", max_length=20, blank=True
+    )
+    pix_key = models.CharField(
+        "Chave Pix", max_length=200, blank=True,
+        help_text="CPF, CNPJ, e-mail, telefone ou chave aleatória",
+    )
+    is_default = models.BooleanField(
+        "Conta padrão", default=False,
+        help_text="Conta usada como padrão em novos lançamentos",
+    )
+    is_active = models.BooleanField("Ativa", default=True)
+    notes = models.TextField("Observações", blank=True)
+
+    class Meta:
+        verbose_name = "Conta Bancária"
+        verbose_name_plural = "Contas Bancárias"
+        ordering = ["-is_default", "name"]
+
+    def __str__(self):
+        parts = [self.name]
+        if self.bank_name:
+            parts.append(f"({self.bank_name})")
+        return " ".join(parts)
+
+    def save(self, *args, **kwargs):
+        # Garante apenas uma conta padrão por empresa
+        if self.is_default:
+            BankAccount.objects.filter(
+                empresa=self.empresa, is_default=True,
+            ).exclude(pk=self.pk).update(is_default=False)
+        super().save(*args, **kwargs)
+
+
 class FinancialCategory(TenantOwnedModel):
     """Categoria financeira para classificação de lançamentos."""
 
@@ -87,7 +151,29 @@ class FinancialEntry(TenantOwnedModel):
         related_name="financial_entries",
         verbose_name="Ordem de Serviço",
     )
+    bank_account = models.ForeignKey(
+        BankAccount,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="entries",
+        verbose_name="Conta Bancária",
+    )
+    payment_ref = models.CharField(
+        "Referência de pagamento",
+        max_length=200,
+        blank=True,
+        help_text="Código de barras, ID Pix, ou referência externa",
+    )
     notes = models.TextField("Observações", blank=True)
+    auto_generated = models.BooleanField(
+        "Gerado automaticamente",
+        default=False,
+        help_text=(
+            "Indica que este lançamento foi criado automaticamente a partir de "
+            "uma proposta/contrato. Pode ser editado manualmente."
+        ),
+    )
 
     class Meta:
         verbose_name = "Lançamento Financeiro"

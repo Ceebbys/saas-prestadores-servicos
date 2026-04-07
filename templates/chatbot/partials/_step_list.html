@@ -1,0 +1,203 @@
+{% load ui_tags %}
+
+<div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+        <div>
+            <h3 class="text-sm font-semibold text-slate-700">Passos do Fluxo</h3>
+            <p class="text-xs text-slate-400 mt-0.5">{{ steps.count }} passo{{ steps.count|pluralize:"s" }} configurado{{ steps.count|pluralize:"s" }}</p>
+        </div>
+    </div>
+
+    {% if steps %}
+    <div class="divide-y divide-slate-100">
+        {% for step in steps %}
+        <div class="px-6 py-4" x-data="{ editing: false }">
+            <!-- View mode -->
+            <div x-show="!editing" class="flex items-start justify-between">
+                <div class="flex items-start gap-3">
+                    <span class="flex-shrink-0 w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-700">
+                        {{ step.order }}
+                    </span>
+                    <div>
+                        <p class="text-sm font-medium text-slate-900">{{ step.question_text }}</p>
+                        <div class="flex items-center gap-2 mt-1 flex-wrap">
+                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-600">
+                                {{ step.get_step_type_display }}
+                            </span>
+                            {% if step.lead_field_mapping %}
+                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-violet-50 text-violet-600">
+                                → {{ step.get_lead_field_mapping_display }}
+                            </span>
+                            {% endif %}
+                            {% if step.is_required %}
+                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-amber-50 text-amber-600">
+                                Obrigatório
+                            </span>
+                            {% endif %}
+                        </div>
+                        {% if step.choices.exists %}
+                        <div class="mt-2 flex flex-wrap gap-1.5">
+                            {% for choice in step.choices.all %}
+                            <span class="inline-flex items-center rounded-lg px-2.5 py-1 text-xs bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+                                {{ choice.text }}
+                            </span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="flex items-center gap-1">
+                    <button @click="editing = true"
+                            class="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                            title="Editar">
+                        {% icon "pencil" "w-4 h-4" %}
+                    </button>
+                    <form method="post" action="{% url 'chatbot:step_delete' form.instance.pk step.pk %}"
+                          onsubmit="return confirm('Remover este passo?')" class="inline-flex">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                title="Remover">
+                            {% icon "x-mark" "w-4 h-4" %}
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Edit mode -->
+            <div x-show="editing" x-cloak>
+                <form method="post" action="{% url 'chatbot:step_update' form.instance.pk step.pk %}">
+                    {% csrf_token %}
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">Ordem</label>
+                            <input type="number" name="order" value="{{ step.order }}" min="0"
+                                   class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">Tipo</label>
+                            <select name="step_type" class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="text" {% if step.step_type == 'text' %}selected{% endif %}>Texto livre</option>
+                                <option value="choice" {% if step.step_type == 'choice' %}selected{% endif %}>Escolha</option>
+                                <option value="email" {% if step.step_type == 'email' %}selected{% endif %}>E-mail</option>
+                                <option value="phone" {% if step.step_type == 'phone' %}selected{% endif %}>Telefone</option>
+                                <option value="name" {% if step.step_type == 'name' %}selected{% endif %}>Nome</option>
+                                <option value="company" {% if step.step_type == 'company' %}selected{% endif %}>Empresa</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">Campo do Lead</label>
+                            <select name="lead_field_mapping" class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">— Nenhum —</option>
+                                <option value="name" {% if step.lead_field_mapping == 'name' %}selected{% endif %}>Nome</option>
+                                <option value="email" {% if step.lead_field_mapping == 'email' %}selected{% endif %}>E-mail</option>
+                                <option value="phone" {% if step.lead_field_mapping == 'phone' %}selected{% endif %}>Telefone</option>
+                                <option value="company" {% if step.lead_field_mapping == 'company' %}selected{% endif %}>Empresa</option>
+                                <option value="notes" {% if step.lead_field_mapping == 'notes' %}selected{% endif %}>Observações</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Pergunta</label>
+                        <textarea name="question_text" rows="2"
+                                  class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">{{ step.question_text }}</textarea>
+                    </div>
+                    <div class="mt-3">
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Opções (uma por linha, apenas para tipo Escolha)</label>
+                        <textarea name="choices_text" rows="3" placeholder="Solicitar orçamento&#10;Acompanhar serviço&#10;Falar com atendente"
+                                  class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">{% for c in step.choices.all %}{{ c.text }}{% if not forloop.last %}
+{% endif %}{% endfor %}</textarea>
+                    </div>
+                    <div class="mt-3 flex items-center gap-4">
+                        <label class="flex items-center gap-2 text-sm text-slate-600">
+                            <input type="checkbox" name="is_required" {% if step.is_required %}checked{% endif %}
+                                   class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600">
+                            Obrigatório
+                        </label>
+                    </div>
+                    <div class="flex items-center gap-2 mt-4">
+                        <button type="submit"
+                                class="px-4 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
+                            Salvar
+                        </button>
+                        <button type="button" @click="editing = false"
+                                class="px-4 py-1.5 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
+                            Cancelar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="px-6 py-8 text-center text-sm text-slate-400">Nenhum passo adicionado</div>
+    {% endif %}
+
+    <!-- Add step form -->
+    <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-xl" x-data="{ open: false }">
+        <button @click="open = !open" type="button"
+                class="inline-flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-800 font-medium">
+            {% icon "plus" "w-4 h-4" %}
+            Adicionar passo
+        </button>
+        <div x-show="open" x-cloak class="mt-4">
+            <form method="post" action="{% url 'chatbot:step_add' form.instance.pk %}">
+                {% csrf_token %}
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Ordem</label>
+                        <input type="number" name="order" value="{{ steps.count }}" min="0"
+                               class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Tipo</label>
+                        <select name="step_type" class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="text">Texto livre</option>
+                            <option value="choice">Escolha</option>
+                            <option value="email">E-mail</option>
+                            <option value="phone">Telefone</option>
+                            <option value="name">Nome</option>
+                            <option value="company">Empresa</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Campo do Lead</label>
+                        <select name="lead_field_mapping" class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">— Nenhum —</option>
+                            <option value="name">Nome</option>
+                            <option value="email">E-mail</option>
+                            <option value="phone">Telefone</option>
+                            <option value="company">Empresa</option>
+                            <option value="notes">Observações</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Pergunta</label>
+                    <textarea name="question_text" rows="2" required placeholder="Ex: Qual o seu nome completo?"
+                              class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"></textarea>
+                </div>
+                <div class="mt-3">
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Opções (uma por linha, apenas para tipo Escolha)</label>
+                    <textarea name="choices_text" rows="3" placeholder="Solicitar orçamento&#10;Acompanhar serviço&#10;Falar com atendente"
+                              class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"></textarea>
+                </div>
+                <div class="mt-3 flex items-center gap-4">
+                    <label class="flex items-center gap-2 text-sm text-slate-600">
+                        <input type="checkbox" name="is_required" checked
+                               class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600">
+                        Obrigatório
+                    </label>
+                </div>
+                <div class="mt-4">
+                    <button type="submit"
+                            class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
+                        {% icon "plus" "w-4 h-4" %}
+                        Adicionar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

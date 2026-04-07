@@ -58,7 +58,28 @@
       "Bash(rm -f staticfiles/css/input.css)",
       "Bash(./tailwindcss.exe -i src/css/input.css -o static/css/output.css --minify)",
       "Bash(rm -rf staticfiles/)",
-      "Bash(DJANGO_SETTINGS_MODULE=config.settings.prod SECRET_KEY=test-key-prod ALLOWED_HOSTS=localhost DATABASE_URL=sqlite:///tmp/test.db python manage.py collectstatic --noinput)"
+      "Bash(DJANGO_SETTINGS_MODULE=config.settings.prod SECRET_KEY=test-key-prod ALLOWED_HOSTS=localhost DATABASE_URL=sqlite:///tmp/test.db python manage.py collectstatic --noinput)",
+      "Bash(python manage.py makemigrations crm proposals operations)",
+      "Bash(.venv/Scripts/pip.exe install:*)",
+      "Bash(.venv/Scripts/python.exe manage.py makemigrations crm proposals operations)",
+      "Bash(.venv/Scripts/python.exe manage.py migrate)",
+      "Bash(.venv/Scripts/python.exe manage.py check)",
+      "Bash(.venv/Scripts/python.exe manage.py makemigrations --check)",
+      "Bash(.venv/Scripts/python.exe manage.py seed_demo_data)",
+      "Bash(.venv/Scripts/python.exe manage.py seed_demo_data --force)",
+      "Bash(.venv/Scripts/python.exe -c \":*)",
+      "Bash(.venv/Scripts/python.exe manage.py makemigrations)",
+      "Bash(.venv/Scripts/python.exe manage.py makemigrations proposals)",
+      "Bash(.venv/Scripts/python.exe manage.py migrate proposals)",
+      "Bash(.venv/Scripts/python.exe manage.py makemigrations finance)",
+      "Bash(.venv/Scripts/python.exe manage.py migrate finance)",
+      "Bash(python manage.py makemigrations --check --dry-run)",
+      "Bash(python manage.py seed_demo_data --force)",
+      "Bash(python manage.py shell -c \"from apps.finance.models import FinancialEntry; auto=FinancialEntry.objects.filter\\(auto_generated=True\\); print\\(''auto_generated:'', auto.count\\(\\)\\); print\\(''sample:'', list\\(auto.values\\(''empresa__name'',''description'',''amount'',''status'',''date''\\)[:5]\\)\\)\")",
+      "Bash(python manage.py makemigrations chatbot --name initial)",
+      "Bash(python manage.py migrate chatbot)",
+      "Bash(python manage.py makemigrations --check)",
+      "Bash(python manage.py shell -c \":*)"
     ]
   }
 }

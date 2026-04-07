@@ -19,20 +19,56 @@
 {% endblock %}
 
 {% block content %}
-<div class="max-w-2xl">
+<div class="max-w-2xl"
+     x-data='proposalForm({{ templates_data|default:"{}"|safe }})'>
     <form method="post" class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6">
         {% csrf_token %}
+
+        <!-- Toast: template aplicado -->
+        <div x-show="toastVisible" x-transition x-cloak
+             class="mb-4 rounded-lg bg-indigo-50 border border-indigo-200 px-4 py-3 text-sm text-indigo-800 flex items-start gap-2">
+            {% icon "check-circle" "w-5 h-5 text-indigo-600 shrink-0 mt-0.5" %}
+            <div class="flex-1">
+                <p class="font-medium">Template aplicado.</p>
+                <p class="text-xs text-indigo-700 mt-0.5" x-text="toastMessage"></p>
+            </div>
+            <button type="button" @click="toastVisible = false" class="text-indigo-400 hover:text-indigo-700">
+                {% icon "x-mark" "w-4 h-4" %}
+            </button>
+        </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
             {% form_field form.title %}
             {% form_field form.lead %}
             {% form_field form.opportunity %}
-            {% form_field form.template %}
+            <div @change="applyTemplate($event.target.value)">
+                {% form_field form.template %}
+            </div>
             {% form_field form.valid_until %}
             {% form_field form.discount_percent %}
         </div>
 
-        <div class="mt-2">
+        <!-- Pagamento e Parcelamento -->
+        <div class="mt-4 pt-4 border-t border-slate-200">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">Pagamento</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                {% form_field form.payment_method %}
+                <div class="flex items-center gap-3 mt-6">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" name="is_installment" id="id_is_installment"
+                               {% if form.instance.is_installment %}checked{% endif %}
+                               x-model="installment"
+                               class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                        <span class="text-sm text-slate-700">Parcelado</span>
+                    </label>
+                </div>
+            </div>
+            <div x-show="installment" x-cloak class="mt-2 max-w-xs">
+                {% form_field form.installment_count %}
+            </div>
+        </div>
+
+        <div class="mt-4">
             {% form_field form.introduction %}
         </div>
 
@@ -52,4 +88,42 @@
         </div>
     </form>
 </div>
+
+<script>
+function proposalForm(templatesData) {
+    return {
+        templates: templatesData || {},
+        installment: {{ form.instance.is_installment|yesno:"true,false" }},
+        toastVisible: false,
+        toastMessage: '',
+        applyTemplate(templateId) {
+            if (!templateId || !this.templates[templateId]) return;
+            const tpl = this.templates[templateId];
+            // Preenche apenas campos vazios para não sobrescrever edições do usuário
+            const setIfEmpty = (id, value) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                if (value && !el.value) el.value = value;
+            };
+            setIfEmpty('id_introduction', tpl.introduction);
+            setIfEmpty('id_terms', tpl.terms);
+            setIfEmpty('id_payment_method', tpl.payment_method);
+            if (tpl.is_installment) {
+                this.installment = true;
+                setIfEmpty('id_installment_count', tpl.installment_count);
+            }
+            const hints = [];
+            if (tpl.introduction || tpl.terms) hints.push('textos');
+            if (tpl.payment_method) hints.push('pagamento');
+            if (tpl.is_installment) hints.push(tpl.installment_count + 'x');
+            if (tpl.has_items) hints.push('itens disponíveis após salvar');
+            this.toastMessage = hints.length
+                ? 'Preenchidos: ' + hints.join(', ') + '. Edite livremente.'
+                : 'Template aplicado.';
+            this.toastVisible = true;
+            setTimeout(() => { this.toastVisible = false; }, 6000);
+        }
+    };
+}
+</script>
 {% endblock %}

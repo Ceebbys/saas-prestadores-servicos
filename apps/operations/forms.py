@@ -1,3 +1,5 @@
+import json
+
 from django import forms
 
 from apps.accounts.models import Membership
@@ -5,10 +7,15 @@ from apps.core.forms import TailwindFormMixin
 from apps.crm.models import Lead
 from apps.proposals.models import Proposal
 
-from .models import ServiceType, WorkOrder
+from .models import ServiceType, Team, TeamMember, WorkOrder
 
 
 class WorkOrderForm(TailwindFormMixin, forms.ModelForm):
+    cloud_storage_links_json = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput,
+    )
+
     class Meta:
         model = WorkOrder
         fields = [
@@ -22,7 +29,9 @@ class WorkOrderForm(TailwindFormMixin, forms.ModelForm):
             "scheduled_date",
             "scheduled_time",
             "assigned_to",
+            "assigned_team",
             "location",
+            "google_maps_url",  # hint: auto-gerado se vazio
             "notes",
         ]
         widgets = {
@@ -41,6 +50,14 @@ class WorkOrderForm(TailwindFormMixin, forms.ModelForm):
 
     def __init__(self, *args, empresa=None, **kwargs):
         super().__init__(*args, **kwargs)
+        # Pre-populate cloud_storage_links_json from instance
+        if self.instance and self.instance.pk and self.instance.cloud_storage_links:
+            self.initial["cloud_storage_links_json"] = json.dumps(
+                self.instance.cloud_storage_links
+            )
+        self.fields["google_maps_url"].help_text = (
+            "Deixe em branco para gerar automaticamente a partir do endereço."
+        )
         if empresa:
             self.fields["lead"].queryset = Lead.objects.filter(empresa=empresa)
             self.fields["proposal"].queryset = Proposal.objects.filter(
@@ -55,6 +72,9 @@ class WorkOrderForm(TailwindFormMixin, forms.ModelForm):
             self.fields["assigned_to"].queryset = (
                 self.fields["assigned_to"].queryset.filter(id__in=user_ids)
             )
+            self.fields["assigned_team"].queryset = Team.objects.filter(
+                empresa=empresa, is_active=True
+            )
             # Contract FK — imported lazily to avoid circular imports
             try:
                 from apps.contracts.models import Contract
@@ -64,6 +84,66 @@ class WorkOrderForm(TailwindFormMixin, forms.ModelForm):
                 )
             except (ImportError, LookupError):
                 pass
+
+    def clean_cloud_storage_links_json(self):
+        raw = self.cleaned_data.get("cloud_storage_links_json", "")
+        if not raw:
+            return []
+        try:
+            links = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            raise forms.ValidationError("Formato inválido para links.")
+        if not isinstance(links, list):
+            raise forms.ValidationError("Links devem ser uma lista.")
+        cleaned = []
+        for item in links:
+            url = (item.get("url") or "").strip() if isinstance(item, dict) else ""
+            if url:
+                label = (item.get("label") or "").strip()
+                cleaned.append({"url": url, "label": label})
+        return cleaned
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.cloud_storage_links = self.cleaned_data.get(
+            "cloud_storage_links_json", []
+        )
+        if commit:
+            instance.save()
+        return instance
+
+
+class TeamForm(TailwindFormMixin, forms.ModelForm):
+    class Meta:
+        model = Team
+        fields = ["name", "description", "leader", "color", "is_active"]
+        widgets = {
+            "description": forms.Textarea(attrs={"rows": 3}),
+            "color": forms.Select(
+                choices=[
+                    ("indigo", "Indigo"),
+                    ("violet", "Violeta"),
+                    ("emerald", "Verde"),
+                    ("amber", "Amarelo"),
+                    ("rose", "Vermelho"),
+                    ("sky", "Azul"),
+                    ("slate", "Cinza"),
+                    ("orange", "Laranja"),
+                    ("teal", "Teal"),
+                ],
+            ),
+        }
+
+    def __init__(self, *args, empresa=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if empresa:
+            user_ids = Membership.objects.filter(
+                empresa=empresa, is_active=True
+            ).values_list("user_id", flat=True)
+            self.fields["leader"].queryset = (
+                self.fields["leader"].queryset.filter(id__in=user_ids)
+            )
+            self.fields["leader"].required = False
 
 
 class ServiceTypeForm(TailwindFormMixin, forms.ModelForm):

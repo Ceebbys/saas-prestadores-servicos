@@ -3,6 +3,20 @@
 <tr class="hover:bg-slate-50 transition-colors">
     <td class="px-5 py-3.5">
         <p class="text-sm font-medium text-slate-900">{{ entry.description }}</p>
+        <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+            {% if entry.related_proposal %}
+            <a href="{% url 'proposals:detail' entry.related_proposal.pk %}" class="text-xs text-indigo-600 hover:text-indigo-800">{{ entry.related_proposal.number }}</a>
+            {% endif %}
+            {% if entry.related_contract %}
+            <a href="{% url 'contracts:detail' entry.related_contract.pk %}" class="text-xs text-indigo-600 hover:text-indigo-800">{{ entry.related_contract.number|default:"Contrato" }}</a>
+            {% endif %}
+            {% if entry.related_work_order %}
+            <a href="{% url 'operations:work_order_detail' entry.related_work_order.pk %}" class="text-xs text-indigo-600 hover:text-indigo-800">{{ entry.related_work_order.number }}</a>
+            {% endif %}
+            {% if entry.auto_generated %}
+            <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-violet-50 text-violet-600">auto</span>
+            {% endif %}
+        </div>
     </td>
     <td class="px-5 py-3.5">
         {% status_badge entry.type %}
@@ -14,6 +28,9 @@
         <span class="text-sm font-semibold {% if entry.type == 'income' %}text-emerald-600{% else %}text-rose-600{% endif %}">
             {{ entry.amount|currency }}
         </span>
+        {% if entry.bank_account %}
+        <p class="text-[10px] text-slate-400 mt-0.5">{{ entry.bank_account.name }}</p>
+        {% endif %}
     </td>
     <td class="px-5 py-3.5 text-sm text-slate-500 hidden lg:table-cell">
         {{ entry.date|date:"d/m/Y" }}

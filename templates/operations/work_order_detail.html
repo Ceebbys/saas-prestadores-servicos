@@ -24,6 +24,11 @@
                 {% status_badge work_order.priority %}
             </div>
             <p class="mt-1 text-sm text-slate-500">{{ work_order.title }}</p>
+            {% if work_order.status == 'completed' and work_order.completed_at %}
+            <p class="mt-1 text-xs text-emerald-600 font-medium">
+                Concluída em {{ work_order.completed_at|date:"d/m/Y H:i" }}
+            </p>
+            {% endif %}
         </div>
     </div>
     <div class="flex items-center gap-2 flex-wrap">
@@ -86,6 +91,11 @@
             </button>
         </form>
         {% endif %}
+        <a href="{% url 'operations:work_order_pdf' work_order.pk %}" target="_blank"
+           class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50 transition-colors">
+            {% icon "document-text" "w-4 h-4" %}
+            PDF
+        </a>
         <a href="{% url 'operations:work_order_update' work_order.pk %}"
            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50 transition-colors">
             {% icon "pencil" "w-4 h-4" %}
@@ -108,20 +118,43 @@
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <!-- Sidebar Info -->
     <div class="lg:col-span-1 space-y-6">
-        <!-- Info Card -->
+        <!-- Cliente / Lead -->
         <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
-            <h3 class="text-sm font-semibold text-slate-700 mb-4">Informações</h3>
+            <h3 class="text-sm font-semibold text-slate-700 mb-4">Cliente</h3>
             <dl class="space-y-3">
                 <div>
                     <dt class="text-xs text-slate-400">Lead</dt>
                     <dd class="text-sm text-slate-900 mt-0.5">
                         {% if work_order.lead %}
-                        <a href="{% url 'crm:lead_detail' work_order.lead.pk %}" class="text-indigo-600 hover:text-indigo-700">{{ work_order.lead.name }}</a>
+                        <a href="{% url 'crm:lead_detail' work_order.lead.pk %}" class="text-indigo-600 hover:text-indigo-700 font-medium">{{ work_order.lead.name }}</a>
                         {% else %}
                         <span class="text-slate-400">—</span>
                         {% endif %}
                     </dd>
                 </div>
+                {% if work_order.lead.phone %}
+                <div>
+                    <dt class="text-xs text-slate-400">Telefone</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">
+                        <a href="tel:{{ work_order.lead.phone }}" class="text-indigo-600 hover:text-indigo-700">{{ work_order.lead.phone|phone_format }}</a>
+                    </dd>
+                </div>
+                {% endif %}
+                {% if work_order.lead.email %}
+                <div>
+                    <dt class="text-xs text-slate-400">E-mail</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">
+                        <a href="mailto:{{ work_order.lead.email }}" class="text-indigo-600 hover:text-indigo-700">{{ work_order.lead.email }}</a>
+                    </dd>
+                </div>
+                {% endif %}
+            </dl>
+        </div>
+
+        <!-- Vinculações -->
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-4">Vinculações</h3>
+            <dl class="space-y-3">
                 <div>
                     <dt class="text-xs text-slate-400">Proposta</dt>
                     <dd class="text-sm text-slate-900 mt-0.5">
@@ -142,13 +175,39 @@
                         {% endif %}
                     </dd>
                 </div>
+            </dl>
+        </div>
+
+        <!-- Operacional -->
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-4">Operacional</h3>
+            <dl class="space-y-3">
                 <div>
                     <dt class="text-xs text-slate-400">Tipo de Serviço</dt>
-                    <dd class="text-sm text-slate-900 mt-0.5">{{ work_order.service_type.name|default:"—" }}</dd>
+                    <dd class="text-sm text-slate-900 mt-0.5">
+                        {{ work_order.service_type.name|default:"—" }}
+                        {% if work_order.service_type.estimated_duration_hours %}
+                        <span class="text-xs text-slate-400 ml-1">(~{{ work_order.service_type.estimated_duration_hours }}h)</span>
+                        {% endif %}
+                    </dd>
                 </div>
                 <div>
                     <dt class="text-xs text-slate-400">Responsável</dt>
                     <dd class="text-sm text-slate-900 mt-0.5">{{ work_order.assigned_to.get_full_name|default:"—" }}</dd>
+                </div>
+                <div>
+                    <dt class="text-xs text-slate-400">Equipe</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">
+                        {% if work_order.assigned_team %}
+                        <span class="inline-flex items-center gap-1.5">
+                            <span class="w-2.5 h-2.5 rounded-full bg-{{ work_order.assigned_team.color }}-500"></span>
+                            {{ work_order.assigned_team.name }}
+                            <span class="text-xs text-slate-400">({{ work_order.assigned_team.member_count }} membro{{ work_order.assigned_team.member_count|pluralize:"s" }})</span>
+                        </span>
+                        {% else %}
+                        <span class="text-slate-400">—</span>
+                        {% endif %}
+                    </dd>
                 </div>
                 <div>
                     <dt class="text-xs text-slate-400">Data/Hora Agendada</dt>
@@ -172,10 +231,49 @@
         </div>
 
         <!-- Location -->
-        {% if work_order.location %}
+        {% if work_order.location or work_order.maps_url %}
         <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
-            <h3 class="text-sm font-semibold text-slate-700 mb-3">Local</h3>
+            <div class="flex items-center gap-2 mb-3">
+                {% icon "flag" "w-4 h-4 text-slate-400" %}
+                <h3 class="text-sm font-semibold text-slate-700">Local</h3>
+            </div>
+            {% if work_order.location %}
             <p class="text-sm text-slate-600 whitespace-pre-wrap">{{ work_order.location }}</p>
+            {% endif %}
+            {% if work_order.maps_url %}
+            <a href="{{ work_order.maps_url }}" target="_blank" rel="noopener noreferrer"
+               class="inline-flex items-center gap-2 mt-3 px-3 py-1.5 text-sm text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors">
+                {% icon "flag" "w-4 h-4" %}
+                Abrir no Google Maps
+            </a>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Cloud Storage Links -->
+        {% if work_order.cloud_storage_links %}
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">Arquivos e Links</h3>
+            <ul class="space-y-2.5">
+                {% for link in work_order.cloud_storage_links %}
+                <li>
+                    <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer"
+                       class="group flex items-start gap-3 p-2 -mx-2 rounded-lg hover:bg-slate-50 transition-colors">
+                        <span class="flex-shrink-0 mt-0.5">
+                            {% icon "document" "w-4 h-4 text-indigo-500" %}
+                        </span>
+                        <span class="min-w-0">
+                            <span class="block text-sm font-medium text-indigo-600 group-hover:text-indigo-800 truncate">
+                                {{ link.label|default:link.url }}
+                            </span>
+                            <span class="block text-xs text-slate-400">
+                                {{ link.url|cloud_provider }}
+                            </span>
+                        </span>
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
         </div>
         {% endif %}
 

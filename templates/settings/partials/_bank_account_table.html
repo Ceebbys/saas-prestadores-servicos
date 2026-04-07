@@ -1,0 +1,75 @@
+{% load ui_tags %}
+
+{% if object_list %}
+<div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 overflow-hidden">
+    <table class="min-w-full divide-y divide-slate-200">
+        <thead class="bg-slate-50">
+            <tr>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Conta</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Banco</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Tipo</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Chave Pix</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Ações</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+            {% for account in object_list %}
+            <tr class="hover:bg-slate-50 transition-colors">
+                <td class="px-5 py-3.5">
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm font-medium text-slate-900">{{ account.name }}</span>
+                        {% if account.is_default %}
+                        <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-700">Padrão</span>
+                        {% endif %}
+                    </div>
+                    {% if account.agency or account.account_number %}
+                    <p class="text-xs text-slate-400 mt-0.5">Ag: {{ account.agency|default:"—" }} / Cc: {{ account.account_number|default:"—" }}</p>
+                    {% endif %}
+                </td>
+                <td class="px-5 py-3.5 text-sm text-slate-600">
+                    {{ account.bank_name }}
+                    {% if account.bank_code %}
+                    <span class="text-xs text-slate-400">({{ account.bank_code }})</span>
+                    {% endif %}
+                </td>
+                <td class="px-5 py-3.5 text-sm text-slate-600 hidden md:table-cell">
+                    {{ account.get_person_type_display }} · {{ account.get_account_type_display }}
+                </td>
+                <td class="px-5 py-3.5 text-sm text-slate-500 hidden lg:table-cell">
+                    {{ account.pix_key|default:"—"|truncatechars:30 }}
+                </td>
+                <td class="px-5 py-3.5">
+                    {% if account.is_active %}
+                    <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800">Ativa</span>
+                    {% else %}
+                    <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-600">Inativa</span>
+                    {% endif %}
+                </td>
+                <td class="px-5 py-3.5 text-right">
+                    <div class="inline-flex items-center gap-1">
+                        <a href="{% url 'settings_app:bank_account_update' account.pk %}"
+                           class="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors inline-flex"
+                           title="Editar">
+                            {% icon "pencil" "w-4 h-4" %}
+                        </a>
+                        <form method="post" action="{% url 'settings_app:bank_account_delete' account.pk %}"
+                              onsubmit="return confirm('Excluir esta conta bancária?')" class="inline-flex">
+                            {% csrf_token %}
+                            <button type="submit" class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors" title="Excluir">
+                                {% icon "trash" "w-4 h-4" %}
+                            </button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% include "components/_pagination.html" %}
+
+{% else %}
+{% include "components/_empty_state.html" with icon="building-office" title="Nenhuma conta bancária" description="Adicione contas bancárias para vincular aos seus lançamentos financeiros." %}
+{% endif %}

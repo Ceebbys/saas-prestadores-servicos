@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 from django.conf import settings
 from django.db import models
 
@@ -61,6 +63,84 @@ class ChecklistItem(TimestampedModel):
 
     def __str__(self):
         return self.description
+
+
+class Team(TenantOwnedModel):
+    """Equipe de trabalho da empresa."""
+
+    name = models.CharField("Nome", max_length=100)
+    description = models.TextField("Descrição", blank=True)
+    leader = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="led_teams",
+        verbose_name="Líder",
+    )
+    members = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        through="TeamMember",
+        related_name="teams",
+        blank=True,
+        verbose_name="Membros",
+    )
+    color = models.CharField(
+        "Cor",
+        max_length=20,
+        default="indigo",
+        help_text="Cor para exibição no calendário.",
+    )
+    is_active = models.BooleanField("Ativa", default=True)
+
+    class Meta:
+        verbose_name = "Equipe"
+        verbose_name_plural = "Equipes"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def member_count(self):
+        return self.team_members.filter(is_active=True).count()
+
+
+class TeamMember(TimestampedModel):
+    """Associação de um membro a uma equipe."""
+
+    class Role(models.TextChoices):
+        MEMBER = "member", "Membro"
+        LEADER = "leader", "Líder"
+
+    team = models.ForeignKey(
+        Team,
+        on_delete=models.CASCADE,
+        related_name="team_members",
+        verbose_name="Equipe",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="team_memberships",
+        verbose_name="Usuário",
+    )
+    role = models.CharField(
+        "Papel",
+        max_length=10,
+        choices=Role.choices,
+        default=Role.MEMBER,
+    )
+    is_active = models.BooleanField("Ativo", default=True)
+
+    class Meta:
+        verbose_name = "Membro da Equipe"
+        verbose_name_plural = "Membros da Equipe"
+        unique_together = ("team", "user")
+        ordering = ["-role", "user__full_name"]
+
+    def __str__(self):
+        return f"{self.user.full_name} ({self.team.name})"
 
 
 class WorkOrder(TenantOwnedModel):
@@ -137,7 +217,24 @@ class WorkOrder(TenantOwnedModel):
         related_name="assigned_work_orders",
         verbose_name="Responsável",
     )
+    assigned_team = models.ForeignKey(
+        Team,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="work_orders",
+        verbose_name="Equipe",
+    )
     location = models.TextField("Local", blank=True)
+    google_maps_url = models.URLField(
+        "Link Google Maps", max_length=500, blank=True
+    )
+    cloud_storage_links = models.JSONField(
+        "Links de Arquivos",
+        default=list,
+        blank=True,
+        help_text='Lista de links (Google Drive, Dropbox, etc.)',
+    )
     notes = models.TextField("Observações", blank=True)
 
     class Meta:
@@ -147,6 +244,18 @@ class WorkOrder(TenantOwnedModel):
 
     def __str__(self):
         return f"{self.number} - {self.title}"
+
+    @property
+    def google_maps_auto_url(self):
+        """Gera URL do Google Maps a partir do endereço quando não há link manual."""
+        if self.location and self.location.strip():
+            return f"https://www.google.com/maps/search/?api=1&query={quote(self.location.strip())}"
+        return ""
+
+    @property
+    def maps_url(self):
+        """Retorna link Maps manual ou auto-gerado."""
+        return self.google_maps_url or self.google_maps_auto_url
 
     def save(self, *args, **kwargs):
         if not self.number:

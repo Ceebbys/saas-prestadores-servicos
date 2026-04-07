@@ -21,7 +21,7 @@ from django.views.generic import (
 from apps.core.mixins import EmpresaMixin, HtmxResponseMixin
 
 from .forms import ServiceTypeForm, WorkOrderForm
-from .models import ServiceType, WorkOrder, WorkOrderChecklist
+from .models import ServiceType, Team, WorkOrder, WorkOrderChecklist
 
 
 # ---------------------------------------------------------------------------
@@ -38,12 +38,13 @@ class WorkOrderListView(EmpresaMixin, HtmxResponseMixin, ListView):
 
     def get_queryset(self):
         qs = super().get_queryset().select_related(
-            "lead", "service_type", "assigned_to"
+            "lead", "service_type", "assigned_to", "assigned_team"
         )
         q = self.request.GET.get("q", "").strip()
         status = self.request.GET.get("status", "").strip()
         priority = self.request.GET.get("priority", "").strip()
         assigned_to = self.request.GET.get("assigned_to", "").strip()
+        team = self.request.GET.get("team", "").strip()
 
         if q:
             qs = qs.filter(Q(title__icontains=q) | Q(number__icontains=q))
@@ -53,6 +54,8 @@ class WorkOrderListView(EmpresaMixin, HtmxResponseMixin, ListView):
             qs = qs.filter(priority=priority)
         if assigned_to:
             qs = qs.filter(assigned_to_id=assigned_to)
+        if team:
+            qs = qs.filter(assigned_team_id=team)
 
         return qs
 
@@ -60,9 +63,13 @@ class WorkOrderListView(EmpresaMixin, HtmxResponseMixin, ListView):
         context = super().get_context_data(**kwargs)
         context["status_choices"] = WorkOrder.Status.choices
         context["priority_choices"] = WorkOrder.Priority.choices
+        context["teams"] = Team.objects.filter(
+            empresa=self.request.empresa, is_active=True
+        )
         context["current_status"] = self.request.GET.get("status", "")
         context["current_priority"] = self.request.GET.get("priority", "")
         context["current_assigned_to"] = self.request.GET.get("assigned_to", "")
+        context["current_team"] = self.request.GET.get("team", "")
         context["current_q"] = self.request.GET.get("q", "")
         return context
 
@@ -76,7 +83,7 @@ class WorkOrderDetailView(EmpresaMixin, DetailView):
         return (
             super()
             .get_queryset()
-            .select_related("lead", "proposal", "contract", "service_type", "assigned_to")
+            .select_related("lead", "proposal", "contract", "service_type", "assigned_to", "assigned_team")
             .prefetch_related("checklist_items")
         )
 
@@ -246,6 +253,55 @@ class WorkOrderChecklistToggleView(EmpresaMixin, View):
 
 
 # ---------------------------------------------------------------------------
+# PDF Export
+# ---------------------------------------------------------------------------
+
+
+class WorkOrderPDFView(EmpresaMixin, DetailView):
+    """Gera PDF profissional da Ordem de Serviço via WeasyPrint."""
+
+    model = WorkOrder
+
+    def get_queryset(self):
+        return (
+            super()
+            .get_queryset()
+            .select_related("lead", "proposal", "contract", "service_type", "assigned_to")
+            .prefetch_related("checklist_items")
+        )
+
+    def get(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        wo = self.object
+        items = list(wo.checklist_items.all())
+        total = len(items)
+        completed = sum(1 for i in items if i.is_completed)
+
+        html_string = render_to_string(
+            "operations/work_order_pdf.html",
+            {
+                "work_order": wo,
+                "empresa": request.empresa,
+                "checklist_items": items,
+                "checklist_total": total,
+                "checklist_completed": completed,
+                "now": timezone.now(),
+            },
+            request=request,
+        )
+
+        import weasyprint
+
+        pdf = weasyprint.HTML(string=html_string).write_pdf()
+
+        response = HttpResponse(pdf, content_type="application/pdf")
+        response["Content-Disposition"] = (
+            f'inline; filename="OS-{wo.number}.pdf"'
+        )
+        return response
+
+
+# ---------------------------------------------------------------------------
 # Calendar View
 # ---------------------------------------------------------------------------
 
@@ -286,13 +342,34 @@ class CalendarView(EmpresaMixin, HtmxResponseMixin, TemplateView):
             empresa=self.request.empresa,
             scheduled_date__year=year,
             scheduled_date__month=month,
-        ).select_related("assigned_to", "service_type")
+        ).select_related("assigned_to", "assigned_team", "service_type")
+
+        # Apply filters
+        filter_team = self.request.GET.get("team", "").strip()
+        filter_assigned = self.request.GET.get("assigned_to", "").strip()
+        if filter_team:
+            work_orders = work_orders.filter(assigned_team_id=filter_team)
+        if filter_assigned:
+            work_orders = work_orders.filter(assigned_to_id=filter_assigned)
 
         # Group by day
         wo_by_day = {}
         for wo in work_orders:
             day = wo.scheduled_date.day
             wo_by_day.setdefault(day, []).append(wo)
+
+        # Teams and members for filters
+        teams = Team.objects.filter(
+            empresa=self.request.empresa, is_active=True
+        )
+        from apps.accounts.models import Membership
+
+        member_ids = Membership.objects.filter(
+            empresa=self.request.empresa, is_active=True
+        ).values_list("user_id", flat=True)
+        from apps.accounts.models import User
+
+        members = User.objects.filter(id__in=member_ids)
 
         # Previous / next month
         if month == 1:
@@ -317,6 +394,10 @@ class CalendarView(EmpresaMixin, HtmxResponseMixin, TemplateView):
                 "prev_year": prev_year,
                 "next_month": next_month,
                 "next_year": next_year,
+                "teams": teams,
+                "members": members,
+                "current_team": filter_team,
+                "current_assigned": filter_assigned,
             }
         )
         return context

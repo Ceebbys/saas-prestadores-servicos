@@ -26,22 +26,64 @@
 {% endblock %}
 
 {% block content %}
-<!-- Month Navigation -->
+<!-- Month Navigation + Filters -->
 <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 mb-6">
     <div class="flex items-center justify-between px-5 py-4">
-        <button hx-get="{% url 'operations:calendar' %}?year={{ prev_year }}&month={{ prev_month }}"
+        <button hx-get="{% url 'operations:calendar' %}?year={{ prev_year }}&month={{ prev_month }}&team={{ current_team }}&assigned_to={{ current_assigned }}"
                 hx-target="#calendar-container"
+                hx-include="[name='cal_team'],[name='cal_assigned']"
                 hx-indicator="#calendar-loading"
                 class="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
             {% icon "chevron-left" "w-5 h-5" %}
         </button>
         <h2 class="text-lg font-semibold text-slate-900">{{ month_name }} {{ year }}</h2>
-        <button hx-get="{% url 'operations:calendar' %}?year={{ next_year }}&month={{ next_month }}"
+        <button hx-get="{% url 'operations:calendar' %}?year={{ next_year }}&month={{ next_month }}&team={{ current_team }}&assigned_to={{ current_assigned }}"
                 hx-target="#calendar-container"
+                hx-include="[name='cal_team'],[name='cal_assigned']"
                 hx-indicator="#calendar-loading"
                 class="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
             {% icon "chevron-right" "w-5 h-5" %}
         </button>
+    </div>
+    <!-- Filter Bar -->
+    <div class="px-5 pb-4 flex flex-col sm:flex-row gap-3 border-t border-slate-100 pt-3">
+        {% if teams %}
+        <select name="team"
+                hx-get="{% url 'operations:calendar' %}?year={{ year }}&month={{ month }}"
+                hx-trigger="change"
+                hx-target="#calendar-container"
+                hx-include="[name='assigned_to']"
+                hx-indicator="#calendar-loading"
+                class="rounded-lg border-0 py-2 pl-3 pr-8 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+            <option value="">Todas as equipes</option>
+            {% for team in teams %}
+            <option value="{{ team.pk }}" {% if current_team == team.pk|stringformat:"d" %}selected{% endif %}>
+                {{ team.name }}
+            </option>
+            {% endfor %}
+        </select>
+        {% endif %}
+        <select name="assigned_to"
+                hx-get="{% url 'operations:calendar' %}?year={{ year }}&month={{ month }}"
+                hx-trigger="change"
+                hx-target="#calendar-container"
+                hx-include="[name='team']"
+                hx-indicator="#calendar-loading"
+                class="rounded-lg border-0 py-2 pl-3 pr-8 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+            <option value="">Todos os responsáveis</option>
+            {% for member in members %}
+            <option value="{{ member.pk }}" {% if current_assigned == member.pk|stringformat:"d" %}selected{% endif %}>
+                {{ member.full_name }}
+            </option>
+            {% endfor %}
+        </select>
+        {% if current_team or current_assigned %}
+        <a href="{% url 'operations:calendar' %}?year={{ year }}&month={{ month }}"
+           class="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-slate-600 hover:text-slate-800 transition-colors">
+            {% icon "x-mark" "w-4 h-4" %}
+            Limpar filtros
+        </a>
+        {% endif %}
     </div>
 </div>
 

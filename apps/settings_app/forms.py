@@ -2,7 +2,7 @@ from django import forms
 
 from apps.core.forms import TailwindFormMixin
 from apps.crm.models import PipelineStage
-from apps.proposals.models import ProposalTemplate
+from apps.proposals.models import Proposal, ProposalTemplate
 from apps.contracts.models import ContractTemplate
 
 
@@ -25,13 +25,32 @@ class PipelineStageForm(TailwindFormMixin, forms.ModelForm):
 
 
 class ProposalTemplateForm(TailwindFormMixin, forms.ModelForm):
+    default_payment_method = forms.ChoiceField(
+        label="Forma de pagamento padrão",
+        required=False,
+        choices=[("", "---------")] + list(Proposal.PaymentMethod.choices),
+    )
+
     class Meta:
         model = ProposalTemplate
-        fields = ["name", "content", "header_content", "footer_content", "is_default"]
+        fields = [
+            "name",
+            "is_default",
+            "introduction",
+            "terms",
+            "content",
+            "header_content",
+            "footer_content",
+            "default_payment_method",
+            "default_is_installment",
+            "default_installment_count",
+        ]
         widgets = {
-            "content": forms.Textarea(attrs={"rows": 8}),
-            "header_content": forms.Textarea(attrs={"rows": 4}),
-            "footer_content": forms.Textarea(attrs={"rows": 4}),
+            "introduction": forms.Textarea(attrs={"rows": 4}),
+            "terms": forms.Textarea(attrs={"rows": 5}),
+            "content": forms.Textarea(attrs={"rows": 6}),
+            "header_content": forms.Textarea(attrs={"rows": 3}),
+            "footer_content": forms.Textarea(attrs={"rows": 3}),
         }
 
 

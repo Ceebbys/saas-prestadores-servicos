@@ -1,16 +1,26 @@
+import json
+
 from django.contrib import messages
 from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.template.loader import render_to_string
-from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
 from apps.core.mixins import EmpresaMixin, HtmxResponseMixin
-from apps.proposals.forms import ProposalForm, ProposalItemForm
-from apps.proposals.models import Proposal, ProposalItem
+from apps.proposals.forms import (
+    ProposalForm,
+    ProposalItemForm,
+    ProposalTemplateItemForm,
+)
+from apps.proposals.models import (
+    Proposal,
+    ProposalItem,
+    ProposalTemplate,
+    ProposalTemplateItem,
+)
 
 
 class ProposalListView(EmpresaMixin, HtmxResponseMixin, ListView):
@@ -54,6 +64,23 @@ class ProposalDetailView(EmpresaMixin, DetailView):
         return context
 
 
+def _serialize_templates_for_form(empresa):
+    """Serializa templates da empresa para uso no form (Alpine.js)."""
+    data = {}
+    for tpl in ProposalTemplate.objects.filter(empresa=empresa).prefetch_related(
+        "default_items"
+    ):
+        data[str(tpl.pk)] = {
+            "introduction": tpl.introduction or "",
+            "terms": tpl.terms or "",
+            "payment_method": tpl.default_payment_method or "",
+            "is_installment": bool(tpl.default_is_installment),
+            "installment_count": tpl.default_installment_count or "",
+            "has_items": tpl.default_items.exists(),
+        }
+    return json.dumps(data)
+
+
 class ProposalCreateView(EmpresaMixin, CreateView):
     model = Proposal
     form_class = ProposalForm
@@ -80,6 +107,13 @@ class ProposalCreateView(EmpresaMixin, CreateView):
                 initial["opportunity"] = opportunity_id
         return initial
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["templates_data"] = _serialize_templates_for_form(
+            self.request.empresa
+        )
+        return context
+
     def form_valid(self, form):
         response = super().form_valid(form)
         messages.success(self.request, "Proposta criada com sucesso.")
@@ -98,6 +132,13 @@ class ProposalUpdateView(EmpresaMixin, UpdateView):
         kwargs = super().get_form_kwargs()
         kwargs["empresa"] = self.request.empresa
         return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["templates_data"] = _serialize_templates_for_form(
+            self.request.empresa
+        )
+        return context
 
     def form_valid(self, form):
         response = super().form_valid(form)
@@ -235,10 +276,158 @@ class ProposalStatusView(EmpresaMixin, View):
                 proposal.rejected_at = now
             proposal.save()
 
+            # Integração com financeiro: gera lançamentos ao aceitar
+            if new_status == Proposal.Status.ACCEPTED:
+                from apps.finance.services import (
+                    generate_entries_from_proposal,
+                )
+
+                try:
+                    entries = generate_entries_from_proposal(proposal)
+                    if entries:
+                        already = any(
+                            e.created_at < now for e in entries
+                        )
+                        if already:
+                            messages.info(
+                                request,
+                                "Lançamentos financeiros já existentes "
+                                "foram mantidos.",
+                            )
+                        else:
+                            messages.success(
+                                request,
+                                f"{len(entries)} lançamento(s) financeiro(s) "
+                                f"criado(s) a partir da proposta.",
+                            )
+                except Exception as exc:  # noqa: BLE001
+                    messages.warning(
+                        request,
+                        f"Proposta aceita, mas houve erro ao gerar "
+                        f"financeiro: {exc}",
+                    )
+
         if request.htmx:
             html = render_to_string(
                 "proposals/partials/_proposal_status.html",
                 {"proposal": proposal},
+                request=request,
+            )
+            return HttpResponse(html)
+        return redirect(proposal.get_absolute_url())
+
+
+# ---------------------------------------------------------------------------
+# ProposalTemplate — endpoints auxiliares (HTMX)
+# CRUD completo vive em apps/settings_app para manter ponto único de
+# configuração. Aqui ficam apenas os endpoints que operam sobre itens
+# padrão e a aplicação desses itens em propostas.
+# ---------------------------------------------------------------------------
+
+
+class TemplateItemAddView(EmpresaMixin, View):
+    """Adiciona um item padrão ao template via HTMX."""
+
+    def post(self, request, template_pk):
+        template = get_object_or_404(
+            ProposalTemplate, pk=template_pk, empresa=request.empresa
+        )
+        form = ProposalTemplateItemForm(request.POST)
+        if form.is_valid():
+            item = form.save(commit=False)
+            item.template = template
+            max_order = (
+                template.default_items.order_by("-order")
+                .values_list("order", flat=True)
+                .first()
+            )
+            item.order = (max_order or 0) + 1
+            item.save()
+
+        html = render_to_string(
+            "proposals/partials/_template_items.html",
+            {
+                "template": template,
+                "template_items": template.default_items.all(),
+                "item_form": ProposalTemplateItemForm(),
+            },
+            request=request,
+        )
+        return HttpResponse(html)
+
+
+class TemplateItemDeleteView(EmpresaMixin, View):
+    """Remove um item padrão do template via HTMX."""
+
+    def post(self, request, template_pk, item_pk):
+        template = get_object_or_404(
+            ProposalTemplate, pk=template_pk, empresa=request.empresa
+        )
+        item = get_object_or_404(
+            ProposalTemplateItem, pk=item_pk, template=template
+        )
+        item.delete()
+
+        html = render_to_string(
+            "proposals/partials/_template_items.html",
+            {
+                "template": template,
+                "template_items": template.default_items.all(),
+                "item_form": ProposalTemplateItemForm(),
+            },
+            request=request,
+        )
+        return HttpResponse(html)
+
+
+class ProposalApplyTemplateItemsView(EmpresaMixin, View):
+    """Carrega itens padrão do template vinculado em uma proposta existente."""
+
+    def post(self, request, pk):
+        proposal = get_object_or_404(
+            Proposal, pk=pk, empresa=request.empresa
+        )
+        if not proposal.template_id:
+            messages.warning(request, "Proposta não tem template vinculado.")
+            return redirect(proposal.get_absolute_url())
+
+        default_items = proposal.template.default_items.all()
+        if not default_items.exists():
+            messages.info(request, "Template não possui itens padrão.")
+            return redirect(proposal.get_absolute_url())
+
+        # Parte da ordem atual para não colidir com itens existentes
+        max_order = (
+            proposal.items.order_by("-order")
+            .values_list("order", flat=True)
+            .first()
+            or 0
+        )
+        created = 0
+        for idx, tpl_item in enumerate(default_items, start=1):
+            ProposalItem.objects.create(
+                proposal=proposal,
+                description=tpl_item.description,
+                details=tpl_item.details,
+                quantity=tpl_item.quantity,
+                unit=tpl_item.unit,
+                unit_price=tpl_item.unit_price,
+                order=max_order + idx,
+            )
+            created += 1
+        proposal.recalculate_totals()
+        messages.success(
+            request, f"{created} item(ns) carregado(s) do template."
+        )
+
+        if request.htmx:
+            html = render_to_string(
+                "proposals/partials/_proposal_items.html",
+                {
+                    "proposal": proposal,
+                    "items": proposal.items.all(),
+                    "item_form": ProposalItemForm(),
+                },
                 request=request,
             )
             return HttpResponse(html)

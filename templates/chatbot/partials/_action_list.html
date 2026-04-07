@@ -1,0 +1,69 @@
+{% load ui_tags %}
+
+<div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+        <div>
+            <h3 class="text-sm font-semibold text-slate-700">Ações</h3>
+            <p class="text-xs text-slate-400 mt-0.5">Ações executadas automaticamente durante o fluxo</p>
+        </div>
+    </div>
+
+    {% if actions %}
+    <div class="divide-y divide-slate-100">
+        {% for action in actions %}
+        <div class="flex items-center justify-between px-6 py-3">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
+                    {% icon "bell" "w-4 h-4 text-amber-700" %}
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-slate-900">{{ action.get_action_type_display }}</p>
+                    <p class="text-xs text-slate-400">Gatilho: {{ action.get_trigger_display }}</p>
+                </div>
+            </div>
+            <form method="post" action="{% url 'chatbot:action_delete' form.instance.pk action.pk %}"
+                  onsubmit="return confirm('Remover esta ação?')" class="inline-flex">
+                {% csrf_token %}
+                <button type="submit"
+                        class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                        title="Remover">
+                    {% icon "x-mark" "w-4 h-4" %}
+                </button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="px-6 py-6 text-center text-sm text-slate-400">Nenhuma ação configurada</div>
+    {% endif %}
+
+    <!-- Add action form -->
+    <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-xl">
+        <form method="post" action="{% url 'chatbot:action_add' form.instance.pk %}" class="flex items-end gap-3 flex-wrap">
+            {% csrf_token %}
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Gatilho</label>
+                <select name="trigger"
+                        class="rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    <option value="on_complete">Ao completar</option>
+                    <option value="on_timeout">Timeout</option>
+                    <option value="on_keyword">Palavra-chave</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Tipo de ação</label>
+                <select name="action_type"
+                        class="rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    <option value="create_lead">Criar lead</option>
+                    <option value="notify_user">Notificar usuário</option>
+                    <option value="send_message">Enviar mensagem</option>
+                </select>
+            </div>
+            <button type="submit"
+                    class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm whitespace-nowrap">
+                {% icon "plus" "w-4 h-4" %}
+                Adicionar
+            </button>
+        </form>
+    </div>
+</div>

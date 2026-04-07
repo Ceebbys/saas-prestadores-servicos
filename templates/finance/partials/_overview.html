@@ -12,6 +12,30 @@
     {% include "components/_stat_card.html" with title="Pendentes" value=pending_count icon_name="clock" color="amber" %}
 </div>
 
+<!-- Bank Accounts Quick View -->
+{% if bank_accounts %}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+    {% for account in bank_accounts %}
+    <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-4">
+        <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center flex-shrink-0">
+                {% icon "building-office" "w-4 h-4 text-violet-600" %}
+            </div>
+            <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                    <p class="text-sm font-semibold text-slate-900 truncate">{{ account.name }}</p>
+                    {% if account.is_default %}
+                    <span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-indigo-100 text-indigo-700 flex-shrink-0">Padrão</span>
+                    {% endif %}
+                </div>
+                <p class="text-xs text-slate-400">{{ account.bank_name }}{% if account.pix_key %} · Pix ativo{% endif %}</p>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
 <!-- Overdue Alert -->
 {% if overdue_count > 0 %}
 <div class="mb-6 rounded-xl bg-rose-50 ring-1 ring-rose-200/60 p-4">

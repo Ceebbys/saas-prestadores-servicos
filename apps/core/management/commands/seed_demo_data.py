@@ -13,6 +13,7 @@ import os
 import random
 from datetime import time, timedelta
 from decimal import Decimal
+from urllib.parse import quote
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
@@ -40,8 +41,8 @@ LAST_NAMES = [
     "Nunes", "Vieira", "Cardoso", "Mendes", "Rocha", "Dias",
 ]
 
-LEAD_SOURCES = ["site", "indicacao", "google", "instagram", "telefone", "outro"]
-LEAD_SOURCE_WEIGHTS = [25, 25, 20, 15, 10, 5]
+LEAD_SOURCES = ["site", "indicacao", "google", "instagram", "whatsapp", "telefone", "outro"]
+LEAD_SOURCE_WEIGHTS = [20, 20, 15, 15, 15, 10, 5]
 
 EMAIL_DOMAINS = ["gmail.com", "outlook.com", "hotmail.com", "yahoo.com.br", "uol.com.br"]
 
@@ -98,6 +99,7 @@ COMPANIES = [
             ("Entrega Técnica", 3, "#F97316", False, False),
             ("Fechado/Ganho", 4, "#10B981", True, False),
             ("Fechado/Perdido", 5, "#EF4444", False, True),
+            ("Pós-Venda", 6, "#06B6D4", False, False),
         ],
         "service_types": [
             ("Levantamento Planialtimétrico", "Levantamento topográfico completo com estação total e GNSS", 24.0),
@@ -171,6 +173,7 @@ COMPANIES = [
             ("Projeto Executivo", 4, "#F97316", False, False),
             ("Fechado/Ganho", 5, "#10B981", True, False),
             ("Fechado/Perdido", 6, "#EF4444", False, True),
+            ("Pós-Venda", 7, "#06B6D4", False, False),
         ],
         "service_types": [
             ("Projeto Residencial", "Projeto arquitetônico completo para residências", 120.0),
@@ -238,6 +241,7 @@ COMPANIES = [
             ("Finalização", 4, "#14B8A6", False, False),
             ("Fechado/Ganho", 5, "#10B981", True, False),
             ("Fechado/Perdido", 6, "#EF4444", False, True),
+            ("Pós-Venda", 7, "#06B6D4", False, False),
         ],
         "service_types": [
             ("Manutenção Preventiva", "Inspeção e manutenção preventiva de equipamentos", 4.0),
@@ -305,6 +309,7 @@ COMPANIES = [
             ("Entrega", 4, "#14B8A6", False, False),
             ("Fechado/Ganho", 5, "#10B981", True, False),
             ("Fechado/Perdido", 6, "#EF4444", False, True),
+            ("Pós-Venda", 7, "#06B6D4", False, False),
         ],
         "service_types": [
             ("Diagnóstico Organizacional", "Análise completa de processos e gestão", 40.0),
@@ -361,6 +366,7 @@ COMPANIES = [
             ("Entrega", 5, "#06B6D4", False, False),
             ("Fechado/Ganho", 6, "#10B981", True, False),
             ("Fechado/Perdido", 7, "#EF4444", False, True),
+            ("Pós-Venda", 8, "#06B6D4", False, False),
         ],
         "service_types": [
             ("Instalação Elétrica Residencial", "Instalação completa de rede elétrica residencial", 16.0),
@@ -559,6 +565,9 @@ class Command(BaseCommand):
         self._create_contract_templates(empresa, cdef)
         checklist_templates = self._create_checklist_templates(empresa, cdef)
         categories = self._create_categories(empresa, cdef)
+        bank_accounts = self._create_bank_accounts(empresa, cdef)
+        teams = self._create_teams(empresa, users, cdef)
+        self._create_chatbot_flows(empresa, cdef)
 
         leads = self._create_leads(empresa, users, cdef, vol["leads"])
         opportunities = self._create_opportunities(empresa, leads, pipeline, stages, users)
@@ -566,10 +575,11 @@ class Command(BaseCommand):
         contracts = self._create_contracts(empresa, leads, proposals, cdef, vol["contracts"])
         work_orders = self._create_work_orders(
             empresa, leads, proposals, contracts, service_types,
-            checklist_templates, users, cdef, vol["work_orders"]
+            checklist_templates, users, teams, cdef, vol["work_orders"]
         )
         self._create_financial_entries(
-            empresa, proposals, contracts, work_orders, categories, cdef, vol["entries"]
+            empresa, proposals, contracts, work_orders, categories,
+            bank_accounts, cdef, vol["entries"]
         )
 
         self.counters[name] = vol
@@ -653,18 +663,28 @@ class Command(BaseCommand):
         return types
 
     def _create_proposal_templates(self, empresa, cdef):
-        from apps.proposals.models import ProposalTemplate
+        from apps.proposals.models import ProposalTemplate, ProposalTemplateItem
 
         segment = cdef["name"].split()[-1]
-        ProposalTemplate.objects.create(
+        default_tpl = ProposalTemplate.objects.create(
             empresa=empresa,
             name=f"Proposta Padrão - {segment}",
-            content=(
+            introduction=(
                 f"Prezado(a) cliente,\n\n"
-                f"Temos o prazer de apresentar nossa proposta para os serviços de {segment.lower()}.\n\n"
-                f"Os serviços descritos abaixo serão executados conforme especificações técnicas "
-                f"e prazos acordados.\n\n"
-                f"Ficamos à disposição para esclarecimentos."
+                f"Temos o prazer de apresentar nossa proposta para os serviços "
+                f"de {segment.lower()}."
+            ),
+            terms=(
+                "Validade: 30 dias.\n"
+                "Pagamento: conforme condições acordadas.\n"
+                "Execução: conforme cronograma definido no aceite."
+            ),
+            default_payment_method="pix",
+            default_is_installment=False,
+            default_installment_count=None,
+            content=(
+                f"Os serviços descritos abaixo serão executados conforme "
+                f"especificações técnicas e prazos acordados."
             ),
             header_content=f"{cdef['name']} - Proposta Comercial",
             footer_content=(
@@ -675,20 +695,51 @@ class Command(BaseCommand):
             ),
             is_default=True,
         )
-        ProposalTemplate.objects.create(
+        # Itens padrão: pega até 3 dos proposal_items do segmento
+        for order, (desc, unit, min_p, max_p) in enumerate(cdef["proposal_items"][:3]):
+            ProposalTemplateItem.objects.create(
+                template=default_tpl,
+                description=desc,
+                quantity=Decimal("1"),
+                unit=unit,
+                unit_price=self._random_value(min_p, max_p),
+                order=order,
+            )
+
+        detailed_tpl = ProposalTemplate.objects.create(
             empresa=empresa,
-            name=f"Proposta Detalhada - {segment}",
-            content=(
+            name=f"Proposta Detalhada Parcelada - {segment}",
+            introduction=(
                 f"PROPOSTA TÉCNICA E COMERCIAL\n\n"
-                f"1. OBJETO\nPrestação de serviços de {segment.lower()} conforme escopo detalhado.\n\n"
-                f"2. ESCOPO\nOs serviços compreendem as atividades listadas nos itens abaixo.\n\n"
-                f"3. PRAZO\nO prazo de execução será definido conforme complexidade.\n\n"
-                f"4. CONDIÇÕES DE PAGAMENTO\nConforme valores e condições descritas."
+                f"Objeto: Prestação de serviços de {segment.lower()} "
+                f"conforme escopo detalhado."
+            ),
+            terms=(
+                "1. PRAZO: Conforme cronograma acordado.\n"
+                "2. PAGAMENTO: Parcelado em até 3x no cartão ou boleto.\n"
+                "3. GARANTIA: 90 dias sobre os serviços executados."
+            ),
+            default_payment_method="boleto",
+            default_is_installment=True,
+            default_installment_count=3,
+            content=(
+                f"1. OBJETO\nPrestação de serviços de {segment.lower()}.\n\n"
+                f"2. ESCOPO\nConforme itens listados.\n\n"
+                f"3. CONDIÇÕES\nConforme termos."
             ),
             header_content=f"{cdef['name']} - Proposta Técnica",
             footer_content=f"Documento gerado por {cdef['name']}",
             is_default=False,
         )
+        for order, (desc, unit, min_p, max_p) in enumerate(cdef["proposal_items"][:2]):
+            ProposalTemplateItem.objects.create(
+                template=detailed_tpl,
+                description=desc,
+                quantity=Decimal("1"),
+                unit=unit,
+                unit_price=self._random_value(min_p, max_p),
+                order=order,
+            )
 
     def _create_contract_templates(self, empresa, cdef):
         from apps.contracts.models import ContractTemplate
@@ -750,6 +801,204 @@ class Command(BaseCommand):
             )
             cats[cat_type].append(cat)
         return cats
+
+    def _create_bank_accounts(self, empresa, cdef):
+        from apps.finance.models import BankAccount
+
+        segment = cdef["name"].split()[-1]
+        banks = [
+            ("Itaú", "341"), ("Bradesco", "237"), ("Banco do Brasil", "001"),
+            ("Santander", "033"), ("Caixa", "104"), ("Nubank", "260"),
+            ("Inter", "077"), ("Sicoob", "756"),
+        ]
+        bank1 = self.rng.choice(banks)
+        bank2 = self.rng.choice([b for b in banks if b[0] != bank1[0]])
+
+        pj = BankAccount.objects.create(
+            empresa=empresa,
+            name=f"Conta PJ {bank1[0]}",
+            bank_name=bank1[0],
+            bank_code=bank1[1],
+            agency=f"{self.rng.randint(1, 9999):04d}",
+            account_number=f"{self.rng.randint(10000, 999999):06d}-{self.rng.randint(0,9)}",
+            account_type=BankAccount.AccountType.CHECKING,
+            person_type=BankAccount.PersonType.PJ,
+            holder_name=cdef["name"],
+            holder_document=cdef["document"],
+            pix_key=cdef["document"].replace(".", "").replace("/", "").replace("-", ""),
+            is_default=True,
+            is_active=True,
+        )
+
+        pf = BankAccount.objects.create(
+            empresa=empresa,
+            name=f"Conta PF {bank2[0]}",
+            bank_name=bank2[0],
+            bank_code=bank2[1],
+            agency=f"{self.rng.randint(1, 9999):04d}",
+            account_number=f"{self.rng.randint(10000, 999999):06d}-{self.rng.randint(0,9)}",
+            account_type=BankAccount.AccountType.CHECKING,
+            person_type=BankAccount.PersonType.PF,
+            holder_name=f"Sócio - {segment}",
+            holder_document="",
+            pix_key=f"socio@{empresa.slug}.com.br",
+            is_default=False,
+            is_active=True,
+        )
+        return [pj, pf]
+
+    def _create_teams(self, empresa, users, cdef):
+        from apps.operations.models import Team, TeamMember
+
+        # Teams variam por segmento — realistas para cada tipo de empresa
+        TEAM_DEFS = {
+            "topografia": [
+                ("Equipe de Campo", "Levantamentos e medições em campo", "emerald"),
+                ("Equipe de Processamento", "Processamento de dados e entregas técnicas", "indigo"),
+            ],
+            "arquitetura": [
+                ("Equipe de Projetos", "Desenvolvimento de projetos arquitetônicos", "violet"),
+                ("Equipe de Obra", "Acompanhamento e execução de obras", "amber"),
+            ],
+            "manutencao": [
+                ("Equipe Técnica A", "Manutenção preventiva e corretiva", "sky"),
+                ("Equipe Técnica B", "Instalações e reparos emergenciais", "rose"),
+                ("Equipe de Suporte", "Atendimento e diagnóstico remoto", "teal"),
+            ],
+            "consultoria": [
+                ("Equipe de Consultores", "Consultoria técnica especializada", "indigo"),
+            ],
+            "informatica": [
+                ("Equipe de Desenvolvimento", "Desenvolvimento de software e sistemas", "violet"),
+                ("Equipe de Infraestrutura", "Servidores, redes e suporte", "slate"),
+            ],
+        }
+
+        segment = cdef["segment"]
+        team_defs = TEAM_DEFS.get(segment, [
+            ("Equipe Principal", "Equipe de execução de serviços", "indigo"),
+        ])
+
+        # 60% das empresas têm equipes (as que têm mais de 2 usuários)
+        if len(users) <= 2:
+            return []
+
+        teams = []
+        tech_users = [u for u in users if u.email.startswith("tecnico")]
+        all_non_owner = [u for u in users if not u.email.startswith("admin")]
+
+        for i, (name, desc, color) in enumerate(team_defs):
+            leader = tech_users[i % len(tech_users)] if tech_users else users[0]
+            team = Team.objects.create(
+                empresa=empresa,
+                name=name,
+                description=desc,
+                leader=leader,
+                color=color,
+                is_active=True,
+            )
+            # Add leader as leader role
+            TeamMember.objects.create(
+                team=team, user=leader, role=TeamMember.Role.LEADER,
+            )
+            # Add 1-2 additional members
+            available = [u for u in all_non_owner if u != leader]
+            n_extra = min(self.rng.randint(1, 2), len(available))
+            for member_user in self.rng.sample(available, n_extra):
+                TeamMember.objects.create(
+                    team=team, user=member_user, role=TeamMember.Role.MEMBER,
+                )
+            teams.append(team)
+
+        return teams
+
+    def _create_chatbot_flows(self, empresa, cdef):
+        from apps.chatbot.models import ChatbotAction, ChatbotChoice, ChatbotFlow, ChatbotStep
+
+        segment = cdef["segment"]
+
+        # Nomes de serviço variam por segmento
+        SERVICE_CHOICES = {
+            "topografia": ["Levantamento topográfico", "Georreferenciamento", "Demarcação de terreno"],
+            "arquitetura": ["Projeto arquitetônico", "Reforma residencial", "Laudo técnico"],
+            "manutencao": ["Manutenção preventiva", "Reparo emergencial", "Instalação de equipamento"],
+            "consultoria": ["Consultoria técnica", "Auditoria", "Treinamento"],
+            "informatica": ["Desenvolvimento de sistema", "Suporte técnico", "Infraestrutura de rede"],
+        }
+        choices = SERVICE_CHOICES.get(segment, ["Solicitar orçamento", "Acompanhar serviço", "Falar com atendente"])
+
+        # --- Flow 1: Captação WhatsApp (ativo) ---
+        flow1 = ChatbotFlow.objects.create(
+            empresa=empresa,
+            name="Captação WhatsApp - Orçamento",
+            description="Fluxo principal de captação de leads via WhatsApp com coleta de dados para orçamento.",
+            is_active=True,
+            channel="whatsapp",
+            welcome_message="Olá! 👋 Bem-vindo ao nosso atendimento. Vou te ajudar a solicitar um orçamento de forma rápida.",
+            fallback_message="Desculpe, não entendi. Poderia reformular sua resposta?",
+        )
+
+        step1 = ChatbotStep.objects.create(
+            flow=flow1, order=0, question_text="Para começar, qual é o seu nome completo?",
+            step_type="name", lead_field_mapping="name", is_required=True,
+        )
+        step2 = ChatbotStep.objects.create(
+            flow=flow1, order=1, question_text="Ótimo! Qual é o seu e-mail para contato?",
+            step_type="email", lead_field_mapping="email", is_required=True,
+        )
+        step3 = ChatbotStep.objects.create(
+            flow=flow1, order=2, question_text="E o seu telefone com DDD?",
+            step_type="phone", lead_field_mapping="phone", is_required=True,
+        )
+        step4 = ChatbotStep.objects.create(
+            flow=flow1, order=3, question_text="Qual serviço você tem interesse?",
+            step_type="choice", lead_field_mapping="notes", is_required=True,
+        )
+        for i, choice_text in enumerate(choices):
+            ChatbotChoice.objects.create(step=step4, text=choice_text, order=i)
+
+        step5 = ChatbotStep.objects.create(
+            flow=flow1, order=4, question_text="Por fim, qual é o nome da sua empresa? (opcional)",
+            step_type="company", lead_field_mapping="company", is_required=False,
+        )
+
+        ChatbotAction.objects.create(
+            flow=flow1, trigger="on_complete", action_type="create_lead", config={},
+        )
+
+        # --- Flow 2: Atendimento Rápido (inativo) ---
+        flow2 = ChatbotFlow.objects.create(
+            empresa=empresa,
+            name="Atendimento Rápido",
+            description="Fluxo simplificado para triagem rápida de atendimento.",
+            is_active=False,
+            channel="whatsapp",
+            welcome_message="Olá! Selecione uma opção para continuar:",
+            fallback_message="Por favor, selecione uma das opções disponíveis.",
+        )
+
+        step_a = ChatbotStep.objects.create(
+            flow=flow2, order=0, question_text="Como podemos te ajudar?",
+            step_type="choice", lead_field_mapping="", is_required=True,
+        )
+        for i, text in enumerate(["Solicitar orçamento", "Acompanhar serviço", "Falar com atendente"]):
+            ChatbotChoice.objects.create(step=step_a, text=text, order=i)
+
+        ChatbotStep.objects.create(
+            flow=flow2, order=1, question_text="Qual é o seu nome?",
+            step_type="name", lead_field_mapping="name", is_required=True,
+        )
+        ChatbotStep.objects.create(
+            flow=flow2, order=2, question_text="E o seu telefone com DDD?",
+            step_type="phone", lead_field_mapping="phone", is_required=True,
+        )
+
+        ChatbotAction.objects.create(
+            flow=flow2, trigger="on_complete", action_type="create_lead", config={},
+        )
+        ChatbotAction.objects.create(
+            flow=flow2, trigger="on_complete", action_type="notify_user", config={},
+        )
 
     # ------------------------------------------------------------------
     # Phase 3: Transactional data
@@ -992,6 +1241,13 @@ class Command(BaseCommand):
             matching_opps = [o for o in opportunities if o.lead_id == lead.pk]
             opportunity = matching_opps[0] if matching_opps and self.rng.random() > 0.3 else None
 
+            payment_method = self._pick(
+                ["pix", "boleto", "cartao_credito", "transferencia", "dinheiro", ""],
+                [25, 25, 20, 15, 5, 10],
+            )
+            is_installment = self.rng.random() < 0.4
+            installment_count = self.rng.choice([2, 3, 4, 6, 12]) if is_installment else None
+
             prop = Proposal.objects.create(
                 empresa=empresa,
                 lead=lead,
@@ -1002,6 +1258,9 @@ class Command(BaseCommand):
                 terms="Validade: 30 dias. Pagamento: conforme negociacao.",
                 status=status,
                 discount_percent=discount,
+                payment_method=payment_method,
+                is_installment=is_installment,
+                installment_count=installment_count,
                 valid_until=created + timedelta(days=30) if status != "expired" else self._past_date(5, 30),
                 sent_at=self._random_datetime(120) if status in ("sent", "viewed", "accepted", "rejected") else None,
                 accepted_at=self._random_datetime(90) if status == "accepted" else None,
@@ -1085,7 +1344,7 @@ class Command(BaseCommand):
         return contracts
 
     def _create_work_orders(self, empresa, leads_by_status, proposals, contracts,
-                            service_types, checklist_templates, users, cdef, count):
+                            service_types, checklist_templates, users, teams, cdef, count):
         from apps.operations.models import WorkOrder, WorkOrderChecklist
 
         # Explicit counts per status for better distribution
@@ -1165,6 +1424,28 @@ class Command(BaseCommand):
 
                 sched_time = time(self.rng.randint(7, 16), self.rng.choice([0, 30])) if sched_date else None
 
+                location = self.rng.choice(ALL_LOCATIONS) if self.rng.random() > 0.25 else ""
+
+                # Google Maps URL: 70% manual quando tem location, 30% vazio (testa auto-geração)
+                maps_url = ""
+                if location and self.rng.random() > 0.3:
+                    maps_url = f"https://www.google.com/maps/search/?api=1&query={quote(location)}"
+
+                # Cloud storage links: ~40% das OS
+                cloud_links = []
+                if self.rng.random() < 0.4:
+                    link_options = [
+                        {"label": "Projeto Técnico", "url": "https://drive.google.com/drive/folders/example-projeto"},
+                        {"label": "Fotos do Local", "url": "https://drive.google.com/drive/folders/example-fotos"},
+                        {"label": "Laudo de Vistoria", "url": "https://dropbox.com/s/example-laudo/laudo.pdf"},
+                        {"label": "Planta Baixa", "url": "https://drive.google.com/file/d/example-planta"},
+                        {"label": "Orçamento Detalhado", "url": "https://docs.google.com/spreadsheets/d/example-orcamento"},
+                        {"label": "Relatório de Campo", "url": "https://dropbox.com/s/example-relatorio/campo.pdf"},
+                        {"label": "Documentação do Cliente", "url": "https://onedrive.live.com/example-docs"},
+                    ]
+                    n_links = self.rng.randint(1, 3)
+                    cloud_links = self.rng.sample(link_options, min(n_links, len(link_options)))
+
                 wo = WorkOrder.objects.create(
                     empresa=empresa,
                     title=title,
@@ -1179,7 +1460,10 @@ class Command(BaseCommand):
                     scheduled_time=sched_time,
                     completed_at=completed_at,
                     assigned_to=self.rng.choice(assignable) if assignable and self.rng.random() > 0.1 else None,
-                    location=self.rng.choice(ALL_LOCATIONS) if self.rng.random() > 0.25 else "",
+                    assigned_team=self.rng.choice(teams) if teams and self.rng.random() > 0.5 else None,
+                    location=location,
+                    google_maps_url=maps_url,
+                    cloud_storage_links=cloud_links,
                 )
                 self._backdate(WorkOrder, wo.pk, created)
 
@@ -1226,18 +1510,42 @@ class Command(BaseCommand):
         return result
 
     def _create_financial_entries(self, empresa, proposals, contracts, work_orders,
-                                 categories, cdef, count):
+                                 categories, bank_accounts, cdef, count):
         from apps.finance.models import FinancialEntry
+        from apps.finance.services import generate_entries_from_proposal
 
         income_cats = categories.get("income", [])
         expense_cats = categories.get("expense", [])
-
-        # Determine how many income vs expense
-        n_income = int(count * 0.45)
-        n_expense = count - n_income
+        default_bank = bank_accounts[0] if bank_accounts else None
 
         accepted_proposals = [p for p in proposals if p.status == "accepted"]
         active_contracts = [c for c in contracts if c.status in ("active", "completed", "signed")]
+
+        # Gera automaticamente entries a partir das propostas aceitas (idempotente).
+        # Respeita is_installment / installment_count definidos na proposta.
+        auto_entries_created = 0
+        for prop in accepted_proposals:
+            base_date = prop.accepted_at.date() if prop.accepted_at else self._random_date(90)
+            try:
+                created = generate_entries_from_proposal(prop, first_due_date=base_date)
+                auto_entries_created += len(created)
+                # Marca algumas como pagas para realismo
+                for entry in created:
+                    if self.rng.random() < 0.4:
+                        entry.status = "paid"
+                        entry.paid_date = entry.date + timedelta(days=self.rng.randint(0, 5))
+                        entry.save(update_fields=["status", "paid_date"])
+                    # Atribui categoria de receita se disponível
+                    if income_cats and not entry.category_id:
+                        entry.category = self.rng.choice(income_cats)
+                        entry.save(update_fields=["category"])
+            except Exception:
+                pass
+
+        # Calcula contagem restante para manter volume total similar ao solicitado
+        remaining = max(0, count - auto_entries_created)
+        n_income = int(remaining * 0.35)
+        n_expense = remaining - n_income
 
         # Income entries
         for i in range(n_income):
@@ -1285,6 +1593,7 @@ class Command(BaseCommand):
                 status=status,
                 related_proposal=rel_prop,
                 related_contract=rel_cont,
+                bank_account=default_bank if self.rng.random() > 0.2 else None,
                 notes="",
             )
 
@@ -1327,6 +1636,7 @@ class Command(BaseCommand):
                 paid_date=paid_date,
                 status=status,
                 related_work_order=rel_wo,
+                bank_account=self.rng.choice(bank_accounts) if bank_accounts and self.rng.random() > 0.3 else None,
                 notes="",
             )
 
@@ -1354,6 +1664,7 @@ class Command(BaseCommand):
                 date=entry_date,
                 paid_date=entry_date if is_paid else None,
                 status="paid" if is_paid else "pending",
+                bank_account=default_bank if self.rng.random() > 0.25 else None,
             )
 
     # ------------------------------------------------------------------

@@ -36,6 +36,11 @@ urlpatterns = [
         views.WorkOrderStatusView.as_view(),
         name="work_order_status",
     ),
+    path(
+        "work-orders/<int:pk>/pdf/",
+        views.WorkOrderPDFView.as_view(),
+        name="work_order_pdf",
+    ),
     # Checklist toggle
     path(
         "work-orders/<int:wo_pk>/checklist/<int:item_pk>/toggle/",

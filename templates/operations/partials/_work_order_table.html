@@ -10,6 +10,7 @@
                 <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Lead</th>
                 <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Tipo</th>
                 <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Data Agendada</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Equipe</th>
                 <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Prioridade</th>
                 <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
                 <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Ações</th>
@@ -36,6 +37,16 @@
                 </td>
                 <td class="px-5 py-3.5 text-sm text-slate-500 hidden lg:table-cell">
                     {{ wo.scheduled_date|date:"d/m/Y"|default:"—" }}
+                </td>
+                <td class="px-5 py-3.5 hidden lg:table-cell">
+                    {% if wo.assigned_team %}
+                    <span class="inline-flex items-center gap-1.5 text-sm text-slate-600">
+                        <span class="w-2 h-2 rounded-full bg-{{ wo.assigned_team.color }}-500"></span>
+                        {{ wo.assigned_team.name }}
+                    </span>
+                    {% else %}
+                    <span class="text-sm text-slate-400">—</span>
+                    {% endif %}
                 </td>
                 <td class="px-5 py-3.5">
                     {% status_badge wo.priority %}

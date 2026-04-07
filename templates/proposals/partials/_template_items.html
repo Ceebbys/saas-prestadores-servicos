@@ -1,0 +1,72 @@
+{% load ui_tags %}
+
+<div id="template-items-container">
+    {% if template_items %}
+    <div class="overflow-x-auto -mx-6 sm:mx-0 mb-4">
+        <table class="min-w-full text-sm">
+            <thead>
+                <tr class="text-left text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                    <th class="py-2 px-3 font-medium">Descrição</th>
+                    <th class="py-2 px-3 font-medium text-right">Qtd</th>
+                    <th class="py-2 px-3 font-medium">Un</th>
+                    <th class="py-2 px-3 font-medium text-right">Preço</th>
+                    <th class="py-2 px-3"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+                {% for item in template_items %}
+                <tr>
+                    <td class="py-2 px-3 text-slate-900">
+                        <p class="font-medium">{{ item.description }}</p>
+                        {% if item.details %}<p class="text-xs text-slate-400 mt-0.5">{{ item.details }}</p>{% endif %}
+                    </td>
+                    <td class="py-2 px-3 text-slate-600 text-right">{{ item.quantity|floatformat:2 }}</td>
+                    <td class="py-2 px-3 text-slate-600">{{ item.unit }}</td>
+                    <td class="py-2 px-3 text-slate-900 text-right">R$ {{ item.unit_price|floatformat:2 }}</td>
+                    <td class="py-2 px-3 text-right">
+                        <button type="button"
+                                hx-post="{% url 'proposals:template_item_delete' template.pk item.pk %}"
+                                hx-target="#template-items-container"
+                                hx-confirm="Remover este item?"
+                                hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                                class="p-1.5 text-slate-400 hover:text-red-600 transition-colors">
+                            {% icon "trash" "w-4 h-4" %}
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-sm text-slate-400 mb-4">Nenhum item padrão cadastrado.</p>
+    {% endif %}
+
+    <!-- Add item form -->
+    <form hx-post="{% url 'proposals:template_item_add' template.pk %}"
+          hx-target="#template-items-container"
+          hx-on::after-request="if(event.detail.successful) this.reset()"
+          class="border-t border-slate-200 pt-4">
+        {% csrf_token %}
+        <div class="grid grid-cols-1 sm:grid-cols-6 gap-2">
+            <div class="sm:col-span-3">
+                <input type="text" name="description" required placeholder="Descrição do item"
+                       class="w-full rounded-lg border-slate-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+            </div>
+            <input type="number" name="quantity" step="0.01" min="0" value="1" required placeholder="Qtd"
+                   class="rounded-lg border-slate-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+            <input type="text" name="unit" value="un" required placeholder="Un"
+                   class="rounded-lg border-slate-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+            <input type="number" name="unit_price" step="0.01" min="0" value="0" required placeholder="Preço"
+                   class="rounded-lg border-slate-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+        </div>
+        <input type="hidden" name="details" value="">
+        <div class="flex justify-end mt-3">
+            <button type="submit"
+                    class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors">
+                {% icon "plus" "w-4 h-4" %}
+                Adicionar Item
+            </button>
+        </div>
+    </form>
+</div>

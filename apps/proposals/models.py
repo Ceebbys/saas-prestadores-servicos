@@ -11,9 +11,22 @@ class ProposalTemplate(TenantOwnedModel):
     """Modelo de template reutilizável para propostas."""
 
     name = models.CharField("Nome", max_length=255)
-    content = models.TextField("Conteúdo")
+    content = models.TextField("Conteúdo", blank=True)
     header_content = models.TextField("Conteúdo do Cabeçalho", blank=True)
     footer_content = models.TextField("Conteúdo do Rodapé", blank=True)
+    introduction = models.TextField("Introdução padrão", blank=True)
+    terms = models.TextField("Termos padrão", blank=True)
+    default_payment_method = models.CharField(
+        "Forma de pagamento padrão",
+        max_length=50,
+        blank=True,
+    )
+    default_is_installment = models.BooleanField(
+        "Parcelado por padrão", default=False
+    )
+    default_installment_count = models.PositiveIntegerField(
+        "Parcelas padrão", null=True, blank=True
+    )
     is_default = models.BooleanField("Padrão", default=False)
 
     class Meta:
@@ -85,6 +98,28 @@ class Proposal(TenantOwnedModel):
         "Total", max_digits=12, decimal_places=2, default=Decimal("0.00")
     )
     valid_until = models.DateField("Válida até", null=True, blank=True)
+
+    # Parcelamento
+    class PaymentMethod(models.TextChoices):
+        PIX = "pix", "Pix"
+        BOLETO = "boleto", "Boleto"
+        CARTAO_CREDITO = "cartao_credito", "Cartão de Crédito"
+        CARTAO_DEBITO = "cartao_debito", "Cartão de Débito"
+        TRANSFERENCIA = "transferencia", "Transferência"
+        DINHEIRO = "dinheiro", "Dinheiro"
+        OUTRO = "outro", "Outro"
+
+    is_installment = models.BooleanField("Parcelado", default=False)
+    installment_count = models.PositiveIntegerField(
+        "Número de Parcelas", null=True, blank=True
+    )
+    payment_method = models.CharField(
+        "Forma de Pagamento",
+        max_length=50,
+        choices=PaymentMethod.choices,
+        blank=True,
+    )
+
     sent_at = models.DateTimeField("Enviada em", null=True, blank=True)
     accepted_at = models.DateTimeField("Aceita em", null=True, blank=True)
     rejected_at = models.DateTimeField("Rejeitada em", null=True, blank=True)
@@ -150,3 +185,32 @@ class ProposalItem(TimestampedModel):
     def save(self, *args, **kwargs):
         self.total = self.quantity * self.unit_price
         super().save(*args, **kwargs)
+
+
+class ProposalTemplateItem(TimestampedModel):
+    """Item padrão de um template de proposta, aplicado ao criar propostas."""
+
+    template = models.ForeignKey(
+        ProposalTemplate,
+        on_delete=models.CASCADE,
+        related_name="default_items",
+        verbose_name="Template",
+    )
+    description = models.CharField("Descrição", max_length=500)
+    details = models.TextField("Detalhes", blank=True)
+    quantity = models.DecimalField(
+        "Quantidade", max_digits=10, decimal_places=2, default=Decimal("1.00")
+    )
+    unit = models.CharField("Unidade", max_length=20, default="un")
+    unit_price = models.DecimalField(
+        "Preço Unitário", max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+    order = models.PositiveIntegerField("Ordem", default=0)
+
+    class Meta:
+        verbose_name = "Item do Template"
+        verbose_name_plural = "Itens do Template"
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return self.description

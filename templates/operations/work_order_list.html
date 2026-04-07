@@ -38,7 +38,7 @@
                    hx-get="{% url 'operations:work_order_list' %}"
                    hx-trigger="input changed delay:300ms, search"
                    hx-target="#wo-table-container"
-                   hx-include="[name='status'],[name='priority']"
+                   hx-include="[name='status'],[name='priority'],[name='team']"
                    hx-indicator="#table-loading"
                    class="block w-full rounded-lg border-0 py-2 pl-10 pr-3 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
         </div>
@@ -46,7 +46,7 @@
                 hx-get="{% url 'operations:work_order_list' %}"
                 hx-trigger="change"
                 hx-target="#wo-table-container"
-                hx-include="[name='q'],[name='priority']"
+                hx-include="[name='q'],[name='priority'],[name='team']"
                 hx-indicator="#table-loading"
                 class="rounded-lg border-0 py-2 pl-3 pr-8 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
             <option value="">Todos os status</option>
@@ -58,7 +58,7 @@
                 hx-get="{% url 'operations:work_order_list' %}"
                 hx-trigger="change"
                 hx-target="#wo-table-container"
-                hx-include="[name='q'],[name='status']"
+                hx-include="[name='q'],[name='status'],[name='team']"
                 hx-indicator="#table-loading"
                 class="rounded-lg border-0 py-2 pl-3 pr-8 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
             <option value="">Todas as prioridades</option>
@@ -66,6 +66,20 @@
             <option value="{{ value }}" {% if current_priority == value %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
         </select>
+        {% if teams %}
+        <select name="team"
+                hx-get="{% url 'operations:work_order_list' %}"
+                hx-trigger="change"
+                hx-target="#wo-table-container"
+                hx-include="[name='q'],[name='status'],[name='priority']"
+                hx-indicator="#table-loading"
+                class="rounded-lg border-0 py-2 pl-3 pr-8 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+            <option value="">Todas as equipes</option>
+            {% for team in teams %}
+            <option value="{{ team.pk }}" {% if current_team == team.pk|stringformat:"d" %}selected{% endif %}>{{ team.name }}</option>
+            {% endfor %}
+        </select>
+        {% endif %}
     </div>
 </div>
 

@@ -12,6 +12,7 @@ class Lead(TenantOwnedModel):
         INDICACAO = "indicacao", "Indicação"
         GOOGLE = "google", "Google"
         INSTAGRAM = "instagram", "Instagram"
+        WHATSAPP = "whatsapp", "WhatsApp"
         TELEFONE = "telefone", "Telefone"
         OUTRO = "outro", "Outro"
 
@@ -39,6 +40,12 @@ class Lead(TenantOwnedModel):
         default=Status.NOVO,
     )
     notes = models.TextField("Observações", blank=True)
+    external_ref = models.CharField(
+        "Referência Externa",
+        max_length=255,
+        blank=True,
+        help_text="ID externo (chatbot, API)",
+    )
     assigned_to = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

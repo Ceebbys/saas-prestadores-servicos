@@ -207,6 +207,45 @@
         </div>
         {% endif %}
 
+        <!-- Related Financial Entries -->
+        {% if contract.proposal %}
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                <h3 class="text-sm font-semibold text-slate-700">Lançamentos Financeiros</h3>
+                <a href="{% url 'finance:entry_list' %}?q={{ contract.proposal.number }}"
+                   class="text-xs text-indigo-600 hover:text-indigo-700 font-medium">Ver todos</a>
+            </div>
+            {% with entries=contract.proposal.financial_entries.all %}
+            {% if entries %}
+            <ul class="divide-y divide-slate-100">
+                {% for entry in entries %}
+                <li class="flex items-center justify-between px-5 py-3 hover:bg-slate-50 transition-colors">
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2">
+                            <p class="text-sm font-medium text-slate-900 truncate">{{ entry.description }}</p>
+                            {% if entry.auto_generated %}
+                            <span class="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-700 ring-1 ring-indigo-200">auto</span>
+                            {% endif %}
+                        </div>
+                        <p class="text-xs text-slate-400 mt-0.5">Vencimento: {{ entry.date|date:"d/m/Y" }}</p>
+                    </div>
+                    <div class="flex items-center gap-3 shrink-0">
+                        <span class="text-sm font-semibold text-slate-900">R$ {{ entry.amount|floatformat:2 }}</span>
+                        {% status_badge entry.status %}
+                        <a href="{% url 'finance:entry_update' entry.pk %}" class="text-slate-400 hover:text-indigo-600" title="Editar">
+                            {% icon "pencil-square" "w-4 h-4" %}
+                        </a>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="px-5 py-6 text-center text-sm text-slate-400">Nenhum lançamento vinculado</div>
+            {% endif %}
+            {% endwith %}
+        </div>
+        {% endif %}
+
         <!-- Related Work Orders -->
         <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
             <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">

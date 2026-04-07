@@ -165,6 +165,20 @@
                     <dt class="text-xs text-slate-400">Total</dt>
                     <dd class="text-lg font-bold text-slate-900 mt-0.5">{{ proposal.total|currency }}</dd>
                 </div>
+                {% if proposal.payment_method %}
+                <div>
+                    <dt class="text-xs text-slate-400">Forma de Pagamento</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">{{ proposal.get_payment_method_display }}</dd>
+                </div>
+                {% endif %}
+                {% if proposal.is_installment and proposal.installment_count %}
+                <div>
+                    <dt class="text-xs text-slate-400">Parcelamento</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">
+                        {{ proposal.installment_count }}x de {{ proposal.total|floatformat:2 }}
+                    </dd>
+                </div>
+                {% endif %}
             </dl>
         </div>
     </div>
@@ -183,6 +197,18 @@
         <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
             <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
                 <h3 class="text-sm font-semibold text-slate-700">Itens da Proposta</h3>
+                {% if proposal.template_id and not proposal.items.all %}
+                <form hx-post="{% url 'proposals:apply_template_items' proposal.pk %}"
+                      hx-target="#proposal-items-container"
+                      hx-swap="innerHTML">
+                    {% csrf_token %}
+                    <button type="submit"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors">
+                        {% icon "sparkles" "w-3.5 h-3.5" %}
+                        Carregar itens do template
+                    </button>
+                </form>
+                {% endif %}
             </div>
             <div id="proposal-items-container">
                 {% include "proposals/partials/_proposal_items.html" %}

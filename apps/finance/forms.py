@@ -3,7 +3,30 @@ from django import forms
 from apps.core.forms import TailwindFormMixin
 from apps.proposals.models import Proposal
 
-from .models import FinancialCategory, FinancialEntry
+from .models import BankAccount, FinancialCategory, FinancialEntry
+
+
+class BankAccountForm(TailwindFormMixin, forms.ModelForm):
+    class Meta:
+        model = BankAccount
+        fields = [
+            "name",
+            "bank_name",
+            "bank_code",
+            "agency",
+            "account_number",
+            "account_type",
+            "person_type",
+            "holder_name",
+            "holder_document",
+            "pix_key",
+            "is_default",
+            "is_active",
+            "notes",
+        ]
+        widgets = {
+            "notes": forms.Textarea(attrs={"rows": 2}),
+        }
 
 
 class FinancialEntryForm(TailwindFormMixin, forms.ModelForm):
@@ -17,6 +40,7 @@ class FinancialEntryForm(TailwindFormMixin, forms.ModelForm):
             "date",
             "paid_date",
             "status",
+            "bank_account",
             "related_proposal",
             "related_contract",
             "related_work_order",
@@ -38,6 +62,9 @@ class FinancialEntryForm(TailwindFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         if empresa:
             self.fields["category"].queryset = FinancialCategory.objects.filter(
+                empresa=empresa, is_active=True
+            )
+            self.fields["bank_account"].queryset = BankAccount.objects.filter(
                 empresa=empresa, is_active=True
             )
             self.fields["related_proposal"].queryset = Proposal.objects.filter(

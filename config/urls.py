@@ -19,6 +19,7 @@ urlpatterns = [
     path("contracts/", include("apps.contracts.urls")),
     path("operations/", include("apps.operations.urls")),
     path("finance/", include("apps.finance.urls")),
+    path("chatbot/", include("apps.chatbot.urls")),
     path("settings/", include("apps.settings_app.urls")),
 ]
 

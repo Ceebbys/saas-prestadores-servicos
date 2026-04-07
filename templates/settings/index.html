@@ -109,5 +109,41 @@
             </div>
         </div>
     </a>
+
+    <!-- Equipes -->
+    <a href="{% url 'settings_app:team_list' %}"
+       class="group bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6 hover:shadow-md hover:ring-indigo-200 transition-all duration-200">
+        <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 w-11 h-11 rounded-lg bg-teal-50 flex items-center justify-center group-hover:bg-teal-100 transition-colors">
+                {% icon "user-group" "w-5 h-5 text-teal-600" %}
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">Equipes</h3>
+                    {% icon "chevron-right" "w-4 h-4 text-slate-300 group-hover:text-indigo-400 transition-colors" %}
+                </div>
+                <p class="mt-1 text-sm text-slate-500">Organize membros em equipes de trabalho</p>
+                <p class="mt-2 text-xs font-medium text-slate-400">{{ teams_count }} equipe{{ teams_count|pluralize:"s" }} cadastrada{{ teams_count|pluralize:"s" }}</p>
+            </div>
+        </div>
+    </a>
+
+    <!-- Contas Bancárias -->
+    <a href="{% url 'settings_app:bank_account_list' %}"
+       class="group bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6 hover:shadow-md hover:ring-indigo-200 transition-all duration-200">
+        <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 w-11 h-11 rounded-lg bg-violet-50 flex items-center justify-center group-hover:bg-violet-100 transition-colors">
+                {% icon "building-office" "w-5 h-5 text-violet-600" %}
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">Contas Bancárias</h3>
+                    {% icon "chevron-right" "w-4 h-4 text-slate-300 group-hover:text-indigo-400 transition-colors" %}
+                </div>
+                <p class="mt-1 text-sm text-slate-500">Contas PJ e PF, chaves Pix e dados bancários</p>
+                <p class="mt-2 text-xs font-medium text-slate-400">{{ bank_accounts_count }} conta{{ bank_accounts_count|pluralize:"s" }} cadastrada{{ bank_accounts_count|pluralize:"s" }}</p>
+            </div>
+        </div>
+    </a>
 </div>
 {% endblock %}

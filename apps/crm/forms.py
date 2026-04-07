@@ -9,7 +9,7 @@ from .models import Lead, Opportunity, Pipeline, PipelineStage
 class LeadForm(TailwindFormMixin, forms.ModelForm):
     class Meta:
         model = Lead
-        exclude = ["empresa", "created_at", "updated_at"]
+        exclude = ["empresa", "created_at", "updated_at", "external_ref"]
         widgets = {
             "notes": forms.Textarea(attrs={"rows": 3}),
         }

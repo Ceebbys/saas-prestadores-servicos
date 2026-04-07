@@ -18,7 +18,7 @@ from django.views.generic import (
 from apps.core.mixins import EmpresaMixin, HtmxResponseMixin
 
 from .forms import FinancialCategoryForm, FinancialEntryForm
-from .models import FinancialCategory, FinancialEntry
+from .models import BankAccount, FinancialCategory, FinancialEntry
 
 
 # ---------------------------------------------------------------------------
@@ -65,8 +65,15 @@ class FinanceOverviewView(EmpresaMixin, HtmxResponseMixin, TemplateView):
 
         recent_entries = (
             FinancialEntry.objects.filter(empresa=empresa)
-            .select_related("category")
+            .select_related(
+                "category", "bank_account",
+                "related_proposal", "related_contract", "related_work_order",
+            )
             .order_by("-date", "-created_at")[:10]
+        )
+
+        bank_accounts = BankAccount.objects.filter(
+            empresa=empresa, is_active=True
         )
 
         context.update(
@@ -78,6 +85,7 @@ class FinanceOverviewView(EmpresaMixin, HtmxResponseMixin, TemplateView):
                 "overdue_count": overdue_count,
                 "recent_entries": recent_entries,
                 "current_month": today,
+                "bank_accounts": bank_accounts,
             }
         )
         return context
@@ -96,7 +104,10 @@ class EntryListView(EmpresaMixin, HtmxResponseMixin, ListView):
     paginate_by = 25
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("category")
+        qs = super().get_queryset().select_related(
+            "category", "bank_account",
+            "related_proposal", "related_contract", "related_work_order",
+        )
         q = self.request.GET.get("q", "").strip()
         entry_type = self.request.GET.get("type", "").strip()
         status = self.request.GET.get("status", "").strip()

@@ -35,8 +35,8 @@
                           {% if wo.priority == 'high' %}bg-rose-100 text-rose-700 hover:bg-rose-200
                           {% elif wo.priority == 'medium' %}bg-amber-100 text-amber-700 hover:bg-amber-200
                           {% else %}bg-sky-100 text-sky-700 hover:bg-sky-200{% endif %}"
-                   title="{{ wo.number }} - {{ wo.title }}">
-                    {{ wo.title|truncatechars:20 }}
+                   title="{{ wo.number }} - {{ wo.title }}{% if wo.assigned_team %} [{{ wo.assigned_team.name }}]{% endif %}{% if wo.assigned_to %} — {{ wo.assigned_to.full_name }}{% endif %}">
+                    {% if wo.assigned_team %}<span class="inline-block w-1.5 h-1.5 rounded-full bg-{{ wo.assigned_team.color }}-500 mr-0.5"></span>{% endif %}{{ wo.title|truncatechars:18 }}
                 </a>
                 {% endfor %}
             </div>

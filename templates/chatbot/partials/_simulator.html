@@ -1,0 +1,218 @@
+{% load ui_tags %}
+
+<div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+    <div class="flex items-center justify-between mb-4">
+        <h3 class="text-sm font-semibold text-slate-700">Simulador</h3>
+        <span class="text-xs text-slate-400">Preview do fluxo</span>
+    </div>
+
+    <!-- Phone frame -->
+    <div x-data="chatSimulator()" class="mx-auto max-w-sm">
+        <div class="bg-slate-800 rounded-[2rem] p-3 shadow-xl">
+            <!-- Phone header -->
+            <div class="bg-emerald-700 rounded-t-[1.25rem] px-4 py-3 flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center">
+                    <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z" />
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-white">{{ flow.name }}</p>
+                    <p class="text-xs text-emerald-200">{{ flow.get_channel_display }}</p>
+                </div>
+            </div>
+
+            <!-- Chat area -->
+            <div class="bg-[#e5ddd5] min-h-[360px] max-h-[400px] overflow-y-auto p-3 space-y-2" id="chat-messages" x-ref="chatArea">
+                <template x-for="(msg, idx) in messages" :key="idx">
+                    <div :class="msg.from === 'bot' ? 'flex justify-start' : 'flex justify-end'">
+                        <div :class="msg.from === 'bot'
+                            ? 'bg-white text-slate-800 rounded-r-xl rounded-bl-xl'
+                            : 'bg-emerald-100 text-slate-800 rounded-l-xl rounded-br-xl'"
+                             class="px-3 py-2 max-w-[85%] shadow-sm">
+                            <p class="text-sm whitespace-pre-wrap" x-text="msg.text"></p>
+                            <!-- Choice buttons -->
+                            <template x-if="msg.choices && msg.choices.length > 0 && msg.active">
+                                <div class="mt-2 space-y-1">
+                                    <template x-for="(ch, ci) in msg.choices" :key="ci">
+                                        <button @click="selectChoice(ch.text)"
+                                                class="block w-full text-left px-2.5 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors border border-emerald-200"
+                                                x-text="ch.text">
+                                        </button>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- Typing indicator -->
+                <div x-show="typing" class="flex justify-start">
+                    <div class="bg-white rounded-r-xl rounded-bl-xl px-4 py-3 shadow-sm">
+                        <div class="flex gap-1">
+                            <div class="w-2 h-2 rounded-full bg-slate-400 animate-bounce" style="animation-delay: 0ms"></div>
+                            <div class="w-2 h-2 rounded-full bg-slate-400 animate-bounce" style="animation-delay: 150ms"></div>
+                            <div class="w-2 h-2 rounded-full bg-slate-400 animate-bounce" style="animation-delay: 300ms"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Completion message -->
+                <template x-if="completed">
+                    <div class="flex justify-center">
+                        <div class="bg-amber-50 text-amber-700 rounded-xl px-4 py-2 text-xs font-medium shadow-sm border border-amber-200">
+                            Fluxo concluído — Lead seria criado aqui
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Input area -->
+            <div class="bg-slate-100 rounded-b-[1.25rem] px-3 py-2">
+                <template x-if="!started">
+                    <button @click="start()"
+                            class="w-full py-2.5 text-sm font-medium text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 transition-colors">
+                        Iniciar Simulação
+                    </button>
+                </template>
+                <template x-if="started && !completed && !waitingChoice">
+                    <form @submit.prevent="sendMessage()" class="flex items-center gap-2">
+                        <input type="text" x-model="userInput" placeholder="Digite sua resposta..."
+                               x-ref="input"
+                               class="flex-1 rounded-full border-0 bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-slate-300 focus:ring-2 focus:ring-emerald-500">
+                        <button type="submit"
+                                class="w-9 h-9 rounded-full bg-emerald-600 flex items-center justify-center hover:bg-emerald-700 transition-colors">
+                            <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
+                            </svg>
+                        </button>
+                    </form>
+                </template>
+                <template x-if="completed">
+                    <button @click="reset()"
+                            class="w-full py-2.5 text-sm font-medium text-slate-600 bg-white rounded-xl hover:bg-slate-50 transition-colors ring-1 ring-slate-300">
+                        Reiniciar Simulação
+                    </button>
+                </template>
+                <template x-if="started && !completed && waitingChoice">
+                    <p class="text-center text-xs text-slate-400 py-2">Selecione uma opção acima</p>
+                </template>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function chatSimulator() {
+    const steps = JSON.parse('{{ steps_json|escapejs }}');
+    const welcomeMsg = '{{ flow.welcome_message|escapejs }}';
+
+    return {
+        steps: steps,
+        messages: [],
+        currentStepIdx: 0,
+        userInput: '',
+        started: false,
+        completed: false,
+        typing: false,
+        waitingChoice: false,
+        leadData: {},
+
+        start() {
+            this.started = true;
+            this.addBotMessage(welcomeMsg);
+            if (this.steps.length > 0) {
+                this.askCurrentStep();
+            } else {
+                this.addBotMessage('Nenhum passo configurado neste fluxo.');
+                this.completed = true;
+            }
+        },
+
+        addBotMessage(text, choices = [], active = false) {
+            this.typing = true;
+            setTimeout(() => {
+                this.typing = false;
+                this.messages.push({ from: 'bot', text, choices, active });
+                this.$nextTick(() => this.scrollToBottom());
+            }, 600);
+        },
+
+        addUserMessage(text) {
+            this.messages.push({ from: 'user', text });
+            this.$nextTick(() => this.scrollToBottom());
+        },
+
+        scrollToBottom() {
+            if (this.$refs.chatArea) {
+                this.$refs.chatArea.scrollTop = this.$refs.chatArea.scrollHeight;
+            }
+        },
+
+        askCurrentStep() {
+            const step = this.steps[this.currentStepIdx];
+            if (!step) {
+                this.completeFlow();
+                return;
+            }
+            const choices = step.choices || [];
+            if (step.type === 'choice' && choices.length > 0) {
+                this.waitingChoice = true;
+                this.addBotMessage(step.question, choices, true);
+            } else {
+                this.waitingChoice = false;
+                this.addBotMessage(step.question);
+            }
+        },
+
+        sendMessage() {
+            const text = this.userInput.trim();
+            if (!text) return;
+            this.userInput = '';
+            this.addUserMessage(text);
+
+            const step = this.steps[this.currentStepIdx];
+            if (step && step.mapping) {
+                this.leadData[step.mapping] = text;
+            }
+
+            this.currentStepIdx++;
+            setTimeout(() => this.askCurrentStep(), 300);
+        },
+
+        selectChoice(text) {
+            // Deactivate choice buttons
+            this.messages.forEach(m => { if (m.active) m.active = false; });
+            this.waitingChoice = false;
+            this.addUserMessage(text);
+
+            const step = this.steps[this.currentStepIdx];
+            if (step && step.mapping) {
+                this.leadData[step.mapping] = text;
+            }
+
+            this.currentStepIdx++;
+            setTimeout(() => this.askCurrentStep(), 300);
+        },
+
+        completeFlow() {
+            this.addBotMessage('Obrigado! Suas informações foram registradas. Entraremos em contato em breve.');
+            setTimeout(() => {
+                this.completed = true;
+                this.$nextTick(() => this.scrollToBottom());
+            }, 800);
+        },
+
+        reset() {
+            this.messages = [];
+            this.currentStepIdx = 0;
+            this.userInput = '';
+            this.started = false;
+            this.completed = false;
+            this.typing = false;
+            this.waitingChoice = false;
+            this.leadData = {};
+        }
+    };
+}
+</script>

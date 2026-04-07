@@ -100,7 +100,24 @@ class ContractFromProposalView(EmpresaMixin, CreateView):
         initial["lead"] = proposal.lead_id
         initial["title"] = f"Contrato - {proposal.title}"
         initial["value"] = proposal.total
+        # Herda termos da proposta como conteúdo inicial do contrato
+        if proposal.terms:
+            initial["content"] = proposal.terms
+        initial["notes"] = self._build_notes(proposal)
         return initial
+
+    def _build_notes(self, proposal):
+        """Consolida informações de pagamento da proposta em notas do contrato."""
+        lines = [f"Contrato referente à proposta {proposal.number}."]
+        if proposal.payment_method:
+            lines.append(
+                f"Forma de pagamento: {proposal.get_payment_method_display()}"
+            )
+        if proposal.is_installment and proposal.installment_count:
+            lines.append(
+                f"Parcelamento: {proposal.installment_count}x"
+            )
+        return "\n".join(lines)
 
     def form_valid(self, form):
         response = super().form_valid(form)

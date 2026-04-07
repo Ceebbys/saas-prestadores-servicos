@@ -44,6 +44,13 @@
         <span>Pipeline</span>
     </a>
 
+    <a href="{% url 'chatbot:flow_list' %}"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+              {% if request.resolver_match.app_name == 'chatbot' %}bg-slate-800 text-white{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+        {% icon "chat-bubble-left-right" "w-5 h-5" %}
+        <span>Chatbot</span>
+    </a>
+
     <a href="{% url 'proposals:list' %}"
        class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
               {% if request.resolver_match.app_name == 'proposals' %}bg-slate-800 text-white{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">

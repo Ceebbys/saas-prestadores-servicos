@@ -11,198 +11,209 @@
 {% endblock %}
 
 {% block content %}
-<!-- Stats Cards -->
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-    {% include "components/_stat_card.html" with title="Total de Leads" value=total_leads|default:"0" icon_name="users" color="indigo" subtitle="novos este mês: "|add:new_leads_month|default:"0" %}
-    {% include "components/_stat_card.html" with title="Propostas em Aberto" value=proposals_open|default:"0" icon_name="document-text" color="amber" %}
-    {% include "components/_stat_card.html" with title="Propostas Aceitas" value=proposals_accepted|default:"0" icon_name="check" color="emerald" %}
-    {% include "components/_stat_card.html" with title="OS Pendentes" value=wo_pending|default:"0" icon_name="wrench" color="sky" %}
-</div>
-
-<!-- Finance Summary + Pipeline -->
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-    <!-- Finance Cards -->
-    <div class="lg:col-span-1 space-y-4">
-        <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wider">Financeiro do Mês</h2>
-
-        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
-            <div class="space-y-4">
-                <div class="flex items-center justify-between">
-                    <span class="text-sm text-slate-600">Receitas</span>
-                    <span class="text-sm font-semibold text-emerald-600">{{ income_month|default:0|currency }}</span>
-                </div>
-                <div class="flex items-center justify-between">
-                    <span class="text-sm text-slate-600">Despesas</span>
-                    <span class="text-sm font-semibold text-rose-600">{{ expense_month|default:0|currency }}</span>
-                </div>
-                <div class="border-t border-slate-100 pt-3 flex items-center justify-between">
-                    <span class="text-sm font-medium text-slate-700">Saldo</span>
-                    <span class="text-base font-bold {% if balance_month >= 0 %}text-emerald-600{% else %}text-rose-600{% endif %}">
-                        {{ balance_month|default:0|currency }}
-                    </span>
-                </div>
-                {% if overdue_count %}
-                <div class="bg-rose-50 rounded-lg px-3 py-2 flex items-center gap-2">
-                    <svg class="w-4 h-4 text-rose-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
-                    </svg>
-                    <span class="text-xs font-medium text-rose-700">{{ overdue_count }} lançamento{{ overdue_count|pluralize:"s" }} vencido{{ overdue_count|pluralize:"s" }}</span>
-                </div>
+<!-- Period Filters -->
+<div x-data="{ showCustom: '{{ period }}' === 'custom', showAdvanced: {{ has_advanced_filters|yesno:'true,false' }} }"
+     class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-4 mb-6">
+    <form method="get" id="dashboard-filters">
+        <!-- Row 1: Period + Service Type -->
+        <div class="flex flex-wrap items-end gap-3">
+            <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Período</label>
+                <select name="period" x-model="$refs.periodSel.value"
+                        x-ref="periodSel"
+                        @change="showCustom = ($refs.periodSel.value === 'custom'); if ($refs.periodSel.value !== 'custom') $el.form.requestSubmit ? $el.form.requestSubmit() : null"
+                        hx-get="{% url 'dashboard:index' %}"
+                        hx-target="#dashboard-content"
+                        hx-include="#dashboard-filters"
+                        hx-push-url="true"
+                        hx-indicator="#dashboard-loading"
+                        class="text-sm rounded-lg border-slate-300 focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="month" {% if period == "month" %}selected{% endif %}>Mês</option>
+                    <option value="year" {% if period == "year" %}selected{% endif %}>Ano</option>
+                    <option value="custom" {% if period == "custom" %}selected{% endif %}>Personalizado</option>
+                </select>
+            </div>
+            <div x-show="!showCustom && $refs.periodSel.value === 'month'">
+                <label class="block text-xs font-medium text-slate-500 mb-1">Mês</label>
+                <select name="month"
+                        hx-get="{% url 'dashboard:index' %}"
+                        hx-target="#dashboard-content"
+                        hx-trigger="change"
+                        hx-include="#dashboard-filters"
+                        hx-push-url="true"
+                        hx-indicator="#dashboard-loading"
+                        class="text-sm rounded-lg border-slate-300 focus:ring-indigo-500 focus:border-indigo-500">
+                    {% for val, label in month_choices %}
+                    <option value="{{ val }}" {% if filter_month == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div x-show="!showCustom">
+                <label class="block text-xs font-medium text-slate-500 mb-1">Ano</label>
+                <select name="year"
+                        hx-get="{% url 'dashboard:index' %}"
+                        hx-target="#dashboard-content"
+                        hx-trigger="change"
+                        hx-include="#dashboard-filters"
+                        hx-push-url="true"
+                        hx-indicator="#dashboard-loading"
+                        class="text-sm rounded-lg border-slate-300 focus:ring-indigo-500 focus:border-indigo-500">
+                    {% for y in year_choices %}
+                    <option value="{{ y }}" {% if filter_year == y|stringformat:"d" %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div x-show="showCustom" x-cloak>
+                <label class="block text-xs font-medium text-slate-500 mb-1">De</label>
+                <input type="date" name="date_from" value="{{ filter_date_from }}"
+                       class="text-sm rounded-lg border-slate-300 focus:ring-indigo-500 focus:border-indigo-500">
+            </div>
+            <div x-show="showCustom" x-cloak>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Até</label>
+                <input type="date" name="date_to" value="{{ filter_date_to }}"
+                       class="text-sm rounded-lg border-slate-300 focus:ring-indigo-500 focus:border-indigo-500">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Tipo de Serviço</label>
+                <select name="service_type"
+                        hx-get="{% url 'dashboard:index' %}"
+                        hx-target="#dashboard-content"
+                        hx-trigger="change"
+                        hx-include="#dashboard-filters"
+                        hx-push-url="true"
+                        hx-indicator="#dashboard-loading"
+                        class="text-sm rounded-lg border-slate-300 focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="">Todos</option>
+                    {% for st in service_types %}
+                    <option value="{{ st.pk }}" {% if filter_service_type == st.pk|stringformat:"d" %}selected{% endif %}>{{ st.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Status OS</label>
+                <select name="status"
+                        hx-get="{% url 'dashboard:index' %}"
+                        hx-target="#dashboard-content"
+                        hx-trigger="change"
+                        hx-include="#dashboard-filters"
+                        hx-push-url="true"
+                        hx-indicator="#dashboard-loading"
+                        class="text-sm rounded-lg border-slate-300 focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="">Todos</option>
+                    {% for val, label in wo_status_choices %}
+                    <option value="{{ val }}" {% if filter_status == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div x-show="showCustom" x-cloak>
+                <button type="button"
+                        hx-get="{% url 'dashboard:index' %}"
+                        hx-target="#dashboard-content"
+                        hx-include="#dashboard-filters"
+                        hx-push-url="true"
+                        hx-indicator="#dashboard-loading"
+                        class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">
+                    Filtrar
+                </button>
+            </div>
+            <div class="flex items-center gap-2">
+                <button type="button" @click="showAdvanced = !showAdvanced"
+                        class="px-3 py-2 text-sm text-slate-500 hover:text-indigo-600 transition-colors flex items-center gap-1">
+                    {% icon "adjustments-horizontal" "w-4 h-4" %}
+                    <span x-text="showAdvanced ? 'Menos filtros' : 'Mais filtros'"></span>
+                </button>
+                {% if period != "month" or filter_service_type or filter_status or filter_lead_source or filter_payment_method or filter_is_installment or filter_value_min or filter_value_max %}
+                <a href="{% url 'dashboard:index' %}" class="px-3 py-2 text-sm text-slate-400 hover:text-slate-700 transition-colors">Limpar</a>
                 {% endif %}
             </div>
         </div>
 
-        <!-- Quick Actions -->
-        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
-            <h3 class="text-sm font-semibold text-slate-700 mb-3">Ações rápidas</h3>
-            <div class="space-y-2">
-                <a href="{% url 'crm:lead_create' %}"
-                   class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors">
-                    {% icon "plus" "w-4 h-4 text-indigo-500" %}
-                    <span>Novo Lead</span>
-                </a>
-                <a href="{% url 'proposals:create' %}"
-                   class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors">
-                    {% icon "plus" "w-4 h-4 text-indigo-500" %}
-                    <span>Nova Proposta</span>
-                </a>
-                <a href="{% url 'operations:work_order_create' %}"
-                   class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors">
-                    {% icon "plus" "w-4 h-4 text-indigo-500" %}
-                    <span>Nova Ordem de Serviço</span>
-                </a>
-                <a href="{% url 'finance:entry_create' %}"
-                   class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors">
-                    {% icon "plus" "w-4 h-4 text-indigo-500" %}
-                    <span>Novo Lançamento</span>
-                </a>
+        <!-- Row 2: Advanced Filters -->
+        <div x-show="showAdvanced" x-cloak x-transition
+             class="flex flex-wrap items-end gap-3 mt-3 pt-3 border-t border-slate-100">
+            <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Origem Lead</label>
+                <select name="lead_source"
+                        hx-get="{% url 'dashboard:index' %}"
+                        hx-target="#dashboard-content"
+                        hx-trigger="change"
+                        hx-include="#dashboard-filters"
+                        hx-push-url="true"
+                        hx-indicator="#dashboard-loading"
+                        class="text-sm rounded-lg border-slate-300 focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="">Todas</option>
+                    {% for val, label in lead_source_choices %}
+                    <option value="{{ val }}" {% if filter_lead_source == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Forma de Pagamento</label>
+                <select name="payment_method"
+                        hx-get="{% url 'dashboard:index' %}"
+                        hx-target="#dashboard-content"
+                        hx-trigger="change"
+                        hx-include="#dashboard-filters"
+                        hx-push-url="true"
+                        hx-indicator="#dashboard-loading"
+                        class="text-sm rounded-lg border-slate-300 focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="">Todas</option>
+                    {% for val, label in payment_method_choices %}
+                    <option value="{{ val }}" {% if filter_payment_method == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Parcelado</label>
+                <select name="is_installment"
+                        hx-get="{% url 'dashboard:index' %}"
+                        hx-target="#dashboard-content"
+                        hx-trigger="change"
+                        hx-include="#dashboard-filters"
+                        hx-push-url="true"
+                        hx-indicator="#dashboard-loading"
+                        class="text-sm rounded-lg border-slate-300 focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="">Todos</option>
+                    <option value="1" {% if filter_is_installment == "1" %}selected{% endif %}>Sim</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Valor Mín (R$)</label>
+                <input type="number" name="value_min" value="{{ filter_value_min }}" step="0.01" min="0" placeholder="0,00"
+                       hx-get="{% url 'dashboard:index' %}"
+                       hx-target="#dashboard-content"
+                       hx-trigger="change"
+                       hx-include="#dashboard-filters"
+                       hx-push-url="true"
+                       hx-indicator="#dashboard-loading"
+                       class="w-28 text-sm rounded-lg border-slate-300 focus:ring-indigo-500 focus:border-indigo-500">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Valor Máx (R$)</label>
+                <input type="number" name="value_max" value="{{ filter_value_max }}" step="0.01" min="0" placeholder="0,00"
+                       hx-get="{% url 'dashboard:index' %}"
+                       hx-target="#dashboard-content"
+                       hx-trigger="change"
+                       hx-include="#dashboard-filters"
+                       hx-push-url="true"
+                       hx-indicator="#dashboard-loading"
+                       class="w-28 text-sm rounded-lg border-slate-300 focus:ring-indigo-500 focus:border-indigo-500">
             </div>
         </div>
-    </div>
-
-    <!-- Pipeline Summary -->
-    <div class="lg:col-span-2">
-        <div class="flex items-center justify-between mb-4">
-            <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wider">Pipeline</h2>
-            <a href="{% url 'crm:pipeline_board' %}" class="text-sm text-indigo-600 hover:text-indigo-700 font-medium">Ver completo →</a>
-        </div>
-        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
-            {% if pipeline_stages %}
-            <div class="space-y-3">
-                {% for stage in pipeline_stages %}
-                <div class="flex items-center gap-4">
-                    <div class="w-3 h-3 rounded-full shrink-0" style="background-color: {{ stage.color }}"></div>
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-center justify-between mb-1">
-                            <span class="text-sm font-medium text-slate-700">{{ stage.name }}</span>
-                            <span class="text-sm text-slate-500">{{ stage.opp_count|default:0 }}</span>
-                        </div>
-                        <div class="w-full bg-slate-100 rounded-full h-1.5">
-                            <div class="h-1.5 rounded-full" style="width: {% if total_opportunities %}{% widthratio stage.opp_count total_opportunities 100 %}%{% else %}0%{% endif %}; background-color: {{ stage.color }}"></div>
-                        </div>
-                    </div>
-                    <span class="text-xs text-slate-400 w-24 text-right">{{ stage.opp_value|default:0|currency }}</span>
-                </div>
-                {% endfor %}
-            </div>
-            {% else %}
-            <div class="text-center py-8">
-                <p class="text-sm text-slate-400">Nenhuma oportunidade no pipeline ainda</p>
-            </div>
-            {% endif %}
-        </div>
-    </div>
+    </form>
+    <p class="mt-2 text-xs text-slate-400">Período: {{ period_label }}</p>
 </div>
 
-<!-- Recent Leads + Upcoming Work Orders -->
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-    <!-- Recent Leads -->
-    <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
-        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-            <h2 class="text-sm font-semibold text-slate-700">Leads Recentes</h2>
-            <a href="{% url 'crm:lead_list' %}" class="text-xs text-indigo-600 hover:text-indigo-700 font-medium">Ver todos →</a>
-        </div>
-        {% if recent_leads %}
-        <ul class="divide-y divide-slate-100">
-            {% for lead in recent_leads %}
-            <li>
-                <a href="{% url 'crm:lead_detail' lead.pk %}" class="flex items-center gap-4 px-5 py-3 hover:bg-slate-50 transition-colors">
-                    <div class="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-sm font-semibold text-slate-600">
-                        {{ lead.name|make_list|first|upper }}
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <p class="text-sm font-medium text-slate-900 truncate">{{ lead.name }}</p>
-                        <p class="text-xs text-slate-400">{{ lead.company|default:lead.email|default:"Sem empresa" }}</p>
-                    </div>
-                    {% status_badge lead.status %}
-                </a>
-            </li>
-            {% endfor %}
-        </ul>
-        {% else %}
-        <div class="px-5 py-8 text-center">
-            <p class="text-sm text-slate-400">Nenhum lead cadastrado</p>
-        </div>
-        {% endif %}
-    </div>
-
-    <!-- Upcoming Work Orders -->
-    <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
-        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-            <h2 class="text-sm font-semibold text-slate-700">Próximas Ordens de Serviço</h2>
-            <a href="{% url 'operations:work_order_list' %}" class="text-xs text-indigo-600 hover:text-indigo-700 font-medium">Ver todas →</a>
-        </div>
-        {% if upcoming_orders %}
-        <ul class="divide-y divide-slate-100">
-            {% for wo in upcoming_orders %}
-            <li>
-                <a href="{% url 'operations:work_order_detail' wo.pk %}" class="flex items-center gap-4 px-5 py-3 hover:bg-slate-50 transition-colors">
-                    <div class="w-9 h-9 rounded-lg bg-sky-50 flex items-center justify-center">
-                        {% icon "calendar" "w-4 h-4 text-sky-600" %}
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <p class="text-sm font-medium text-slate-900 truncate">{{ wo.title }}</p>
-                        <p class="text-xs text-slate-400">
-                            {{ wo.scheduled_date|date:"d/m/Y" }}
-                            {% if wo.scheduled_time %} às {{ wo.scheduled_time|time:"H:i" }}{% endif %}
-                        </p>
-                    </div>
-                    {% status_badge wo.status %}
-                </a>
-            </li>
-            {% endfor %}
-        </ul>
-        {% else %}
-        <div class="px-5 py-8 text-center">
-            <p class="text-sm text-slate-400">Nenhum agendamento próximo</p>
-        </div>
-        {% endif %}
-    </div>
+<!-- Loading Indicator -->
+<div id="dashboard-loading" class="htmx-indicator flex justify-center py-4">
+    <svg class="animate-spin h-5 w-5 text-indigo-600" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    </svg>
 </div>
 
-<!-- Recent Accepted Proposals -->
-{% if recent_accepted_proposals %}
-<div class="mt-6 bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
-    <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-        <h2 class="text-sm font-semibold text-slate-700">Propostas Aceitas Recentes</h2>
-        <a href="{% url 'proposals:list' %}?status=accepted" class="text-xs text-indigo-600 hover:text-indigo-700 font-medium">Ver todas →</a>
-    </div>
-    <ul class="divide-y divide-slate-100">
-        {% for p in recent_accepted_proposals %}
-        <li>
-            <a href="{% url 'proposals:detail' p.pk %}" class="flex items-center gap-4 px-5 py-3 hover:bg-slate-50 transition-colors">
-                <div class="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center">
-                    {% icon "check" "w-4 h-4 text-emerald-600" %}
-                </div>
-                <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-slate-900 truncate">{{ p.number }} — {{ p.title|default:p.lead.name }}</p>
-                    <p class="text-xs text-slate-400">{{ p.lead.name }}</p>
-                </div>
-                <span class="text-sm font-semibold text-emerald-600">{{ p.total|currency }}</span>
-            </a>
-        </li>
-        {% endfor %}
-    </ul>
+<!-- Dashboard Content (HTMX target) -->
+<div id="dashboard-content">
+    {% include "dashboard/partials/_dashboard_content.html" %}
 </div>
-{% endif %}
 {% endblock %}

@@ -29,4 +29,20 @@ urlpatterns = [
         views.ProposalStatusView.as_view(),
         name="status",
     ),
+    path(
+        "<int:pk>/apply-template-items/",
+        views.ProposalApplyTemplateItemsView.as_view(),
+        name="apply_template_items",
+    ),
+    # Itens padrão de ProposalTemplate (HTMX — CRUD do template fica em settings_app)
+    path(
+        "templates/<int:template_pk>/items/add/",
+        views.TemplateItemAddView.as_view(),
+        name="template_item_add",
+    ),
+    path(
+        "templates/<int:template_pk>/items/<int:item_pk>/delete/",
+        views.TemplateItemDeleteView.as_view(),
+        name="template_item_delete",
+    ),
 ]

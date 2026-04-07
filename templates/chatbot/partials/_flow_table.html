@@ -1,0 +1,80 @@
+{% load ui_tags %}
+
+{% if object_list %}
+<div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 overflow-hidden">
+    <table class="min-w-full divide-y divide-slate-200">
+        <thead class="bg-slate-50">
+            <tr>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Fluxo</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Canal</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Passos</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Ações</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+            {% for flow in object_list %}
+            <tr class="hover:bg-slate-50 transition-colors">
+                <td class="px-5 py-3.5">
+                    <a href="{% url 'chatbot:flow_detail' flow.pk %}" class="group">
+                        <p class="text-sm font-medium text-slate-900 group-hover:text-indigo-600">{{ flow.name }}</p>
+                    </a>
+                    {% if flow.description %}
+                    <p class="text-xs text-slate-400 mt-0.5 truncate max-w-xs">{{ flow.description|truncatewords:10 }}</p>
+                    {% endif %}
+                </td>
+                <td class="px-5 py-3.5 hidden md:table-cell">
+                    <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+                        {% if flow.channel == 'whatsapp' %}bg-emerald-100 text-emerald-800
+                        {% elif flow.channel == 'telegram' %}bg-sky-100 text-sky-800
+                        {% else %}bg-indigo-100 text-indigo-800{% endif %}">
+                        {{ flow.get_channel_display }}
+                    </span>
+                </td>
+                <td class="px-5 py-3.5 hidden lg:table-cell">
+                    <span class="text-sm text-slate-600">{{ flow.steps.count }} passo{{ flow.steps.count|pluralize:"s" }}</span>
+                </td>
+                <td class="px-5 py-3.5">
+                    <form method="post" action="{% url 'chatbot:flow_toggle' flow.pk %}" class="inline">
+                        {% csrf_token %}
+                        <button type="submit"
+                            class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors
+                                {% if flow.is_active %}bg-emerald-100 text-emerald-800 hover:bg-emerald-200
+                                {% else %}bg-slate-100 text-slate-600 hover:bg-slate-200{% endif %}"
+                            title="Clique para {% if flow.is_active %}desativar{% else %}ativar{% endif %}">
+                            {% if flow.is_active %}Ativo{% else %}Inativo{% endif %}
+                        </button>
+                    </form>
+                </td>
+                <td class="px-5 py-3.5 text-right">
+                    <div class="inline-flex items-center gap-1">
+                        <a href="{% url 'chatbot:flow_detail' flow.pk %}"
+                           class="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors inline-flex"
+                           title="Preview">
+                            {% icon "eye" "w-4 h-4" %}
+                        </a>
+                        <a href="{% url 'chatbot:flow_update' flow.pk %}"
+                           class="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors inline-flex"
+                           title="Editar">
+                            {% icon "pencil" "w-4 h-4" %}
+                        </a>
+                        <form method="post" action="{% url 'chatbot:flow_delete' flow.pk %}"
+                              onsubmit="return confirm('Excluir este fluxo de chatbot?')" class="inline-flex">
+                            {% csrf_token %}
+                            <button type="submit" class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors" title="Excluir">
+                                {% icon "trash" "w-4 h-4" %}
+                            </button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% include "components/_pagination.html" %}
+
+{% else %}
+{% include "components/_empty_state.html" with icon="chat-bubble-left-right" title="Nenhum fluxo de chatbot" description="Crie seu primeiro fluxo de chatbot para captar leads automaticamente via WhatsApp." %}
+{% endif %}

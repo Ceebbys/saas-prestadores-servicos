@@ -5,6 +5,8 @@
 
 {% block breadcrumb %}
 <nav class="flex items-center gap-2 text-sm text-slate-500 mb-4">
+    <a href="{% url 'dashboard:index' %}" class="hover:text-indigo-600">Dashboard</a>
+    {% icon "chevron-right" "w-3 h-3" %}
     <a href="{% url 'settings_app:index' %}" class="hover:text-indigo-600">Configurações</a>
     {% icon "chevron-right" "w-3 h-3" %}
     <a href="{% url 'settings_app:proposal_templates' %}" class="hover:text-indigo-600">Templates de Proposta</a>
@@ -16,19 +18,64 @@
 {% block page_header %}
 <div class="mb-6">
     <h1 class="text-2xl font-bold text-slate-900">{% if form.instance.pk %}Editar Template de Proposta{% else %}Novo Template de Proposta{% endif %}</h1>
+    <p class="mt-1 text-sm text-slate-500">Modelos reutilizáveis com introdução, termos, pagamento e itens padrão</p>
 </div>
 {% endblock %}
 
 {% block content %}
-<div class="max-w-3xl">
+<div class="max-w-3xl space-y-6">
     <form method="post" class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6">
         {% csrf_token %}
 
-        {% form_field form.name %}
-        {% form_field form.header_content %}
-        {% form_field form.content %}
-        {% form_field form.footer_content %}
-        {% form_field form.is_default %}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+            {% form_field form.name %}
+            <div class="flex items-center gap-3 mt-6">
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" name="is_default" {% if form.instance.is_default %}checked{% endif %}
+                           class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                    <span class="text-sm text-slate-700">Definir como template padrão</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="mt-4">
+            {% form_field form.introduction %}
+        </div>
+
+        <div class="mt-2">
+            {% form_field form.terms %}
+        </div>
+
+        <!-- Pagamento padrão -->
+        <div class="mt-4 pt-4 border-t border-slate-200"
+             x-data="{ installment: {{ form.instance.default_is_installment|yesno:'true,false' }} }">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">Pagamento padrão (opcional)</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                {% form_field form.default_payment_method %}
+                <div class="flex items-center gap-3 mt-6">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" name="default_is_installment"
+                               {% if form.instance.default_is_installment %}checked{% endif %}
+                               x-model="installment"
+                               class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                        <span class="text-sm text-slate-700">Parcelado por padrão</span>
+                    </label>
+                </div>
+            </div>
+            <div x-show="installment" x-cloak class="mt-2 max-w-xs">
+                {% form_field form.default_installment_count %}
+            </div>
+        </div>
+
+        <!-- Conteúdo avançado (opcional) -->
+        <details class="mt-4 pt-4 border-t border-slate-200">
+            <summary class="cursor-pointer text-sm font-semibold text-slate-700 mb-3">Conteúdo avançado (cabeçalho / corpo / rodapé)</summary>
+            <div class="mt-3 space-y-2">
+                {% form_field form.header_content %}
+                {% form_field form.content %}
+                {% form_field form.footer_content %}
+            </div>
+        </details>
 
         <div class="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
             <a href="{% url 'settings_app:proposal_templates' %}"
@@ -37,9 +84,18 @@
             </a>
             <button type="submit"
                     class="px-6 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
-                {% if form.instance.pk %}Salvar{% else %}Criar{% endif %}
+                {% if form.instance.pk %}Salvar Template{% else %}Criar Template{% endif %}
             </button>
         </div>
     </form>
+
+    {% if form.instance.pk %}
+    <!-- Itens padrão (só após salvar template) -->
+    <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6">
+        <h3 class="text-sm font-semibold text-slate-700 mb-2">Itens Padrão</h3>
+        <p class="text-xs text-slate-500 mb-4">Estes itens podem ser carregados automaticamente em propostas criadas a partir deste template.</p>
+        {% include "proposals/partials/_template_items.html" %}
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

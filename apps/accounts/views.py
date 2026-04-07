@@ -60,6 +60,7 @@ class RegisterView(View):
                     ("Negociação", 3, "#F97316"),
                     ("Fechado/Ganho", 4, "#10B981"),
                     ("Fechado/Perdido", 5, "#EF4444"),
+                    ("Pós-Venda", 6, "#06B6D4"),
                 ]
                 for name, order, color in default_stages:
                     PipelineStage.objects.create(

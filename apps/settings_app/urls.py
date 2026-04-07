@@ -112,4 +112,61 @@ urlpatterns = [
         views.FinancialCategoryDeleteView.as_view(),
         name="category_delete",
     ),
+    # Bank Accounts
+    path(
+        "bank-accounts/",
+        views.BankAccountListView.as_view(),
+        name="bank_account_list",
+    ),
+    path(
+        "bank-accounts/create/",
+        views.BankAccountCreateView.as_view(),
+        name="bank_account_create",
+    ),
+    path(
+        "bank-accounts/<int:pk>/edit/",
+        views.BankAccountUpdateView.as_view(),
+        name="bank_account_update",
+    ),
+    path(
+        "bank-accounts/<int:pk>/delete/",
+        views.BankAccountDeleteView.as_view(),
+        name="bank_account_delete",
+    ),
+    # Teams
+    path(
+        "teams/",
+        views.TeamListView.as_view(),
+        name="team_list",
+    ),
+    path(
+        "teams/create/",
+        views.TeamCreateView.as_view(),
+        name="team_create",
+    ),
+    path(
+        "teams/<int:pk>/edit/",
+        views.TeamUpdateView.as_view(),
+        name="team_update",
+    ),
+    path(
+        "teams/<int:pk>/delete/",
+        views.TeamDeleteView.as_view(),
+        name="team_delete",
+    ),
+    path(
+        "teams/<int:pk>/members/add/",
+        views.TeamMemberAddView.as_view(),
+        name="team_member_add",
+    ),
+    path(
+        "teams/<int:pk>/members/<int:member_pk>/remove/",
+        views.TeamMemberRemoveView.as_view(),
+        name="team_member_remove",
+    ),
+    path(
+        "teams/<int:pk>/members/<int:member_pk>/role/",
+        views.TeamMemberRoleView.as_view(),
+        name="team_member_role",
+    ),
 ]
