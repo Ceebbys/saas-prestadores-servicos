@@ -44,6 +44,9 @@ STATUS_COLORS = {
     # Finance type
     "income": ("bg-emerald-100", "text-emerald-800"),
     "expense": ("bg-rose-100", "text-rose-800"),
+    # Automation
+    "success": ("bg-emerald-100", "text-emerald-800"),
+    "error": ("bg-rose-100", "text-rose-800"),
 }
 
 STATUS_LABELS = {
@@ -81,6 +84,8 @@ STATUS_LABELS = {
     "high": "Alta",
     "income": "Receita",
     "expense": "Despesa",
+    "success": "Sucesso",
+    "error": "Erro",
 }
 
 
@@ -197,6 +202,7 @@ def icon(name, css_class="w-5 h-5"):
         "pencil-square": '<path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" />',
         "wrench-screwdriver": '<path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.049.58.025 1.193-.14 1.743ZM15.75 6.75 12 3m0 0L8.25 6.75M12 3v5.25" />',
         "chat-bubble-left-right": '<path stroke-linecap="round" stroke-linejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 0 1-.825-.242m9.345-8.334a2.126 2.126 0 0 0-.476-.095 48.64 48.64 0 0 0-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 1.136.845 2.1 1.976 2.193 1.234.1 2.473.174 3.72.22m0 0 3.263 3.263A11.93 11.93 0 0 0 19.5 15.75v-3.84a48.58 48.58 0 0 0-4.02-.163m0 0a2.115 2.115 0 0 1-.476-.095" />',
+        "bolt": '<path stroke-linecap="round" stroke-linejoin="round" d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z" />',
         "adjustments-horizontal": '<path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" />',
     }
     path_data = icons.get(name, icons.get("inbox", ""))

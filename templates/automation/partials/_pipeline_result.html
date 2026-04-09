@@ -1,0 +1,89 @@
+{% load ui_tags %}
+
+{% if success %}
+<div class="mt-4 bg-emerald-50 rounded-xl ring-1 ring-emerald-200/60 p-5">
+    <div class="flex items-center gap-2 mb-4">
+        {% icon "check-circle" "w-5 h-5 text-emerald-600" %}
+        <h3 class="text-sm font-semibold text-emerald-800">Pipeline executado com sucesso</h3>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {% if result.lead %}
+        <div class="bg-white rounded-lg p-3 ring-1 ring-slate-200/60">
+            <div class="flex items-center gap-2 mb-1">
+                {% icon "users" "w-4 h-4 text-sky-600" %}
+                <span class="text-xs font-semibold text-slate-500 uppercase">Lead</span>
+            </div>
+            <a href="{% url 'crm:lead_detail' result.lead.pk %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+                {{ result.lead.name }}
+            </a>
+            <p class="text-xs text-slate-400 mt-0.5">{{ result.lead.source|source_label }} — {% status_badge result.lead.status %}</p>
+        </div>
+        {% endif %}
+
+        {% if result.proposal %}
+        <div class="bg-white rounded-lg p-3 ring-1 ring-slate-200/60">
+            <div class="flex items-center gap-2 mb-1">
+                {% icon "document-text" "w-4 h-4 text-violet-600" %}
+                <span class="text-xs font-semibold text-slate-500 uppercase">Proposta</span>
+            </div>
+            <a href="{% url 'proposals:detail' result.proposal.pk %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+                {{ result.proposal.number }}
+            </a>
+            <p class="text-xs text-slate-400 mt-0.5">{{ result.proposal.total|currency }} — {% status_badge result.proposal.status %}</p>
+        </div>
+        {% endif %}
+
+        {% if result.contract %}
+        <div class="bg-white rounded-lg p-3 ring-1 ring-slate-200/60">
+            <div class="flex items-center gap-2 mb-1">
+                {% icon "clipboard" "w-4 h-4 text-indigo-600" %}
+                <span class="text-xs font-semibold text-slate-500 uppercase">Contrato</span>
+            </div>
+            <a href="{% url 'contracts:detail' result.contract.pk %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+                {{ result.contract.number }}
+            </a>
+            <p class="text-xs text-slate-400 mt-0.5">{{ result.contract.value|currency }} — {% status_badge result.contract.status %}</p>
+        </div>
+        {% endif %}
+
+        {% if result.work_order %}
+        <div class="bg-white rounded-lg p-3 ring-1 ring-slate-200/60">
+            <div class="flex items-center gap-2 mb-1">
+                {% icon "wrench" "w-4 h-4 text-amber-600" %}
+                <span class="text-xs font-semibold text-slate-500 uppercase">Ordem de Serviço</span>
+            </div>
+            <a href="{% url 'operations:work_order_detail' result.work_order.pk %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+                {{ result.work_order.number }}
+            </a>
+            <p class="text-xs text-slate-400 mt-0.5">{% status_badge result.work_order.status %}</p>
+        </div>
+        {% endif %}
+
+        {% if result.entries %}
+        <div class="bg-white rounded-lg p-3 ring-1 ring-slate-200/60">
+            <div class="flex items-center gap-2 mb-1">
+                {% icon "banknotes" "w-4 h-4 text-rose-600" %}
+                <span class="text-xs font-semibold text-slate-500 uppercase">Financeiro</span>
+            </div>
+            <a href="{% url 'finance:finance_overview' %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+                {{ result.entries|length }} lançamento{{ result.entries|length|pluralize:"s" }}
+            </a>
+            {% for entry in result.entries %}
+            <p class="text-xs text-slate-400 mt-0.5">{{ entry.description|truncatewords:6 }} — {{ entry.amount|currency }}</p>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% else %}
+<div class="mt-4 bg-rose-50 rounded-xl ring-1 ring-rose-200/60 p-5">
+    <div class="flex items-center gap-2">
+        {% icon "x-circle" "w-5 h-5 text-rose-600" %}
+        <h3 class="text-sm font-semibold text-rose-800">Erro ao executar pipeline</h3>
+    </div>
+    {% if error %}
+    <p class="text-sm text-rose-700 mt-2">{{ error }}</p>
+    {% endif %}
+</div>
+{% endif %}

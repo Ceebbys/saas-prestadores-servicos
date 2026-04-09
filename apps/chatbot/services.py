@@ -1,7 +1,10 @@
 """
 Serviços do módulo de chatbot.
 
-Funções stub preparadas para integração futura com WhatsApp Business API.
+A criação de leads é delegada para apps.automation.services, que
+implementa o pipeline completo com rastreabilidade.
+O process_chatbot_response permanece como stub até integração com
+WhatsApp Business API.
 """
 
 
@@ -9,20 +12,8 @@ def process_chatbot_response(flow_id, step_id, user_response, session_data=None)
     """
     Processa a resposta de um usuário a um passo do chatbot.
 
-    STUB — Esta função será implementada quando a integração real
-    com WhatsApp Business API for adicionada. O fluxo esperado:
-
-    1. Buscar o ChatbotStep pelo step_id
-    2. Validar a resposta conforme o step_type (email, phone, etc.)
-    3. Mapear a resposta para o campo do Lead via lead_field_mapping
-    4. Acumular no session_data
-    5. Determinar o próximo passo:
-       - Se step_type == 'choice', buscar ChatbotChoice selecionada
-         e usar next_step (ou avançar por order)
-       - Senão, avançar para o próximo step por order
-    6. Se não houver próximo passo, executar as ChatbotActions do flow
-       (criar lead, notificar, etc.)
-    7. Retornar o próximo passo ou mensagem de conclusão
+    STUB — Será implementada com a integração WhatsApp Business API.
+    Quando is_complete=True, deve chamar create_lead_from_chatbot().
 
     Args:
         flow_id: PK do ChatbotFlow
@@ -31,13 +22,7 @@ def process_chatbot_response(flow_id, step_id, user_response, session_data=None)
         session_data: Dict acumulado da sessão (nome, email, etc.)
 
     Returns:
-        dict: {
-            "next_step_id": int | None,
-            "message": str,
-            "is_complete": bool,
-            "lead_data": dict,
-            "status": "stub",
-        }
+        dict com next_step_id, message, is_complete, lead_data, status
     """
     return {
         "next_step_id": None,
@@ -53,13 +38,8 @@ def create_lead_from_chatbot(empresa, flow, session_data):
     """
     Cria um Lead a partir dos dados coletados pelo chatbot.
 
-    STUB — Será ativada quando o processo completo for implementado.
-
-    O mapeamento de campos é feito via ChatbotStep.lead_field_mapping.
-    O lead será criado com:
-      - source = 'whatsapp' (ou conforme flow.channel)
-      - external_ref = ID da sessão do chatbot
-      - Os campos mapeados preenchidos a partir de session_data
+    Delega para apps.automation.services.create_lead_from_chatbot,
+    que implementa criação real com rastreabilidade via AutomationLog.
 
     Args:
         empresa: Instância de Empresa (tenant)
@@ -67,6 +47,7 @@ def create_lead_from_chatbot(empresa, flow, session_data):
         session_data: Dict com os dados coletados
 
     Returns:
-        Lead | None
+        Lead instance
     """
-    return None
+    from apps.automation.services import create_lead_from_chatbot as _create_lead
+    return _create_lead(empresa, flow, session_data)

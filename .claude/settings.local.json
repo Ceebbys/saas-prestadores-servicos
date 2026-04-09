@@ -79,7 +79,10 @@
       "Bash(python manage.py makemigrations chatbot --name initial)",
       "Bash(python manage.py migrate chatbot)",
       "Bash(python manage.py makemigrations --check)",
-      "Bash(python manage.py shell -c \":*)"
+      "Bash(python manage.py shell -c \":*)",
+      "Bash(python manage.py makemigrations automation)",
+      "Bash(python manage.py migrate)",
+      "Bash(python manage.py shell -c ':*)"
     ]
   }
 }

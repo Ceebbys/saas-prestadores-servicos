@@ -581,6 +581,9 @@ class Command(BaseCommand):
             empresa, proposals, contracts, work_orders, categories,
             bank_accounts, cdef, vol["entries"]
         )
+        self._create_automation_logs(
+            empresa, leads, proposals, contracts, work_orders,
+        )
 
         self.counters[name] = vol
         self.stdout.write(self.style.SUCCESS(f"    [OK] {name} concluída"))
@@ -999,6 +1002,100 @@ class Command(BaseCommand):
         ChatbotAction.objects.create(
             flow=flow2, trigger="on_complete", action_type="notify_user", config={},
         )
+
+    def _create_automation_logs(self, empresa, leads, proposals, contracts, work_orders):
+        from apps.automation.models import AutomationLog
+
+        # Pegar um lead que tenha proposta e contrato vinculados para
+        # simular uma trilha de automação realista no histórico.
+        sample_lead = None
+        sample_proposal = None
+        sample_contract = None
+        sample_wo = None
+
+        for p in proposals:
+            if p.lead and p.status == "accepted":
+                sample_proposal = p
+                sample_lead = p.lead
+                break
+        if not sample_proposal and proposals:
+            sample_proposal = proposals[0]
+            sample_lead = sample_proposal.lead
+
+        if not sample_lead and leads:
+            sample_lead = leads[0]
+
+        for c in contracts:
+            if c.proposal == sample_proposal:
+                sample_contract = c
+                break
+        if not sample_contract and contracts:
+            sample_contract = contracts[0]
+
+        for wo in work_orders:
+            if wo.contract == sample_contract or wo.proposal == sample_proposal:
+                sample_wo = wo
+                break
+        if not sample_wo and work_orders:
+            sample_wo = work_orders[0]
+
+        if not sample_lead:
+            return
+
+        logs_data = []
+
+        logs_data.append({
+            "action": AutomationLog.Action.CHATBOT_TO_LEAD,
+            "entity_type": AutomationLog.EntityType.LEAD,
+            "entity_id": sample_lead.pk,
+            "source_entity_type": "chatbot_flow",
+            "metadata": {"channel": "whatsapp", "demo": True},
+        })
+
+        if sample_proposal:
+            logs_data.append({
+                "action": AutomationLog.Action.LEAD_TO_PROPOSAL,
+                "entity_type": AutomationLog.EntityType.PROPOSAL,
+                "entity_id": sample_proposal.pk,
+                "source_entity_type": "lead",
+                "source_entity_id": sample_lead.pk,
+                "metadata": {"proposal_number": sample_proposal.number, "demo": True},
+            })
+
+        if sample_contract:
+            logs_data.append({
+                "action": AutomationLog.Action.PROPOSAL_TO_CONTRACT,
+                "entity_type": AutomationLog.EntityType.CONTRACT,
+                "entity_id": sample_contract.pk,
+                "source_entity_type": "proposal",
+                "source_entity_id": sample_proposal.pk if sample_proposal else None,
+                "metadata": {"contract_number": sample_contract.number, "demo": True},
+            })
+
+        if sample_wo:
+            logs_data.append({
+                "action": AutomationLog.Action.CONTRACT_TO_WORK_ORDER,
+                "entity_type": AutomationLog.EntityType.WORK_ORDER,
+                "entity_id": sample_wo.pk,
+                "source_entity_type": "contract",
+                "source_entity_id": sample_contract.pk if sample_contract else None,
+                "metadata": {"work_order_number": sample_wo.number, "demo": True},
+            })
+
+        # Log de pipeline completo
+        logs_data.append({
+            "action": AutomationLog.Action.FULL_PIPELINE,
+            "entity_type": AutomationLog.EntityType.LEAD,
+            "entity_id": sample_lead.pk,
+            "metadata": {"demo": True, "complete": True},
+        })
+
+        for data in logs_data:
+            AutomationLog.objects.create(
+                empresa=empresa,
+                status=AutomationLog.Status.SUCCESS,
+                **data,
+            )
 
     # ------------------------------------------------------------------
     # Phase 3: Transactional data

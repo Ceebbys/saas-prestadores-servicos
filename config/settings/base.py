@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "apps.operations",
     "apps.finance",
     "apps.chatbot",
+    "apps.automation",
     "apps.settings_app",
 ]
 
