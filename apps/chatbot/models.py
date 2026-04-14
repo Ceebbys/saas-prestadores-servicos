@@ -1,5 +1,6 @@
 import uuid
 
+from django.conf import settings
 from django.db import models
 
 from apps.core.models import TenantOwnedModel, TimestampedModel
@@ -229,3 +230,49 @@ class ChatbotSession(TimestampedModel):
 
     def __str__(self):
         return f"Session {self.session_key} ({self.status})"
+
+
+class WhatsAppConfig(TimestampedModel):
+    """Configuração de WhatsApp por empresa (OneToOne)."""
+
+    empresa = models.OneToOneField(
+        "accounts.Empresa",
+        on_delete=models.CASCADE,
+        related_name="whatsapp_config",
+        verbose_name="Empresa",
+    )
+    instance_name = models.CharField(
+        "Nome da instância",
+        max_length=100,
+        unique=True,
+        help_text="Identificador único desta instância na Evolution API (ex: empresa-a-whatsapp).",
+    )
+    phone_number = models.CharField("Número conectado", max_length=20, blank=True)
+    api_url = models.URLField(
+        "URL da Evolution API",
+        blank=True,
+        help_text="Deixe em branco para usar a URL global configurada no servidor.",
+    )
+    api_key = models.CharField(
+        "API Key",
+        max_length=200,
+        blank=True,
+        help_text="Deixe em branco para usar a chave global configurada no servidor.",
+    )
+    is_connected = models.BooleanField("Conectado", default=False)
+    connected_at = models.DateTimeField("Conectado em", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Configuracao WhatsApp"
+        verbose_name_plural = "Configuracoes WhatsApp"
+
+    def __str__(self):
+        return f"{self.empresa.name} — {self.instance_name}"
+
+    @property
+    def effective_api_url(self):
+        return self.api_url or getattr(settings, "EVOLUTION_API_URL", "")
+
+    @property
+    def effective_api_key(self):
+        return self.api_key or getattr(settings, "EVOLUTION_API_KEY", "")

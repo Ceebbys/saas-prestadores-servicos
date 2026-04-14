@@ -18,7 +18,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from .models import ChatbotFlow, ChatbotSession
+from .models import ChatbotFlow, ChatbotSession, WhatsAppConfig
 from .services import process_response, start_session
 
 logger = logging.getLogger(__name__)
@@ -303,12 +303,18 @@ def evolution_webhook_auto(request):
 
     sender_id, message_text, instance_name = parsed
 
-    # Auto-detectar flow WhatsApp ativo
+    # Multi-tenant: rotear pelo instance_name da Evolution API
+    config = WhatsAppConfig.objects.select_related("empresa").filter(
+        instance_name=instance_name,
+    ).first()
+    if not config:
+        return JsonResponse({"error": "No WhatsApp config for this instance"}, status=404)
+
     flow = ChatbotFlow.objects.filter(
-        channel="whatsapp", is_active=True,
+        empresa=config.empresa, channel="whatsapp", is_active=True,
     ).first()
     if not flow:
-        return JsonResponse({"error": "No active WhatsApp flow found"}, status=404)
+        return JsonResponse({"error": "No active WhatsApp flow for this empresa"}, status=404)
 
     try:
         reply_text, choices, is_complete, lead_id = _process_evolution_message(
@@ -318,7 +324,11 @@ def evolution_webhook_auto(request):
         logger.warning("Evolution webhook auto error: %s", e)
         return JsonResponse({"status": "error", "message": str(e)})
 
-    client = EvolutionAPIClient()
+    client = EvolutionAPIClient(
+        api_url=config.effective_api_url,
+        api_key=config.effective_api_key,
+        instance=config.instance_name,
+    )
     _send_reply(client, sender_id, reply_text, choices)
 
     return JsonResponse({

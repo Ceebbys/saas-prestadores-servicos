@@ -1,10 +1,15 @@
+import logging
+
+from django.conf import settings as django_settings
 from django.contrib import messages
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.template.loader import render_to_string
 from django.urls import reverse_lazy
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
+
+logger = logging.getLogger(__name__)
 
 from apps.accounts.models import Membership
 from apps.core.mixins import EmpresaMixin, HtmxResponseMixin
@@ -524,3 +529,169 @@ class TeamMemberRoleView(EmpresaMixin, View):
             return redirect("settings_app:team_update", pk=team.pk)
         messages.success(request, "Papel atualizado com sucesso.")
         return redirect("settings_app:team_update", pk=team.pk)
+
+
+# ---------------------------------------------------------------------------
+# WhatsApp Config
+# ---------------------------------------------------------------------------
+
+
+class WhatsAppConfigView(EmpresaMixin, TemplateView):
+    """Página de configuração do WhatsApp por empresa."""
+
+    template_name = "settings/whatsapp_config.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        empresa = self.request.empresa
+        try:
+            context["whatsapp_config"] = empresa.whatsapp_config
+        except Exception:
+            context["whatsapp_config"] = None
+
+        from apps.chatbot.models import ChatbotFlow
+
+        context["active_flow"] = ChatbotFlow.objects.filter(
+            empresa=empresa, channel="whatsapp", is_active=True,
+        ).first()
+        context["has_global_api"] = bool(getattr(django_settings, "EVOLUTION_API_URL", ""))
+
+        # URL absoluta do webhook auto (multi-tenant)
+        webhook_path = "/chatbot/evolution/"
+        context["webhook_auto_url"] = request.build_absolute_uri(webhook_path) if (
+            request := self.request
+        ) else webhook_path
+
+        return context
+
+
+class WhatsAppConfigSaveView(EmpresaMixin, View):
+    """Salva configuração do WhatsApp e tenta criar/atualizar instância."""
+
+    def post(self, request):
+        empresa = request.empresa
+        instance_name = request.POST.get("instance_name", "").strip()
+        phone_number = request.POST.get("phone_number", "").strip()
+        api_url = request.POST.get("api_url", "").strip()
+        api_key = request.POST.get("api_key", "").strip()
+
+        if not instance_name:
+            messages.error(request, "O nome da instância é obrigatório.")
+            return redirect("settings_app:whatsapp_config")
+
+        from apps.chatbot.models import WhatsAppConfig
+        from django.db import IntegrityError
+
+        # Verificar conflito de nome com outra empresa
+        conflict = WhatsAppConfig.objects.filter(
+            instance_name=instance_name,
+        ).exclude(empresa=empresa).exists()
+        if conflict:
+            messages.error(
+                request,
+                f"O nome de instância '{instance_name}' já está em uso por outra empresa.",
+            )
+            return redirect("settings_app:whatsapp_config")
+
+        config, created = WhatsAppConfig.objects.get_or_create(
+            empresa=empresa,
+            defaults={
+                "instance_name": instance_name,
+                "phone_number": phone_number,
+                "api_url": api_url,
+                "api_key": api_key,
+            },
+        )
+        if not created:
+            config.instance_name = instance_name
+            config.phone_number = phone_number
+            config.api_url = api_url
+            config.api_key = api_key
+            config.save(update_fields=["instance_name", "phone_number", "api_url", "api_key", "updated_at"])
+
+        # Tentar criar instância na Evolution API
+        effective_url = api_url or getattr(django_settings, "EVOLUTION_API_URL", "")
+        effective_key = api_key or getattr(django_settings, "EVOLUTION_API_KEY", "")
+
+        if effective_url and effective_key:
+            try:
+                import httpx
+
+                resp = httpx.post(
+                    f"{effective_url.rstrip('/')}/instance/create",
+                    headers={"Content-Type": "application/json", "apikey": effective_key},
+                    json={"instanceName": instance_name, "qrcode": True},
+                    timeout=10.0,
+                )
+                if resp.status_code in (200, 201):
+                    messages.success(
+                        request,
+                        f"Instância '{instance_name}' criada na Evolution API. Agora escaneie o QR Code.",
+                    )
+                elif resp.status_code == 409:
+                    messages.success(
+                        request,
+                        f"Instância '{instance_name}' já existe na Evolution API. Configuração salva.",
+                    )
+                else:
+                    messages.warning(
+                        request,
+                        f"Configuração salva, mas não foi possível criar a instância (status {resp.status_code}). "
+                        "Crie-a manualmente no painel da Evolution API.",
+                    )
+            except Exception:
+                logger.exception("Error creating Evolution API instance")
+                messages.warning(
+                    request,
+                    "Configuração salva. Não foi possível contatar a Evolution API agora — "
+                    "verifique a URL e a chave configuradas.",
+                )
+        else:
+            messages.success(
+                request,
+                "Configuração salva. Configure EVOLUTION_API_URL e EVOLUTION_API_KEY no servidor para ativar o envio.",
+            )
+
+        return redirect("settings_app:whatsapp_config")
+
+
+class WhatsAppStatusView(EmpresaMixin, View):
+    """Verifica o status de conexão da instância WhatsApp."""
+
+    def get(self, request):
+        empresa = request.empresa
+        try:
+            config = empresa.whatsapp_config
+        except Exception:
+            return JsonResponse({"error": "Nenhuma configuração WhatsApp encontrada."}, status=404)
+
+        effective_url = config.effective_api_url
+        effective_key = config.effective_api_key
+
+        if not effective_url or not effective_key:
+            return JsonResponse({"status": "not_configured", "is_connected": False})
+
+        try:
+            import httpx
+            from django.utils import timezone
+
+            resp = httpx.get(
+                f"{effective_url.rstrip('/')}/instance/connectionState/{config.instance_name}",
+                headers={"apikey": effective_key},
+                timeout=8.0,
+            )
+            data = resp.json() if resp.status_code == 200 else {}
+            state = data.get("instance", {}).get("state", "close")
+            is_connected = state == "open"
+
+            config.is_connected = is_connected
+            if is_connected and not config.connected_at:
+                config.connected_at = timezone.now()
+                config.save(update_fields=["is_connected", "connected_at", "updated_at"])
+            else:
+                config.save(update_fields=["is_connected", "updated_at"])
+
+            return JsonResponse({"status": state, "is_connected": is_connected})
+        except Exception:
+            logger.exception("Error checking WhatsApp connection state")
+            return JsonResponse({"status": "error", "is_connected": False})

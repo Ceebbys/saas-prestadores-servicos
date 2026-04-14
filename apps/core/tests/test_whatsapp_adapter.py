@@ -13,6 +13,7 @@ from apps.chatbot.models import (
     ChatbotFlow,
     ChatbotSession,
     ChatbotStep,
+    WhatsAppConfig,
 )
 from apps.chatbot.whatsapp import EvolutionAPIClient, parse_evolution_webhook
 
@@ -272,6 +273,11 @@ class EvolutionWebhookAutoTests(TransactionTestCase):
 
     def test_auto_finds_active_whatsapp_flow(self):
         flow = _create_flow_with_steps(self.empresa)
+        # Multi-tenant: precisa de WhatsAppConfig mapeando instance_name → empresa
+        WhatsAppConfig.objects.create(
+            empresa=self.empresa,
+            instance_name="test-instance",  # mesmo valor retornado por _make_evolution_payload
+        )
         payload = _make_evolution_payload(phone="5511777770000", text="Oi")
         resp = self.client.post(
             self.url,

@@ -128,6 +128,24 @@
         </div>
     </a>
 
+    <!-- WhatsApp -->
+    <a href="{% url 'settings_app:whatsapp_config' %}"
+       class="group bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6 hover:shadow-md hover:ring-green-200 transition-all duration-200">
+        <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 w-11 h-11 rounded-lg bg-green-50 flex items-center justify-center group-hover:bg-green-100 transition-colors">
+                {% icon "chat-bubble-left-ellipsis" "w-5 h-5 text-green-600" %}
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-slate-900 group-hover:text-green-700 transition-colors">WhatsApp</h3>
+                    {% icon "chevron-right" "w-4 h-4 text-slate-300 group-hover:text-green-400 transition-colors" %}
+                </div>
+                <p class="mt-1 text-sm text-slate-500">Conecte seu número WhatsApp para automação de atendimento</p>
+                <p class="mt-2 text-xs font-medium text-slate-400">Integração via Evolution API</p>
+            </div>
+        </div>
+    </a>
+
     <!-- Contas Bancárias -->
     <a href="{% url 'settings_app:bank_account_list' %}"
        class="group bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6 hover:shadow-md hover:ring-indigo-200 transition-all duration-200">
