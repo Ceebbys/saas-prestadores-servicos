@@ -3,7 +3,7 @@
 <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
     <div class="flex items-center justify-between mb-4">
         <h3 class="text-sm font-semibold text-slate-700">Simulador</h3>
-        <span class="text-xs text-slate-400">Preview do fluxo</span>
+        <span class="text-xs text-slate-400">Preview do fluxo (via API)</span>
     </div>
 
     <!-- Phone frame -->
@@ -18,12 +18,12 @@
                 </div>
                 <div>
                     <p class="text-sm font-medium text-white">{{ flow.name }}</p>
-                    <p class="text-xs text-emerald-200">{{ flow.get_channel_display }}</p>
+                    <p class="text-xs text-emerald-200" x-text="connected ? 'Online' : '{{ flow.get_channel_display }}'"></p>
                 </div>
             </div>
 
             <!-- Chat area -->
-            <div class="bg-[#e5ddd5] min-h-[360px] max-h-[400px] overflow-y-auto p-3 space-y-2" id="chat-messages" x-ref="chatArea">
+            <div class="bg-[#e5ddd5] min-h-[360px] max-h-[400px] overflow-y-auto p-3 space-y-2" x-ref="chatArea">
                 <template x-for="(msg, idx) in messages" :key="idx">
                     <div :class="msg.from === 'bot' ? 'flex justify-start' : 'flex justify-end'">
                         <div :class="msg.from === 'bot'
@@ -35,9 +35,9 @@
                             <template x-if="msg.choices && msg.choices.length > 0 && msg.active">
                                 <div class="mt-2 space-y-1">
                                     <template x-for="(ch, ci) in msg.choices" :key="ci">
-                                        <button @click="selectChoice(ch.text)"
+                                        <button @click="selectChoice(ch)"
                                                 class="block w-full text-left px-2.5 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors border border-emerald-200"
-                                                x-text="ch.text">
+                                                x-text="ch">
                                         </button>
                                     </template>
                                 </div>
@@ -59,10 +59,21 @@
 
                 <!-- Completion message -->
                 <template x-if="completed">
-                    <div class="flex justify-center">
-                        <div class="bg-amber-50 text-amber-700 rounded-xl px-4 py-2 text-xs font-medium shadow-sm border border-amber-200">
-                            Fluxo concluído — Lead seria criado aqui
+                    <div class="space-y-2">
+                        <div class="flex justify-center">
+                            <div class="bg-emerald-50 text-emerald-700 rounded-xl px-4 py-2 text-xs font-medium shadow-sm border border-emerald-200">
+                                <span x-show="leadId">&#10003; Lead criado com sucesso!</span>
+                                <span x-show="!leadId">&#10003; Fluxo concluído</span>
+                            </div>
                         </div>
+                        <template x-if="leadId">
+                            <div class="flex justify-center">
+                                <a :href="'/leads/' + leadId + '/'"
+                                   class="text-xs text-emerald-600 hover:text-emerald-800 underline">
+                                    Ver lead criado
+                                </a>
+                            </div>
+                        </template>
                     </div>
                 </template>
             </div>
@@ -77,11 +88,11 @@
                 </template>
                 <template x-if="started && !completed && !waitingChoice">
                     <form @submit.prevent="sendMessage()" class="flex items-center gap-2">
-                        <input type="text" x-model="userInput" placeholder="Digite sua resposta..."
-                               x-ref="input"
+                        <input type="text" x-model="userInput" :placeholder="inputPlaceholder"
+                               x-ref="input" :disabled="typing"
                                class="flex-1 rounded-full border-0 bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-slate-300 focus:ring-2 focus:ring-emerald-500">
-                        <button type="submit"
-                                class="w-9 h-9 rounded-full bg-emerald-600 flex items-center justify-center hover:bg-emerald-700 transition-colors">
+                        <button type="submit" :disabled="!userInput.trim() || typing"
+                                class="w-9 h-9 rounded-full bg-emerald-600 flex items-center justify-center hover:bg-emerald-700 transition-colors disabled:bg-slate-400">
                             <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
                             </svg>
@@ -104,114 +115,175 @@
 
 <script>
 function chatSimulator() {
-    const steps = JSON.parse('{{ steps_json|escapejs }}');
-    const welcomeMsg = '{{ flow.welcome_message|escapejs }}';
+    const apiBase = '/chatbot/api/{{ flow.webhook_token }}';
 
     return {
-        steps: steps,
         messages: [],
-        currentStepIdx: 0,
         userInput: '',
         started: false,
         completed: false,
         typing: false,
         waitingChoice: false,
-        leadData: {},
+        connected: false,
+        sessionKey: null,
+        leadId: null,
+        inputPlaceholder: 'Digite sua resposta...',
 
-        start() {
+        async start() {
             this.started = true;
-            this.addBotMessage(welcomeMsg);
-            if (this.steps.length > 0) {
-                this.askCurrentStep();
-            } else {
-                this.addBotMessage('Nenhum passo configurado neste fluxo.');
-                this.completed = true;
+            this.typing = true;
+
+            try {
+                const resp = await fetch(apiBase + '/start/', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({channel: 'simulator'}),
+                });
+                const data = await resp.json();
+
+                if (!resp.ok) {
+                    this.typing = false;
+                    this.addBotMessage(data.error || 'Erro ao iniciar. Verifique se o fluxo está ativo e possui passos.');
+                    return;
+                }
+
+                this.sessionKey = data.session_key;
+                this.connected = true;
+
+                await this.delay(400);
+                this.typing = false;
+                this.addBotMessage(data.welcome_message);
+
+                if (data.step) {
+                    await this.delay(600);
+                    this.showStep(data.step);
+                }
+            } catch (e) {
+                this.typing = false;
+                this.addBotMessage('Erro de conexão com a API.');
             }
         },
 
-        addBotMessage(text, choices = [], active = false) {
+        async sendMessage() {
+            const text = this.userInput.trim();
+            if (!text || this.typing) return;
+            this.userInput = '';
+            this.addUserMessage(text);
+            await this.processResponse(text);
+        },
+
+        async selectChoice(text) {
+            this.messages.forEach(m => { if (m.active) m.active = false; });
+            this.waitingChoice = false;
+            this.addUserMessage(text);
+            await this.processResponse(text);
+        },
+
+        async processResponse(text) {
             this.typing = true;
-            setTimeout(() => {
+            this.scrollToBottom();
+
+            try {
+                const resp = await fetch(apiBase + '/respond/', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        session_key: this.sessionKey,
+                        response: text,
+                    }),
+                });
+                const data = await resp.json();
+
+                await this.delay(500 + Math.random() * 500);
                 this.typing = false;
-                this.messages.push({ from: 'bot', text, choices, active });
-                this.$nextTick(() => this.scrollToBottom());
-            }, 600);
+
+                if (data.error && data.message) {
+                    this.addBotMessage(data.message);
+                    if (data.step) {
+                        this.showStep(data.step);
+                    }
+                    return;
+                }
+
+                if (data.is_complete) {
+                    this.addBotMessage(data.message);
+                    this.leadId = data.lead_id;
+                    this.completed = true;
+                    this.scrollToBottom();
+                    return;
+                }
+
+                if (data.step) {
+                    this.showStep(data.step);
+                }
+            } catch (e) {
+                this.typing = false;
+                this.addBotMessage('Erro de conexão.');
+            }
+        },
+
+        showStep(step) {
+            const placeholders = {
+                email: 'seu@email.com',
+                phone: '(11) 99999-0000',
+                name: 'Seu nome completo',
+                company: 'Nome da empresa',
+                text: 'Digite sua resposta...',
+                choice: 'Selecione uma opção acima',
+            };
+            this.inputPlaceholder = placeholders[step.type] || 'Digite sua resposta...';
+
+            if (step.type === 'choice' && step.choices.length > 0) {
+                this.waitingChoice = true;
+                this.messages.push({
+                    from: 'bot',
+                    text: step.question,
+                    choices: step.choices,
+                    active: true,
+                });
+            } else {
+                this.waitingChoice = false;
+                this.addBotMessage(step.question);
+                this.$nextTick(() => {
+                    if (this.$refs.input) this.$refs.input.focus();
+                });
+            }
+            this.scrollToBottom();
+        },
+
+        addBotMessage(text) {
+            this.messages.push({ from: 'bot', text, choices: [], active: false });
+            this.scrollToBottom();
         },
 
         addUserMessage(text) {
             this.messages.push({ from: 'user', text });
-            this.$nextTick(() => this.scrollToBottom());
+            this.scrollToBottom();
         },
 
         scrollToBottom() {
-            if (this.$refs.chatArea) {
-                this.$refs.chatArea.scrollTop = this.$refs.chatArea.scrollHeight;
-            }
+            this.$nextTick(() => {
+                if (this.$refs.chatArea) {
+                    this.$refs.chatArea.scrollTop = this.$refs.chatArea.scrollHeight;
+                }
+            });
         },
 
-        askCurrentStep() {
-            const step = this.steps[this.currentStepIdx];
-            if (!step) {
-                this.completeFlow();
-                return;
-            }
-            const choices = step.choices || [];
-            if (step.type === 'choice' && choices.length > 0) {
-                this.waitingChoice = true;
-                this.addBotMessage(step.question, choices, true);
-            } else {
-                this.waitingChoice = false;
-                this.addBotMessage(step.question);
-            }
-        },
-
-        sendMessage() {
-            const text = this.userInput.trim();
-            if (!text) return;
-            this.userInput = '';
-            this.addUserMessage(text);
-
-            const step = this.steps[this.currentStepIdx];
-            if (step && step.mapping) {
-                this.leadData[step.mapping] = text;
-            }
-
-            this.currentStepIdx++;
-            setTimeout(() => this.askCurrentStep(), 300);
-        },
-
-        selectChoice(text) {
-            // Deactivate choice buttons
-            this.messages.forEach(m => { if (m.active) m.active = false; });
-            this.waitingChoice = false;
-            this.addUserMessage(text);
-
-            const step = this.steps[this.currentStepIdx];
-            if (step && step.mapping) {
-                this.leadData[step.mapping] = text;
-            }
-
-            this.currentStepIdx++;
-            setTimeout(() => this.askCurrentStep(), 300);
-        },
-
-        completeFlow() {
-            this.addBotMessage('Obrigado! Suas informações foram registradas. Entraremos em contato em breve.');
-            setTimeout(() => {
-                this.completed = true;
-                this.$nextTick(() => this.scrollToBottom());
-            }, 800);
+        delay(ms) {
+            return new Promise(r => setTimeout(r, ms));
         },
 
         reset() {
             this.messages = [];
-            this.currentStepIdx = 0;
             this.userInput = '';
             this.started = false;
             this.completed = false;
             this.typing = false;
             this.waitingChoice = false;
-            this.leadData = {};
+            this.connected = false;
+            this.sessionKey = null;
+            this.leadId = null;
+            this.inputPlaceholder = 'Digite sua resposta...';
         }
     };
 }

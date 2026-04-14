@@ -31,6 +31,11 @@ urlpatterns = [
         views.ActionDeleteView.as_view(),
         name="action_delete",
     ),
-    # Webhook (stub)
+    # Public chat page (sem autenticação)
+    path("chat/<uuid:token>/", views.public_chat, name="public_chat"),
+    # API JSON (sem autenticação)
+    path("api/<uuid:token>/start/", views.api_start_session, name="api_start"),
+    path("api/<uuid:token>/respond/", views.api_respond, name="api_respond"),
+    # Webhook (integração WhatsApp / genérica)
     path("webhook/<uuid:token>/", views.webhook_receive, name="webhook_receive"),
 ]

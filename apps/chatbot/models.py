@@ -171,3 +171,61 @@ class ChatbotAction(TimestampedModel):
 
     def __str__(self):
         return f"{self.get_trigger_display()} → {self.get_action_type_display()}"
+
+
+class ChatbotSession(TimestampedModel):
+    """Sessão de conversa de um visitante com o chatbot."""
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "Ativa"
+        COMPLETED = "completed", "Concluída"
+        EXPIRED = "expired", "Expirada"
+
+    flow = models.ForeignKey(
+        ChatbotFlow,
+        on_delete=models.CASCADE,
+        related_name="sessions",
+        verbose_name="Fluxo",
+    )
+    session_key = models.UUIDField(
+        "Chave da sessão",
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+    )
+    current_step = models.ForeignKey(
+        ChatbotStep,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Passo atual",
+    )
+    lead_data = models.JSONField("Dados coletados", default=dict, blank=True)
+    channel = models.CharField("Canal", max_length=20, default="webchat")
+    sender_id = models.CharField("ID do remetente", max_length=255, blank=True)
+    status = models.CharField(
+        "Status",
+        max_length=20,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+    )
+    lead = models.ForeignKey(
+        "crm.Lead",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="chatbot_sessions",
+        verbose_name="Lead criado",
+    )
+
+    class Meta:
+        verbose_name = "Sessão do Chatbot"
+        verbose_name_plural = "Sessões do Chatbot"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["flow", "status"]),
+            models.Index(fields=["session_key"]),
+        ]
+
+    def __str__(self):
+        return f"Session {self.session_key} ({self.status})"

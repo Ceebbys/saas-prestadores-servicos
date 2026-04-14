@@ -58,13 +58,50 @@ Checklist de validação do hardening realizado no projeto ServiçoPro MVP.
 3. **Roles/permissions** — O MVP usa `EmpresaMixin` para isolamento por empresa mas não implementa granularidade por role (OWNER vs MEMBER). Todos os membros da empresa têm acesso igual.
 4. **Busca textual** — Usa `icontains` simples. Para volume grande de dados, considerar `SearchVector`/`SearchRank` do PostgreSQL.
 
+## Bloco 6: Chatbot
+
+- [x] ChatbotFlow model com webhook_token UUID
+- [x] ChatbotStep com 6 tipos (TEXT, CHOICE, EMAIL, PHONE, NAME, COMPANY)
+- [x] ChatbotChoice com next_step navigation
+- [x] ChatbotAction com triggers (ON_COMPLETE, ON_TIMEOUT, ON_KEYWORD)
+- [x] CRUD completo de fluxos, passos e ações
+- [x] Webhook endpoint com validação de token
+- [x] process_chatbot_response stub preparado para WhatsApp Business API
+- [x] create_lead_from_chatbot delega para automation.services
+- [x] Sidebar com link Chatbot e active state
+
+## Bloco 7: Automação
+
+- [x] AutomationLog model com EntityType, Action, Status choices
+- [x] create_lead_from_chatbot — idempotente via external_ref
+- [x] create_proposal_from_lead — usa ProposalTemplate default com itens
+- [x] create_contract_from_proposal — substituição de variáveis no template
+- [x] create_work_order_from_contract — scheduled_date = now + 7 dias
+- [x] create_billing_from_work_order — reutiliza generate_entries_from_proposal
+- [x] run_full_pipeline — execução demo com transições de status
+- [x] Pipeline Demo view com 6 cards visuais conectados
+- [x] Log list view com filtros por ação/status e paginação
+- [x] Seed data com 5 logs por empresa (25 total)
+
+## Bloco 8: Hardening Final
+
+- [x] 83 testes automatizados (models, tenant, pipeline, views)
+- [x] Monkey-patch para compatibilidade Django 5.1 + Python 3.14
+- [x] README.md com quick start, módulos e limitações
+- [x] docs/architecture.md com pipeline, idempotência e real vs stub
+- [x] smoke_test.md atualizado com seções Chatbot, Automação, Equipes
+- [x] mvp_validation_checklist.md atualizado com Blocos 6-8
+- [x] Senha corrigida no smoke_test.md (demo1234 → Demo123!)
+- [x] Auditoria de 60+ views — todas com EmpresaMixin
+
 ## Próximos Passos Pós-MVP
 
 - [ ] Implementar permissões granulares por role (OWNER, ADMIN, MANAGER, MEMBER)
 - [ ] Adicionar soft-delete para entidades principais
-- [ ] Implementar auditoria/log de ações
 - [ ] Notificações em tempo real (WebSocket ou polling)
 - [ ] Export de relatórios (PDF, Excel)
-- [ ] Integração com gateway de pagamento
+- [ ] Integração com WhatsApp Business API (substituir stubs)
+- [ ] Integração com gateway de pagamento (Pix real, boleto real)
 - [ ] Multi-idioma (i18n)
 - [ ] API REST para integrações externas
+- [ ] Full-text search com PostgreSQL SearchVector

@@ -114,13 +114,82 @@
             {% endif %}
         </div>
 
-        <!-- Webhook info -->
-        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
-            <h3 class="text-sm font-semibold text-slate-700 mb-2">Webhook</h3>
-            <code class="text-xs bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 text-slate-600 block break-all">
-                {{ request.scheme }}://{{ request.get_host }}{% url 'chatbot:webhook_receive' flow.webhook_token %}
-            </code>
-            <p class="text-xs text-slate-400 mt-2">Status: <span class="font-medium">Stub</span> — preparado para integração</p>
+        <!-- Integration: Public Chat Link + Embed + Webhook -->
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5 space-y-5"
+             x-data="{
+                chatUrl: '{{ request.scheme }}://{{ request.get_host }}{% url 'chatbot:public_chat' flow.webhook_token %}',
+                webhookUrl: '{{ request.scheme }}://{{ request.get_host }}{% url 'chatbot:webhook_receive' flow.webhook_token %}',
+                copied: null,
+                copyText(text, label) {
+                    navigator.clipboard.writeText(text);
+                    this.copied = label;
+                    setTimeout(() => this.copied = null, 2000);
+                }
+             }">
+            <h3 class="text-sm font-semibold text-slate-700">Integração</h3>
+
+            <!-- Public Chat Link -->
+            <div>
+                <label class="text-xs font-medium text-slate-500 mb-1.5 block">Link do Chat Público</label>
+                <div class="flex items-center gap-2">
+                    <input type="text" readonly :value="chatUrl"
+                           class="flex-1 text-xs bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 text-slate-600">
+                    <button @click="copyText(chatUrl, 'link')"
+                            class="px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+                            :class="copied === 'link' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'">
+                        <span x-text="copied === 'link' ? 'Copiado!' : 'Copiar'"></span>
+                    </button>
+                    <a :href="chatUrl" target="_blank"
+                       class="px-3 py-2 rounded-lg text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
+                        Abrir
+                    </a>
+                </div>
+                <p class="text-xs text-slate-400 mt-1">Compartilhe este link para que visitantes conversem com o chatbot.</p>
+            </div>
+
+            <!-- Embed Code -->
+            <div>
+                <label class="text-xs font-medium text-slate-500 mb-1.5 block">Código Embed (iframe)</label>
+                <div class="relative">
+                    <pre class="text-xs bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 text-slate-600 overflow-x-auto"
+                         x-ref="embedCode">&lt;iframe src="{{ request.scheme }}://{{ request.get_host }}{% url 'chatbot:public_chat' flow.webhook_token %}" width="400" height="600" style="border:none;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.15)"&gt;&lt;/iframe&gt;</pre>
+                    <button @click="copyText($refs.embedCode.textContent.trim(), 'embed')"
+                            class="absolute top-2 right-2 px-2 py-1 rounded text-xs font-medium transition-colors"
+                            :class="copied === 'embed' ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-slate-500 hover:bg-slate-100 ring-1 ring-slate-200'">
+                        <span x-text="copied === 'embed' ? 'Copiado!' : 'Copiar'"></span>
+                    </button>
+                </div>
+                <p class="text-xs text-slate-400 mt-1">Cole este código no HTML do seu site para incorporar o chat.</p>
+            </div>
+
+            <!-- QR Code -->
+            <div>
+                <label class="text-xs font-medium text-slate-500 mb-1.5 block">QR Code</label>
+                <div class="flex items-start gap-4">
+                    <canvas x-ref="qrCanvas" width="140" height="140"
+                            class="rounded-lg border border-slate-200 bg-white"
+                            x-init="$nextTick(() => generateQR($refs.qrCanvas, chatUrl))"></canvas>
+                    <div class="text-xs text-slate-400 pt-1">
+                        <p>Escaneie com a câmera do celular para abrir o chat.</p>
+                        <p class="mt-1">Ideal para materiais impressos, cartões de visita e stands.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Webhook URL -->
+            <div>
+                <label class="text-xs font-medium text-slate-500 mb-1.5 block">Webhook (WhatsApp / API externa)</label>
+                <div class="flex items-center gap-2">
+                    <input type="text" readonly :value="webhookUrl"
+                           class="flex-1 text-xs bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 text-slate-600">
+                    <button @click="copyText(webhookUrl, 'webhook')"
+                            class="px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+                            :class="copied === 'webhook' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'">
+                        <span x-text="copied === 'webhook' ? 'Copiado!' : 'Copiar'"></span>
+                    </button>
+                </div>
+                <p class="text-xs text-slate-400 mt-1">POST com <code class="bg-slate-100 px-1 rounded">{"sender_id": "...", "message": "..."}</code> — gerencia sessões automaticamente.</p>
+            </div>
         </div>
     </div>
 
@@ -131,4 +200,35 @@
         </div>
     </div>
 </div>
+
+<script>
+/**
+ * Minimal QR Code generator (canvas-based, no dependencies).
+ * Generates a simple QR-like code using a URL-to-matrix approach via
+ * the Google Charts API rendered as an image then drawn to canvas.
+ * Falls back to a placeholder if offline.
+ */
+function generateQR(canvas, url) {
+    const ctx = canvas.getContext('2d');
+    const size = canvas.width;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = function() {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, size, size);
+        ctx.drawImage(img, 0, 0, size, size);
+    };
+    img.onerror = function() {
+        // Fallback: draw a placeholder
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(0, 0, size, size);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('QR Code', size/2, size/2 - 6);
+        ctx.fillText('(offline)', size/2, size/2 + 10);
+    };
+    img.src = 'https://chart.googleapis.com/chart?cht=qr&chs=' + size + 'x' + size + '&chl=' + encodeURIComponent(url) + '&choe=UTF-8';
+}
+</script>
 {% endblock %}

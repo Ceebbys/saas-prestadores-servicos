@@ -23,7 +23,7 @@ Acesse: http://127.0.0.1:8000
 
 ## 1. Autenticação
 
-- [ ] Login com `admin@geoprime-topografia.demo` / `demo1234`
+- [ ] Login com `admin@geoprime-topografia.demo` / `Demo123!`
 - [ ] Dashboard carrega com métricas, leads recentes e OS próximas
 - [ ] Sidebar navega para todos os módulos
 - [ ] Logout funciona
@@ -145,6 +145,45 @@ Acesse: http://127.0.0.1:8000
 - [ ] Badges de status consistentes em todos os módulos
 - [ ] Tabelas responsivas (colunas ocultas em telas menores)
 
+## 13. Chatbot
+
+- [ ] Lista de fluxos carrega
+- [ ] Breadcrumb Dashboard → Chatbot → Fluxos
+- [ ] Criar fluxo funciona (nome, canal, mensagens padrão)
+- [ ] Detalhe do fluxo mostra passos e ações
+- [ ] Adicionar passo funciona (tipos: texto, email, telefone, nome, empresa, escolha)
+- [ ] Editar passo funciona
+- [ ] Excluir passo funciona
+- [ ] Adicionar ação funciona (trigger + tipo)
+- [ ] Excluir ação funciona
+- [ ] Ativar/desativar fluxo funciona
+- [ ] Webhook token UUID visível no detalhe
+- [ ] POST no webhook com token válido retorna 200 JSON
+- [ ] POST no webhook com token inválido retorna 404
+
+## 14. Automação
+
+- [ ] Pipeline Demo carrega com 6 cards coloridos
+- [ ] Botão "Simular Fluxo Completo" executa pipeline
+- [ ] Resultado mostra 5 entidades criadas (Lead, Proposta, Contrato, OS, Financeiro)
+- [ ] Links nas entidades criadas funcionam
+- [ ] Lista de logs carrega
+- [ ] Filtros por ação e status funcionam
+- [ ] Tabela de logs mostra data, ação, entidade, origem, status
+- [ ] Paginação dos logs funciona
+
+## 15. Equipes
+
+- [ ] Lista de equipes em Configurações
+- [ ] Criar equipe funciona
+- [ ] Editar equipe funciona
+- [ ] Adicionar membro funciona
+- [ ] Remover membro funciona
+- [ ] Alterar role de membro funciona
+- [ ] Excluir equipe funciona
+- [ ] Equipe aparece como opção no formulário de OS
+- [ ] Contas bancárias — listar, criar, editar, excluir
+
 ---
 
 ## Validação Rápida (Comandos)
@@ -156,8 +195,8 @@ python manage.py check
 # Verificar migrações pendentes
 python manage.py showmigrations | grep "\[ \]"
 
-# Rodar testes (se existirem)
-python manage.py test
+# Rodar testes
+python manage.py test apps.core.tests -v2
 
 # Popular dados demo
 python manage.py seed_demo_data

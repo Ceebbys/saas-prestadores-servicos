@@ -1,0 +1,245 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ flow.name }} - Chat</title>
+    <link rel="stylesheet" href="{% static 'css/output.css' %}?v=3">
+    <style>
+        body { margin: 0; padding: 0; background: #e5ddd5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .chat-container { max-width: 480px; margin: 0 auto; height: 100vh; display: flex; flex-direction: column; background: #e5ddd5; }
+        @media (min-width: 640px) {
+            .chat-container { height: 95vh; margin-top: 2.5vh; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        }
+        .chat-header { background: linear-gradient(135deg, #075e54 0%, #128c7e 100%); color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+        .chat-header .avatar { width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-size: 20px; }
+        .chat-header .info h1 { font-size: 17px; font-weight: 600; margin: 0; }
+        .chat-header .info p { font-size: 13px; opacity: 0.85; margin: 2px 0 0; }
+        .chat-messages { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 6px; }
+        .message { max-width: 85%; padding: 8px 12px; border-radius: 8px; font-size: 14.5px; line-height: 1.45; word-wrap: break-word; position: relative; }
+        .message.bot { background: white; color: #303030; align-self: flex-start; border-top-left-radius: 0; box-shadow: 0 1px 1px rgba(0,0,0,0.06); }
+        .message.user { background: #dcf8c6; color: #303030; align-self: flex-end; border-top-right-radius: 0; box-shadow: 0 1px 1px rgba(0,0,0,0.06); }
+        .message .time { font-size: 11px; color: #999; margin-top: 4px; text-align: right; }
+        .typing { display: flex; gap: 4px; padding: 12px 16px; align-self: flex-start; background: white; border-radius: 8px; border-top-left-radius: 0; }
+        .typing span { width: 8px; height: 8px; border-radius: 50%; background: #90949c; animation: typing 1.4s infinite; }
+        .typing span:nth-child(2) { animation-delay: 0.2s; }
+        .typing span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes typing { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
+        .chat-input { background: #f0f0f0; padding: 10px 12px; display: flex; gap: 8px; align-items: flex-end; flex-shrink: 0; }
+        .chat-input input { flex: 1; border: none; border-radius: 24px; padding: 10px 16px; font-size: 15px; background: white; outline: none; }
+        .chat-input button { width: 44px; height: 44px; border-radius: 50%; background: #128c7e; color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background 0.2s; }
+        .chat-input button:hover { background: #075e54; }
+        .chat-input button:disabled { background: #ccc; cursor: not-allowed; }
+        .choices-container { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 16px; background: #f0f0f0; flex-shrink: 0; }
+        .choice-btn { padding: 8px 18px; border-radius: 20px; border: 2px solid #128c7e; background: white; color: #128c7e; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+        .choice-btn:hover { background: #128c7e; color: white; }
+        .complete-banner { text-align: center; padding: 24px 16px; background: white; border-radius: 12px; margin: 16px; }
+        .complete-banner .icon { width: 56px; height: 56px; border-radius: 50%; background: #25d366; color: white; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; font-size: 28px; }
+        .complete-banner h3 { color: #075e54; margin: 0 0 8px; font-size: 18px; }
+        .complete-banner p { color: #667; margin: 0; font-size: 14px; }
+    </style>
+</head>
+<body>
+<div class="chat-container" x-data="chatWidget()" x-init="init()">
+    <!-- Header -->
+    <div class="chat-header">
+        <div class="avatar">
+            <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        </div>
+        <div class="info">
+            <h1>{{ flow.name }}</h1>
+            <p x-text="connected ? 'Online' : 'Conectando...'"></p>
+        </div>
+    </div>
+
+    <!-- Messages -->
+    <div class="chat-messages" x-ref="messagesContainer">
+        <template x-for="(msg, i) in messages" :key="i">
+            <div :class="'message ' + msg.type">
+                <div x-text="msg.text"></div>
+                <div class="time" x-text="msg.time"></div>
+            </div>
+        </template>
+
+        <!-- Typing indicator -->
+        <div class="typing" x-show="isTyping" x-transition>
+            <span></span><span></span><span></span>
+        </div>
+
+        <!-- Completion banner -->
+        <div class="complete-banner" x-show="isComplete" x-transition>
+            <div class="icon">&#10003;</div>
+            <h3>Obrigado!</h3>
+            <p>Suas informações foram registradas com sucesso. Entraremos em contato em breve.</p>
+        </div>
+    </div>
+
+    <!-- Choice buttons -->
+    <div class="choices-container" x-show="currentChoices.length > 0 && !isComplete && !isTyping">
+        <template x-for="choice in currentChoices" :key="choice">
+            <button class="choice-btn" @click="selectChoice(choice)" x-text="choice"></button>
+        </template>
+    </div>
+
+    <!-- Text input -->
+    <div class="chat-input" x-show="!isComplete && currentChoices.length === 0">
+        <input
+            type="text"
+            x-model="inputText"
+            @keydown.enter="sendMessage()"
+            :placeholder="inputPlaceholder"
+            :disabled="isTyping || !connected"
+            x-ref="inputField"
+        >
+        <button @click="sendMessage()" :disabled="!inputText.trim() || isTyping">
+            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+function chatWidget() {
+    return {
+        messages: [],
+        inputText: '',
+        isTyping: false,
+        isComplete: false,
+        connected: false,
+        sessionKey: null,
+        currentChoices: [],
+        currentStep: null,
+        inputPlaceholder: 'Digite sua mensagem...',
+        apiBase: '/chatbot/api/{{ token }}',
+
+        async init() {
+            try {
+                const resp = await fetch(this.apiBase + '/start/', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({channel: 'webchat'}),
+                });
+                const data = await resp.json();
+                if (resp.ok && data.session_key) {
+                    this.sessionKey = data.session_key;
+                    this.connected = true;
+                    await this.simulateBotMessage(data.welcome_message);
+                    if (data.step) {
+                        this.currentStep = data.step;
+                        await this.simulateBotMessage(data.step.question);
+                        this.currentChoices = data.step.choices || [];
+                        this.updatePlaceholder(data.step);
+                    }
+                }
+            } catch (e) {
+                this.addMessage('Erro ao conectar. Tente novamente.', 'bot');
+            }
+        },
+
+        async sendMessage() {
+            const text = this.inputText.trim();
+            if (!text || this.isTyping || !this.sessionKey) return;
+
+            this.inputText = '';
+            this.addMessage(text, 'user');
+            this.currentChoices = [];
+            await this.processResponse(text);
+        },
+
+        async selectChoice(choice) {
+            this.addMessage(choice, 'user');
+            this.currentChoices = [];
+            await this.processResponse(choice);
+        },
+
+        async processResponse(text) {
+            this.isTyping = true;
+            this.scrollToBottom();
+
+            try {
+                const resp = await fetch(this.apiBase + '/respond/', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        session_key: this.sessionKey,
+                        response: text,
+                    }),
+                });
+                const data = await resp.json();
+
+                // Small delay for natural feel
+                await new Promise(r => setTimeout(r, 600 + Math.random() * 800));
+                this.isTyping = false;
+
+                if (data.error && data.message) {
+                    this.addMessage(data.message, 'bot');
+                    if (data.step) {
+                        this.currentChoices = data.step.choices || [];
+                        this.updatePlaceholder(data.step);
+                    }
+                    return;
+                }
+
+                if (data.is_complete) {
+                    this.addMessage(data.message, 'bot');
+                    this.isComplete = true;
+                    return;
+                }
+
+                if (data.step) {
+                    this.currentStep = data.step;
+                    this.addMessage(data.step.question, 'bot');
+                    this.currentChoices = data.step.choices || [];
+                    this.updatePlaceholder(data.step);
+                }
+            } catch (e) {
+                this.isTyping = false;
+                this.addMessage('Erro de conexão. Tente novamente.', 'bot');
+            }
+
+            this.$nextTick(() => {
+                if (this.$refs.inputField && this.currentChoices.length === 0) {
+                    this.$refs.inputField.focus();
+                }
+            });
+        },
+
+        addMessage(text, type) {
+            const now = new Date();
+            const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+            this.messages.push({text, type, time});
+            this.scrollToBottom();
+        },
+
+        async simulateBotMessage(text) {
+            this.isTyping = true;
+            this.scrollToBottom();
+            await new Promise(r => setTimeout(r, 400 + Math.random() * 600));
+            this.isTyping = false;
+            this.addMessage(text, 'bot');
+        },
+
+        updatePlaceholder(step) {
+            const placeholders = {
+                email: 'seu@email.com',
+                phone: '(11) 99999-0000',
+                name: 'Seu nome completo',
+                company: 'Nome da empresa',
+                text: 'Digite sua resposta...',
+                choice: 'Selecione uma opção acima',
+            };
+            this.inputPlaceholder = placeholders[step.type] || 'Digite sua mensagem...';
+        },
+
+        scrollToBottom() {
+            this.$nextTick(() => {
+                const el = this.$refs.messagesContainer;
+                if (el) el.scrollTop = el.scrollHeight;
+            });
+        },
+    };
+}
+</script>
+<script src="{% static 'js/alpine.min.js' %}" defer></script>
+</body>
+</html>

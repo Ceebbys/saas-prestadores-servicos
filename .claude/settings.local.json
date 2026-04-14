@@ -82,7 +82,14 @@
       "Bash(python manage.py shell -c \":*)",
       "Bash(python manage.py makemigrations automation)",
       "Bash(python manage.py migrate)",
-      "Bash(python manage.py shell -c ':*)"
+      "Bash(python manage.py shell -c ':*)",
+      "Bash(python manage.py test apps.core.tests.test_models -v2)",
+      "Bash(python manage.py test apps.core.tests.test_tenant_isolation -v2)",
+      "Bash(python manage.py test apps.core.tests.test_automation_pipeline -v2)",
+      "Bash(python manage.py test apps.core.tests.test_views -v2)",
+      "Bash(python manage.py test apps.core.tests.test_views.ViewAccessTests.test_lead_create -v2)",
+      "Bash(python manage.py test apps.core.tests -v2)",
+      "Bash(python manage.py makemigrations chatbot)"
     ]
   }
 }

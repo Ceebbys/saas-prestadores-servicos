@@ -1,11 +1,13 @@
 import json
+import logging
 
 from django.contrib import messages
 from django.http import JsonResponse
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 from django.views.generic import (
     CreateView,
     DeleteView,
@@ -17,7 +19,10 @@ from django.views.generic import (
 from apps.core.mixins import EmpresaMixin, HtmxResponseMixin
 
 from .forms import ChatbotActionForm, ChatbotFlowForm, ChatbotStepForm
-from .models import ChatbotAction, ChatbotChoice, ChatbotFlow, ChatbotStep
+from .models import ChatbotAction, ChatbotChoice, ChatbotFlow, ChatbotSession, ChatbotStep
+from .services import process_response, start_session
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -225,42 +230,160 @@ class ActionDeleteView(EmpresaMixin, View):
 
 
 # ---------------------------------------------------------------------------
-# Webhook (stub)
+# Public Chat View (sem autenticação)
+# ---------------------------------------------------------------------------
+
+
+def public_chat(request, token):
+    """Página pública de chat — qualquer visitante pode usar."""
+    flow = get_object_or_404(ChatbotFlow, webhook_token=token, is_active=True)
+    return render(request, "chatbot/public_chat.html", {
+        "flow": flow,
+        "token": token,
+    })
+
+
+# ---------------------------------------------------------------------------
+# API JSON (sem autenticação, CSRF exempt)
+# ---------------------------------------------------------------------------
+
+
+def _get_flow_by_token(token):
+    return ChatbotFlow.objects.filter(
+        webhook_token=token, is_active=True,
+    ).first()
+
+
+@csrf_exempt
+@require_POST
+def api_start_session(request, token):
+    """Inicia uma sessão de chatbot. POST com JSON opcional {channel, sender_id}."""
+    flow = _get_flow_by_token(token)
+    if not flow:
+        return JsonResponse({"error": "Flow not found or inactive"}, status=404)
+
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        body = {}
+
+    channel = body.get("channel", "webchat")
+    sender_id = body.get("sender_id", "")
+
+    try:
+        result = start_session(flow, channel=channel, sender_id=sender_id)
+        return JsonResponse(result)
+    except ValueError as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+
+@csrf_exempt
+@require_POST
+def api_respond(request, token):
+    """Processa resposta do usuário. POST com JSON {session_key, response}."""
+    flow = _get_flow_by_token(token)
+    if not flow:
+        return JsonResponse({"error": "Flow not found or inactive"}, status=404)
+
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    session_key = body.get("session_key", "")
+    user_response = body.get("response", "")
+
+    if not session_key or not user_response:
+        return JsonResponse(
+            {"error": "session_key and response are required"}, status=400,
+        )
+
+    try:
+        result = process_response(session_key, user_response)
+        return JsonResponse(result)
+    except ValueError as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+
+# ---------------------------------------------------------------------------
+# Webhook funcional (integração WhatsApp / genérica)
 # ---------------------------------------------------------------------------
 
 
 @csrf_exempt
 def webhook_receive(request, token):
-    """
-    Endpoint de webhook para integração futura com WhatsApp Business API.
+    """Endpoint de webhook para integração com WhatsApp Business API e outros canais.
 
-    STUB — aceita POST, valida o token, retorna JSON.
-
-    Na integração real, este endpoint:
-    1. Receberá mensagens do WhatsApp via webhook
-    2. Identificará a sessão do usuário
-    3. Chamará process_chatbot_response() para processar
-    4. Retornará a próxima mensagem do fluxo
+    Recebe mensagens, gerencia sessões automaticamente, e retorna resposta JSON.
+    Para cada sender_id: cria nova sessão se não existir, ou continua a existente.
     """
     if request.method != "POST":
-        return JsonResponse(
-            {"error": "Method not allowed"}, status=405
-        )
+        return JsonResponse({"error": "Method not allowed"}, status=405)
 
-    flow = ChatbotFlow.objects.filter(
-        webhook_token=token, is_active=True
+    flow = _get_flow_by_token(token)
+    if not flow:
+        return JsonResponse({"error": "Flow not found or inactive"}, status=404)
+
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    sender_id = body.get("sender_id", body.get("from", ""))
+    message = body.get("message", body.get("text", ""))
+
+    if not sender_id:
+        return JsonResponse({"error": "sender_id is required"}, status=400)
+
+    # Buscar sessão ativa para este sender_id
+    session = ChatbotSession.objects.filter(
+        flow=flow, sender_id=sender_id, status=ChatbotSession.Status.ACTIVE,
     ).first()
 
-    if not flow:
-        return JsonResponse(
-            {"error": "Flow not found or inactive"}, status=404
-        )
+    if not session:
+        # Iniciar nova sessão
+        try:
+            result = start_session(flow, channel="whatsapp", sender_id=sender_id)
+            return JsonResponse({
+                "status": "ok",
+                "session_key": result["session_key"],
+                "reply": result["welcome_message"],
+                "question": result["step"]["question"] if result.get("step") else None,
+                "choices": result["step"]["choices"] if result.get("step") else [],
+                "is_complete": False,
+            })
+        except ValueError as e:
+            return JsonResponse({"error": str(e)}, status=400)
 
-    return JsonResponse(
-        {
+    # Processar resposta na sessão existente
+    if not message:
+        return JsonResponse({
             "status": "ok",
-            "message": "Webhook received (stub)",
-            "flow": flow.name,
-            "integration_ready": True,
-        }
-    )
+            "reply": session.current_step.question_text if session.current_step else "",
+            "is_complete": False,
+        })
+
+    try:
+        result = process_response(str(session.session_key), message)
+        reply = ""
+        choices = []
+
+        if result.get("error"):
+            reply = result["message"]
+            choices = result["step"]["choices"] if result.get("step") else []
+        elif result.get("is_complete"):
+            reply = result["message"]
+        elif result.get("step"):
+            reply = result["step"]["question"]
+            choices = result["step"]["choices"]
+
+        return JsonResponse({
+            "status": "ok",
+            "session_key": str(session.session_key),
+            "reply": reply,
+            "choices": choices,
+            "is_complete": result.get("is_complete", False),
+            "lead_id": result.get("lead_id"),
+        })
+    except ValueError as e:
+        return JsonResponse({"error": str(e)}, status=400)
