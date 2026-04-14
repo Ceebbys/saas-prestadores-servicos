@@ -174,7 +174,11 @@ def process_response(session_key: str, user_response: str) -> dict:
     # Armazenar resposta no lead_data
     text = user_response.strip()
     if step.lead_field_mapping:
-        session.lead_data[step.lead_field_mapping] = text
+        # notes acumula múltiplas respostas (serviço, urgência, orçamento, etc.)
+        if step.lead_field_mapping == "notes" and session.lead_data.get("notes"):
+            session.lead_data["notes"] += f" | {text}"
+        else:
+            session.lead_data[step.lead_field_mapping] = text
 
     # Encontrar próximo passo
     next_step = _find_next_step(step, text)

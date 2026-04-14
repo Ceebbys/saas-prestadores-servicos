@@ -307,16 +307,16 @@ class CreateWhatsAppFlowsCommandTests(TransactionTestCase):
     def setUp(self):
         self.empresa = create_test_empresa(slug="cmd-test")
 
-    def test_command_creates_three_flows(self):
+    def test_command_creates_six_flows(self):
         from django.core.management import call_command
         call_command("create_whatsapp_flows", empresa="cmd-test")
 
         flows = ChatbotFlow.objects.filter(empresa=self.empresa)
-        self.assertEqual(flows.count(), 3)
+        self.assertEqual(flows.count(), 6)
 
-        # The "Atendimento Completo" should have 7 steps
-        completo = flows.get(name="Atendimento Completo WhatsApp")
-        self.assertEqual(completo.steps.count(), 7)
+        # The "Atendimento Inicial Completo" should have 12 steps
+        completo = flows.get(name="Atendimento Inicial Completo")
+        self.assertEqual(completo.steps.count(), 12)
         self.assertTrue(completo.is_active)
 
         # Actions should exist
@@ -326,7 +326,7 @@ class CreateWhatsAppFlowsCommandTests(TransactionTestCase):
         from django.core.management import call_command
 
         call_command("create_whatsapp_flows", empresa="cmd-test")
-        self.assertEqual(ChatbotFlow.objects.filter(empresa=self.empresa).count(), 3)
+        self.assertEqual(ChatbotFlow.objects.filter(empresa=self.empresa).count(), 6)
 
         call_command("create_whatsapp_flows", empresa="cmd-test", force=True)
-        self.assertEqual(ChatbotFlow.objects.filter(empresa=self.empresa).count(), 3)
+        self.assertEqual(ChatbotFlow.objects.filter(empresa=self.empresa).count(), 6)

@@ -614,13 +614,14 @@ class WhatsAppConfigSaveView(EmpresaMixin, View):
             },
         )
         if not created:
+            old_instance_name = config.instance_name  # capturar antes de sobrescrever
             config.instance_name = instance_name
             config.phone_number = phone_number
             config.api_url = api_url
             config.api_key = api_key
             config.save(update_fields=["instance_name", "phone_number", "api_url", "api_key", "updated_at"])
             # Limpar token antigo ao renomear instância (será gerado novo na criação)
-            if config.instance_name != instance_name:
+            if old_instance_name != instance_name:
                 config.instance_token = ""
                 config.save(update_fields=["instance_token", "updated_at"])
 
@@ -665,6 +666,33 @@ class WhatsAppConfigSaveView(EmpresaMixin, View):
                         "Agora escaneie o QR Code abaixo com seu celular.",
                     )
                 elif resp.status_code == 409:
+                    # Instância já existe — tentar buscar o token dela
+                    if not config.instance_token:
+                        try:
+                            fetch_resp = httpx.get(
+                                f"{effective_url.rstrip('/')}/instance/fetchInstances",
+                                headers={"apikey": effective_key},
+                                params={"instanceName": instance_name},
+                                timeout=10.0,
+                            )
+                            if fetch_resp.status_code == 200:
+                                instances = fetch_resp.json()
+                                if isinstance(instances, list):
+                                    for inst in instances:
+                                        inst_name = inst.get("instance", {}).get("instanceName", "")
+                                        if inst_name == instance_name:
+                                            token = (
+                                                inst.get("instance", {}).get("apikey", "")
+                                                or inst.get("hash", {}).get("apikey", "")
+                                                or ""
+                                            )
+                                            if token:
+                                                config.instance_token = token
+                                                config.save(update_fields=["instance_token", "updated_at"])
+                                                logger.info("Captured token from existing instance '%s'", instance_name)
+                                            break
+                        except Exception:
+                            logger.exception("Failed to fetch instance details for '%s'", instance_name)
                     messages.success(
                         request,
                         f"Instância '{instance_name}' já existe na Evolution API. Configuração salva.",
@@ -779,9 +807,9 @@ class WhatsAppQRCodeView(EmpresaMixin, View):
         except Exception:
             return self._html_error("Nenhuma configuração WhatsApp encontrada.")
 
-        effective_url = config.effective_api_url
-        # Para operações de instância usar o token específico
+        effective_url = config.effective_api_url.rstrip("/")
         effective_key = config.effective_instance_key
+        admin_key = config.effective_api_key  # para operações admin (logout)
 
         if not effective_url or not effective_key:
             return self._html_error(
@@ -793,52 +821,145 @@ class WhatsAppQRCodeView(EmpresaMixin, View):
             import httpx
             from django.utils import timezone
 
+            headers = {"apikey": effective_key}
+            admin_headers = {"apikey": admin_key}
+            inst = config.instance_name
+
             # 1. Verificar estado atual
             state_resp = httpx.get(
-                f"{effective_url.rstrip('/')}/instance/connectionState/{config.instance_name}",
-                headers={"apikey": effective_key},
+                f"{effective_url}/instance/connectionState/{inst}",
+                headers=headers,
                 timeout=8.0,
+            )
+            logger.info(
+                "Evolution connectionState '%s': status=%s body=%s",
+                inst, state_resp.status_code, state_resp.text[:300],
             )
             state_data = state_resp.json() if state_resp.status_code == 200 else {}
             state = state_data.get("instance", {}).get("state", "close")
 
             if state == "open":
-                # Já conectado — salvar e retornar badge de sucesso
                 if not config.is_connected:
                     config.is_connected = True
                     config.connected_at = config.connected_at or timezone.now()
                     config.save(update_fields=["is_connected", "connected_at", "updated_at"])
                 return self._html_connected(config)
 
-            # 2. Buscar QR code (endpoint connect retorna o qr em base64)
-            qr_resp = httpx.get(
-                f"{effective_url.rstrip('/')}/instance/connect/{config.instance_name}",
-                headers={"apikey": effective_key},
-                timeout=15.0,
-            )
+            # 2. Tentar /instance/connect/ (endpoint primário)
+            base64_img = self._try_connect_endpoint(effective_url, inst, headers)
 
-            if qr_resp.status_code != 200:
-                return self._html_error(
-                    f"Não foi possível gerar o QR code (status {qr_resp.status_code}). "
-                    "Verifique se a instância foi criada corretamente."
-                )
-
-            qr_data = qr_resp.json()
-            base64_img = qr_data.get("base64") or qr_data.get("qrcode", {}).get("base64", "")
-
+            # 3. Fallback: /instance/qrcode/ (endpoint alternativo)
             if not base64_img:
-                return self._html_error(
-                    "QR code não disponível. A instância pode já estar conectada ou "
-                    "aguardando inicialização. Tente novamente em alguns segundos."
+                logger.info("Primary connect returned no QR, trying /instance/qrcode/ fallback")
+                base64_img = self._try_qrcode_endpoint(effective_url, inst, headers)
+
+            # 4. Recuperação: logout + reconnect (instância pode estar travada)
+            if not base64_img:
+                logger.info("No QR from either endpoint, attempting logout+reconnect for '%s'", inst)
+                base64_img = self._try_logout_reconnect(
+                    effective_url, inst, admin_headers, headers,
                 )
 
-            return self._html_qrcode(base64_img)
+            if base64_img:
+                return self._html_qrcode(base64_img)
+
+            return self._html_error(
+                "QR code não disponível após todas as tentativas. "
+                "Verifique se a instância existe no Evolution API Manager e se a API Key está correta. "
+                "Tente salvar a configuração novamente para recriar a instância."
+            )
 
         except Exception:
             logger.exception("Error fetching WhatsApp QR code")
             return self._html_error(
                 "Erro ao contatar a Evolution API. Verifique a URL configurada."
             )
+
+    # ------------------------------------------------------------------
+    # Tentativas de obter QR code
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_base64(data: dict) -> str:
+        """Tenta extrair base64 de múltiplos formatos de resposta da Evolution API."""
+        return (
+            data.get("base64", "")
+            or data.get("qrcode", {}).get("base64", "")
+            or data.get("qrcode", {}).get("pairingCode", "")
+            or data.get("code", "")  # alguns builds retornam apenas 'code'
+            or ""
+        )
+
+    def _try_connect_endpoint(self, base_url, inst, headers):
+        import httpx
+
+        try:
+            resp = httpx.get(
+                f"{base_url}/instance/connect/{inst}",
+                headers=headers,
+                timeout=15.0,
+            )
+            logger.info(
+                "Evolution connect '%s': status=%s body=%s",
+                inst, resp.status_code, resp.text[:500],
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                # Se respondeu que já está conectado
+                if data.get("instance", {}).get("state") == "open":
+                    return None  # será tratado como "conectado" no caller
+                return self._extract_base64(data)
+        except Exception:
+            logger.exception("Error on /instance/connect/ for '%s'", inst)
+        return ""
+
+    def _try_qrcode_endpoint(self, base_url, inst, headers):
+        import httpx
+
+        try:
+            resp = httpx.get(
+                f"{base_url}/instance/qrcode/{inst}?image=false",
+                headers=headers,
+                timeout=15.0,
+            )
+            logger.info(
+                "Evolution qrcode '%s': status=%s body=%s",
+                inst, resp.status_code, resp.text[:500],
+            )
+            if resp.status_code == 200:
+                return self._extract_base64(resp.json())
+        except Exception:
+            logger.exception("Error on /instance/qrcode/ for '%s'", inst)
+        return ""
+
+    def _try_logout_reconnect(self, base_url, inst, admin_headers, instance_headers):
+        import httpx
+
+        try:
+            logout_resp = httpx.delete(
+                f"{base_url}/instance/logout/{inst}",
+                headers=admin_headers,
+                timeout=10.0,
+            )
+            logger.info(
+                "Evolution logout '%s': status=%s body=%s",
+                inst, logout_resp.status_code, logout_resp.text[:200],
+            )
+            # Retry connect após logout
+            retry_resp = httpx.get(
+                f"{base_url}/instance/connect/{inst}",
+                headers=instance_headers,
+                timeout=15.0,
+            )
+            logger.info(
+                "Evolution retry connect '%s': status=%s body=%s",
+                inst, retry_resp.status_code, retry_resp.text[:500],
+            )
+            if retry_resp.status_code == 200:
+                return self._extract_base64(retry_resp.json())
+        except Exception:
+            logger.exception("Logout+reconnect failed for '%s'", inst)
+        return ""
 
     # ------------------------------------------------------------------
     # Helpers HTML parcial (HTMX swap)
