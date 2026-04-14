@@ -48,11 +48,15 @@
                         </label>
                         <input type="text" name="instance_name"
                                value="{{ whatsapp_config.instance_name|default:'' }}"
-                               placeholder="ex: minha-empresa-whatsapp"
+                               placeholder="ex: minha-empresa-wa"
+                               pattern="[a-zA-Z0-9][a-zA-Z0-9_\-]{1,98}"
+                               title="Apenas letras, números, hifens e underscores. Sem espaços."
                                required
                                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
                         <p class="mt-1 text-xs text-slate-500">
-                            Identificador único desta empresa na Evolution API. Use apenas letras, números e hífens.
+                            Apenas letras, números, hifens e underscores.
+                            <span class="text-red-400 font-medium">Sem espaços.</span>
+                            Ex: <code class="bg-slate-100 px-1 rounded">minha-empresa-wa</code>
                         </p>
                     </div>
 

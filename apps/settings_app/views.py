@@ -568,6 +568,9 @@ class WhatsAppConfigView(EmpresaMixin, TemplateView):
 class WhatsAppConfigSaveView(EmpresaMixin, View):
     """Salva configuração do WhatsApp e tenta criar/atualizar instância."""
 
+    # A Evolution API rejeita nomes com espaços, caracteres especiais, etc.
+    _INSTANCE_NAME_RE = __import__("re").compile(r"^[a-zA-Z0-9][a-zA-Z0-9_\-]{1,98}$")
+
     def post(self, request):
         empresa = request.empresa
         instance_name = request.POST.get("instance_name", "").strip()
@@ -579,8 +582,16 @@ class WhatsAppConfigSaveView(EmpresaMixin, View):
             messages.error(request, "O nome da instância é obrigatório.")
             return redirect("settings_app:whatsapp_config")
 
+        # Validar formato: apenas letras, números, hifens e underscores (sem espaços)
+        if not self._INSTANCE_NAME_RE.match(instance_name):
+            messages.error(
+                request,
+                "Nome de instância inválido. Use apenas letras, números, hifens e underscores "
+                "(ex: minha-empresa-wa). Espaços e caracteres especiais não são permitidos.",
+            )
+            return redirect("settings_app:whatsapp_config")
+
         from apps.chatbot.models import WhatsAppConfig
-        from django.db import IntegrityError
 
         # Verificar conflito de nome com outra empresa
         conflict = WhatsAppConfig.objects.filter(
@@ -617,16 +628,23 @@ class WhatsAppConfigSaveView(EmpresaMixin, View):
             try:
                 import httpx
 
+                # Evolution API v2: payload correto para criação de instância
+                payload = {
+                    "instanceName": instance_name,
+                    "qrcode": True,
+                    "integration": "WHATSAPP-BAILEYS",
+                }
                 resp = httpx.post(
                     f"{effective_url.rstrip('/')}/instance/create",
                     headers={"Content-Type": "application/json", "apikey": effective_key},
-                    json={"instanceName": instance_name, "qrcode": True},
-                    timeout=10.0,
+                    json=payload,
+                    timeout=15.0,
                 )
                 if resp.status_code in (200, 201):
                     messages.success(
                         request,
-                        f"Instância '{instance_name}' criada na Evolution API. Agora escaneie o QR Code.",
+                        f"Instância '{instance_name}' criada com sucesso. "
+                        "Agora escaneie o QR Code no Evolution API Manager.",
                     )
                 elif resp.status_code == 409:
                     messages.success(
@@ -634,22 +652,31 @@ class WhatsAppConfigSaveView(EmpresaMixin, View):
                         f"Instância '{instance_name}' já existe na Evolution API. Configuração salva.",
                     )
                 else:
+                    # Mostrar o erro real da Evolution API para facilitar o diagnóstico
+                    try:
+                        err_detail = resp.json()
+                    except Exception:
+                        err_detail = resp.text[:300]
+                    logger.warning(
+                        "Evolution API create instance failed %s: %s", resp.status_code, err_detail
+                    )
                     messages.warning(
                         request,
-                        f"Configuração salva, mas não foi possível criar a instância (status {resp.status_code}). "
-                        "Crie-a manualmente no painel da Evolution API.",
+                        f"Configuração salva, mas a Evolution API retornou erro {resp.status_code}: "
+                        f"{err_detail}. Verifique a URL, a API Key e o nome da instância.",
                     )
             except Exception:
                 logger.exception("Error creating Evolution API instance")
                 messages.warning(
                     request,
-                    "Configuração salva. Não foi possível contatar a Evolution API agora — "
-                    "verifique a URL e a chave configuradas.",
+                    "Configuração salva. Não foi possível contatar a Evolution API — "
+                    "verifique se a URL está correta e o serviço está no ar.",
                 )
         else:
             messages.success(
                 request,
-                "Configuração salva. Configure EVOLUTION_API_URL e EVOLUTION_API_KEY no servidor para ativar o envio.",
+                "Configuração salva. Para ativar o WhatsApp, configure as variáveis "
+                "EVOLUTION_API_URL e EVOLUTION_API_KEY no servidor.",
             )
 
         return redirect("settings_app:whatsapp_config")
