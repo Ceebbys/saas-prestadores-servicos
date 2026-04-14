@@ -1,6 +1,7 @@
 from django.urls import path
 
 from . import views
+from .whatsapp import evolution_webhook_auto, evolution_webhook_receive
 
 app_name = "chatbot"
 
@@ -38,4 +39,7 @@ urlpatterns = [
     path("api/<uuid:token>/respond/", views.api_respond, name="api_respond"),
     # Webhook (integração WhatsApp / genérica)
     path("webhook/<uuid:token>/", views.webhook_receive, name="webhook_receive"),
+    # Evolution API WhatsApp adapter
+    path("evolution/<uuid:token>/", evolution_webhook_receive, name="evolution_webhook"),
+    path("evolution/", evolution_webhook_auto, name="evolution_webhook_auto"),
 ]

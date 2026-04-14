@@ -89,7 +89,8 @@
       "Bash(python manage.py test apps.core.tests.test_views -v2)",
       "Bash(python manage.py test apps.core.tests.test_views.ViewAccessTests.test_lead_create -v2)",
       "Bash(python manage.py test apps.core.tests -v2)",
-      "Bash(python manage.py makemigrations chatbot)"
+      "Bash(python manage.py makemigrations chatbot)",
+      "Bash(python manage.py create_whatsapp_flows --all)"
     ]
   }
 }
