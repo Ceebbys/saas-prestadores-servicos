@@ -718,7 +718,163 @@ class WhatsAppStatusView(EmpresaMixin, View):
             else:
                 config.save(update_fields=["is_connected", "updated_at"])
 
-            return JsonResponse({"status": state, "is_connected": is_connected})
+            # Retornar JSON se requisição JSON, HTML (para HTMX badge swap) caso contrário
+            if request.headers.get("Accept", "").startswith("application/json"):
+                return JsonResponse({"status": state, "is_connected": is_connected})
+            return self._badge_html(is_connected)
         except Exception:
             logger.exception("Error checking WhatsApp connection state")
-            return JsonResponse({"status": "error", "is_connected": False})
+            if request.headers.get("Accept", "").startswith("application/json"):
+                return JsonResponse({"status": "error", "is_connected": False})
+            return self._badge_html(False)
+
+    def _badge_html(self, is_connected):
+        from django.http import HttpResponse
+
+        if is_connected:
+            html = (
+                '<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs '
+                'font-medium bg-green-100 text-green-700 ring-1 ring-green-200">'
+                '<span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>Conectado</span>'
+            )
+        else:
+            html = (
+                '<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs '
+                'font-medium bg-slate-100 text-slate-600 ring-1 ring-slate-200">'
+                '<span class="w-2 h-2 rounded-full bg-slate-400"></span>Desconectado</span>'
+            )
+        return HttpResponse(html)
+
+
+class WhatsAppQRCodeView(EmpresaMixin, View):
+    """Busca e serve o QR code da instância diretamente da Evolution API.
+
+    Retorna HTML parcial (para HTMX) com a imagem base64 do QR code.
+    Enquanto conectado, retorna mensagem de sucesso.
+    """
+
+    def get(self, request):
+        empresa = request.empresa
+        try:
+            config = empresa.whatsapp_config
+        except Exception:
+            return self._html_error("Nenhuma configuração WhatsApp encontrada.")
+
+        effective_url = config.effective_api_url
+        effective_key = config.effective_api_key
+
+        if not effective_url or not effective_key:
+            return self._html_error(
+                "Servidor Evolution API não configurado. "
+                "Adicione EVOLUTION_API_URL e EVOLUTION_API_KEY nas variáveis de ambiente."
+            )
+
+        try:
+            import httpx
+            from django.utils import timezone
+
+            # 1. Verificar estado atual
+            state_resp = httpx.get(
+                f"{effective_url.rstrip('/')}/instance/connectionState/{config.instance_name}",
+                headers={"apikey": effective_key},
+                timeout=8.0,
+            )
+            state_data = state_resp.json() if state_resp.status_code == 200 else {}
+            state = state_data.get("instance", {}).get("state", "close")
+
+            if state == "open":
+                # Já conectado — salvar e retornar badge de sucesso
+                if not config.is_connected:
+                    config.is_connected = True
+                    config.connected_at = config.connected_at or timezone.now()
+                    config.save(update_fields=["is_connected", "connected_at", "updated_at"])
+                return self._html_connected(config)
+
+            # 2. Buscar QR code (endpoint connect retorna o qr em base64)
+            qr_resp = httpx.get(
+                f"{effective_url.rstrip('/')}/instance/connect/{config.instance_name}",
+                headers={"apikey": effective_key},
+                timeout=15.0,
+            )
+
+            if qr_resp.status_code != 200:
+                return self._html_error(
+                    f"Não foi possível gerar o QR code (status {qr_resp.status_code}). "
+                    "Verifique se a instância foi criada corretamente."
+                )
+
+            qr_data = qr_resp.json()
+            base64_img = qr_data.get("base64") or qr_data.get("qrcode", {}).get("base64", "")
+
+            if not base64_img:
+                return self._html_error(
+                    "QR code não disponível. A instância pode já estar conectada ou "
+                    "aguardando inicialização. Tente novamente em alguns segundos."
+                )
+
+            return self._html_qrcode(base64_img)
+
+        except Exception:
+            logger.exception("Error fetching WhatsApp QR code")
+            return self._html_error(
+                "Erro ao contatar a Evolution API. Verifique a URL configurada."
+            )
+
+    # ------------------------------------------------------------------
+    # Helpers HTML parcial (HTMX swap)
+    # ------------------------------------------------------------------
+
+    def _html_qrcode(self, base64_img):
+        from django.http import HttpResponse
+
+        html = f"""
+        <div class="flex flex-col items-center gap-3">
+            <p class="text-xs text-slate-500">
+                Abra o WhatsApp no celular &rarr; <strong>Aparelhos conectados</strong> &rarr;
+                <strong>Conectar aparelho</strong> &rarr; escaneie o código abaixo.
+            </p>
+            <img src="{base64_img}"
+                 alt="QR Code WhatsApp"
+                 class="w-52 h-52 rounded-xl border border-slate-200 shadow-sm">
+            <p class="text-xs text-slate-400">
+                O QR code expira em ~60s.
+                <span class="text-indigo-500 cursor-pointer underline"
+                      hx-get="{self.request.build_absolute_uri('')}"
+                      hx-target="#qrcode-container"
+                      hx-swap="innerHTML">
+                    Clique para atualizar
+                </span>
+            </p>
+        </div>
+        """
+        return HttpResponse(html)
+
+    def _html_connected(self, config):
+        from django.http import HttpResponse
+
+        number = f" — {config.phone_number}" if config.phone_number else ""
+        html = f"""
+        <div class="flex flex-col items-center gap-3 py-4">
+            <div class="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
+                <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor"
+                     viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round"
+                     stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+            </div>
+            <p class="text-base font-semibold text-green-700">WhatsApp Conectado{number}</p>
+            <p class="text-xs text-slate-500">Seu número já está ativo e recebendo mensagens.</p>
+        </div>
+        """
+        return HttpResponse(html)
+
+    def _html_error(self, message):
+        from django.http import HttpResponse
+
+        html = f"""
+        <div class="flex flex-col items-center gap-2 py-4 text-center">
+            <svg class="w-8 h-8 text-red-400" fill="none" stroke="currentColor"
+                 viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round"
+                 stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <p class="text-sm text-red-600">{message}</p>
+        </div>
+        """
+        return HttpResponse(html)

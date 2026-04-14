@@ -173,4 +173,5 @@ urlpatterns = [
     path("whatsapp/", views.WhatsAppConfigView.as_view(), name="whatsapp_config"),
     path("whatsapp/save/", views.WhatsAppConfigSaveView.as_view(), name="whatsapp_config_save"),
     path("whatsapp/status/", views.WhatsAppStatusView.as_view(), name="whatsapp_status"),
+    path("whatsapp/qrcode/", views.WhatsAppQRCodeView.as_view(), name="whatsapp_qrcode"),
 ]
