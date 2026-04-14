@@ -91,7 +91,8 @@
       "Bash(python manage.py test apps.core.tests -v2)",
       "Bash(python manage.py makemigrations chatbot)",
       "Bash(python manage.py create_whatsapp_flows --all)",
-      "Bash(python manage.py makemigrations chatbot --name whatsapp_config)"
+      "Bash(python manage.py makemigrations chatbot --name whatsapp_config)",
+      "Bash(python manage.py makemigrations chatbot --name whatsapp_config_instance_token)"
     ]
   }
 }

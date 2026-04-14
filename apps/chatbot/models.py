@@ -259,6 +259,12 @@ class WhatsAppConfig(TimestampedModel):
         blank=True,
         help_text="Deixe em branco para usar a chave global configurada no servidor.",
     )
+    instance_token = models.CharField(
+        "Token da Instância",
+        max_length=200,
+        blank=True,
+        help_text="Gerado automaticamente pela Evolution API ao criar a instância.",
+    )
     is_connected = models.BooleanField("Conectado", default=False)
     connected_at = models.DateTimeField("Conectado em", null=True, blank=True)
 
@@ -275,4 +281,14 @@ class WhatsAppConfig(TimestampedModel):
 
     @property
     def effective_api_key(self):
+        """Chave para operações administrativas (criar instâncias, listar, etc.)."""
         return self.api_key or getattr(settings, "EVOLUTION_API_KEY", "")
+
+    @property
+    def effective_instance_key(self):
+        """Chave para operações desta instância (enviar, QR code, status, etc.).
+
+        Prioridade: token gerado pela Evolution → api_key override → chave global.
+        O instance_token é a chave mais específica e segura para operações por instância.
+        """
+        return self.instance_token or self.api_key or getattr(settings, "EVOLUTION_API_KEY", "")

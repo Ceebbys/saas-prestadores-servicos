@@ -619,6 +619,10 @@ class WhatsAppConfigSaveView(EmpresaMixin, View):
             config.api_url = api_url
             config.api_key = api_key
             config.save(update_fields=["instance_name", "phone_number", "api_url", "api_key", "updated_at"])
+            # Limpar token antigo ao renomear instância (será gerado novo na criação)
+            if config.instance_name != instance_name:
+                config.instance_token = ""
+                config.save(update_fields=["instance_token", "updated_at"])
 
         # Tentar criar instância na Evolution API
         effective_url = api_url or getattr(django_settings, "EVOLUTION_API_URL", "")
@@ -641,10 +645,24 @@ class WhatsAppConfigSaveView(EmpresaMixin, View):
                     timeout=15.0,
                 )
                 if resp.status_code in (200, 201):
+                    # Capturar e salvar o token específico desta instância
+                    try:
+                        resp_data = resp.json()
+                        instance_token = (
+                            resp_data.get("hash", {}).get("apikey")
+                            or resp_data.get("instance", {}).get("apikey")
+                            or resp_data.get("apikey")
+                            or ""
+                        )
+                        if instance_token:
+                            config.instance_token = instance_token
+                            config.save(update_fields=["instance_token", "updated_at"])
+                    except Exception:
+                        pass  # token não é crítico para salvar
                     messages.success(
                         request,
                         f"Instância '{instance_name}' criada com sucesso. "
-                        "Agora escaneie o QR Code no Evolution API Manager.",
+                        "Agora escaneie o QR Code abaixo com seu celular.",
                     )
                 elif resp.status_code == 409:
                     messages.success(
@@ -693,7 +711,8 @@ class WhatsAppStatusView(EmpresaMixin, View):
             return JsonResponse({"error": "Nenhuma configuração WhatsApp encontrada."}, status=404)
 
         effective_url = config.effective_api_url
-        effective_key = config.effective_api_key
+        # Para operações de instância, usar o token específico (mais restrito e seguro)
+        effective_key = config.effective_instance_key
 
         if not effective_url or not effective_key:
             return JsonResponse({"status": "not_configured", "is_connected": False})
@@ -761,7 +780,8 @@ class WhatsAppQRCodeView(EmpresaMixin, View):
             return self._html_error("Nenhuma configuração WhatsApp encontrada.")
 
         effective_url = config.effective_api_url
-        effective_key = config.effective_api_key
+        # Para operações de instância usar o token específico
+        effective_key = config.effective_instance_key
 
         if not effective_url or not effective_key:
             return self._html_error(

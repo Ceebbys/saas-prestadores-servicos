@@ -326,7 +326,7 @@ def evolution_webhook_auto(request):
 
     client = EvolutionAPIClient(
         api_url=config.effective_api_url,
-        api_key=config.effective_api_key,
+        api_key=config.effective_instance_key,  # token específico da instância
         instance=config.instance_name,
     )
     _send_reply(client, sender_id, reply_text, choices)
