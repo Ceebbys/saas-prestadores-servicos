@@ -85,8 +85,10 @@ def parse_evolution_webhook(body: dict) -> tuple[str, str, str] | None:
     else:
         sender_id = remote_jid.replace("@s.whatsapp.net", "")
 
-    # Precisa sobrar só dígitos (número de telefone válido).
-    if not sender_id or not sender_id.isdigit():
+    # Precisa sobrar só dígitos e caber no tamanho de um telefone E.164
+    # (max 15 dígitos). IDs de grupo/canal novos vêm com 18 dígitos sem
+    # sufixo e seriam aceitos pelo isdigit — filtramos por comprimento.
+    if not sender_id or not sender_id.isdigit() or len(sender_id) > 15:
         return None
 
     # Extrair texto da mensagem (múltiplos formatos possíveis)
@@ -332,14 +334,6 @@ def evolution_webhook_auto(request):
         header_token = request.headers.get("X-Webhook-Token", "")
         if header_token and header_token != webhook_token:
             return JsonResponse({"error": "Invalid webhook token"}, status=403)
-
-    # DEBUG TEMPORARIO: loga body completo para inspecionar formato Evolution.
-    # Remover apos validar integracao.
-    try:
-        import json as _json
-        logger.info("EVOLUTION_WEBHOOK_RAW: %s", _json.dumps(body)[:3000])
-    except Exception:
-        pass
 
     parsed = parse_evolution_webhook(body)
     if not parsed:
