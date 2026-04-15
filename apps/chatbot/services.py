@@ -45,6 +45,51 @@ def _serialize_step(step: ChatbotStep) -> dict:
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PHONE_RE = re.compile(r"[\d\s()\-+]{7,20}")
+NUMBER_PREFIX_RE = re.compile(r"^(\d+)[\.\)]")
+NUMBER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+
+
+def _resolve_choice(step: ChatbotStep, user_response: str) -> ChatbotChoice | None:
+    """Resolve qual ChatbotChoice o usuário selecionou.
+
+    Aceita: número (1-indexed), emoji numérico (1️⃣), número com pontuação (1. / 1)),
+    texto literal (case-insensitive) ou prefixo do texto (>=3 caracteres).
+    """
+    text = user_response.strip()
+    if not text:
+        return None
+
+    choices = list(step.choices.order_by("order"))
+    if not choices:
+        return None
+
+    digit = None
+    if text.isdigit():
+        digit = int(text)
+    else:
+        for i, emoji in enumerate(NUMBER_EMOJIS, start=1):
+            if text.startswith(emoji):
+                digit = i
+                break
+        if digit is None:
+            m = NUMBER_PREFIX_RE.match(text)
+            if m:
+                digit = int(m.group(1))
+
+    if digit is not None and 1 <= digit <= len(choices):
+        return choices[digit - 1]
+
+    low = text.lower()
+    for c in choices:
+        if c.text.lower() == low:
+            return c
+
+    if len(low) >= 3:
+        for c in choices:
+            if c.text.lower().startswith(low):
+                return c
+
+    return None
 
 
 def _validate_response(step: ChatbotStep, user_response: str) -> str | None:
@@ -69,12 +114,8 @@ def _validate_response(step: ChatbotStep, user_response: str) -> str | None:
             return "Por favor, informe pelo menos 2 caracteres."
 
     elif step.step_type == ChatbotStep.StepType.CHOICE:
-        valid_choices = list(
-            step.choices.values_list("text", flat=True)
-        )
-        lower_choices = [c.lower() for c in valid_choices]
-        if text.lower() not in lower_choices:
-            options = ", ".join(valid_choices)
+        if _resolve_choice(step, user_response) is None:
+            options = ", ".join(step.choices.order_by("order").values_list("text", flat=True))
             return f"Por favor, escolha uma das opções: {options}."
 
     return None
@@ -171,8 +212,16 @@ def process_response(session_key: str, user_response: str) -> dict:
             "lead_id": None,
         }
 
-    # Armazenar resposta no lead_data
+    # Normaliza a resposta — se for CHOICE e o usuário digitou um número/emoji,
+    # substitui pelo label correspondente para que o branching e o lead_data
+    # fiquem com o texto humano, não "1".
     text = user_response.strip()
+    if step.step_type == ChatbotStep.StepType.CHOICE:
+        resolved = _resolve_choice(step, text)
+        if resolved:
+            text = resolved.text
+
+    # Armazenar resposta no lead_data
     if step.lead_field_mapping:
         # notes acumula múltiplas respostas (serviço, urgência, orçamento, etc.)
         if step.lead_field_mapping == "notes" and session.lead_data.get("notes"):
@@ -216,16 +265,9 @@ def process_response(session_key: str, user_response: str) -> dict:
 
 def _find_next_step(current_step: ChatbotStep, user_response: str) -> ChatbotStep | None:
     """Determina o próximo passo com base no tipo e resposta."""
-    # Para choice, verificar se a opção tem next_step específico
     if current_step.step_type == ChatbotStep.StepType.CHOICE:
-        choice = ChatbotChoice.objects.filter(
-            step=current_step,
-        ).extra(
-            where=["LOWER(text) = LOWER(%s)"],
-            params=[user_response.strip()],
-        ).select_related("next_step").first()
-
-        if choice and choice.next_step:
+        choice = _resolve_choice(current_step, user_response)
+        if choice and choice.next_step_id:
             return choice.next_step
 
     # Default: próximo passo na ordem

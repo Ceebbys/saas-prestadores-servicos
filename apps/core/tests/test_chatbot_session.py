@@ -215,6 +215,67 @@ class ChoiceStepTests(TestCase):
         # Should route to step_end via next_step on the choice
         self.assertEqual(result["step"]["question"], "Qual seu nome?")
 
+    def test_choice_accepts_number_input(self):
+        """Usuário pode digitar "1", "2" em vez do texto literal da opção."""
+        result = start_session(self.flow)
+        sk = result["session_key"]
+        result = process_response(sk, "1")
+        self.assertFalse(result["error"])
+        # "1" = primeira choice = "Topografia" → advances default
+        self.assertEqual(result["step"]["type"], "name")
+        session = ChatbotSession.objects.get(session_key=sk)
+        self.assertEqual(session.lead_data.get("notes"), "Topografia")
+
+    def test_choice_number_triggers_branching(self):
+        """Número correto deve seguir o next_step da choice (branching)."""
+        result = start_session(self.flow)
+        sk = result["session_key"]
+        result = process_response(sk, "2")
+        self.assertFalse(result["error"])
+        self.assertEqual(result["step"]["question"], "Qual seu nome?")
+        session = ChatbotSession.objects.get(session_key=sk)
+        self.assertEqual(session.lead_data.get("notes"), "Engenharia")
+
+    def test_choice_accepts_emoji_number(self):
+        result = start_session(self.flow)
+        sk = result["session_key"]
+        result = process_response(sk, "1️⃣")
+        self.assertFalse(result["error"])
+        session = ChatbotSession.objects.get(session_key=sk)
+        self.assertEqual(session.lead_data.get("notes"), "Topografia")
+
+    def test_choice_accepts_dotted_number(self):
+        result = start_session(self.flow)
+        sk = result["session_key"]
+        result = process_response(sk, "1.")
+        self.assertFalse(result["error"])
+        session = ChatbotSession.objects.get(session_key=sk)
+        self.assertEqual(session.lead_data.get("notes"), "Topografia")
+
+    def test_choice_rejects_out_of_range_number(self):
+        """Número fora do range deve retornar erro."""
+        result = start_session(self.flow)
+        sk = result["session_key"]
+        result = process_response(sk, "9")
+        self.assertTrue(result["error"])
+
+    def test_choice_case_insensitive_text(self):
+        result = start_session(self.flow)
+        sk = result["session_key"]
+        result = process_response(sk, "ENGENHARIA")
+        self.assertFalse(result["error"])
+        session = ChatbotSession.objects.get(session_key=sk)
+        self.assertEqual(session.lead_data.get("notes"), "Engenharia")
+
+    def test_choice_prefix_match(self):
+        """Prefixo >=3 chars deve casar com a opção."""
+        result = start_session(self.flow)
+        sk = result["session_key"]
+        result = process_response(sk, "topo")
+        self.assertFalse(result["error"])
+        session = ChatbotSession.objects.get(session_key=sk)
+        self.assertEqual(session.lead_data.get("notes"), "Topografia")
+
 
 # ===========================================================================
 # API endpoint tests

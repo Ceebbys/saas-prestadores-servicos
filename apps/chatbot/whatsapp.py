@@ -206,7 +206,7 @@ class EvolutionAPIClient:
             emoji = NUMBER_EMOJIS[i] if i < len(NUMBER_EMOJIS) else f"{i + 1}."
             lines.append(f"{emoji} {choice}")
         lines.append("")
-        lines.append("_Responda com o texto da opção desejada._")
+        lines.append("_Responda com o número da opção (1, 2, 3…) ou o texto._")
         return "\n".join(lines)
 
 
