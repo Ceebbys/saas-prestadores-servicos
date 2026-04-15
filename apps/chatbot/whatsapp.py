@@ -47,10 +47,28 @@ def parse_evolution_webhook(body: dict) -> tuple[str, str, str] | None:
     if key.get("fromMe", False):
         return None
 
-    # Extrair sender_id (remover sufixo WhatsApp)
-    remote_jid = key.get("remoteJid", "")
-    sender_id = remote_jid.replace("@s.whatsapp.net", "").replace("@g.us", "")
-    if not sender_id:
+    # Extrair remoteJid e filtrar tipos não-DM
+    # O chatbot só processa mensagens diretas (DM) de contatos reais.
+    # Grupos (@g.us), status/broadcast (status@broadcast, @broadcast),
+    # contatos anônimos/canais (@lid, @newsletter) e mensagens sem número
+    # são ignoradas — a Evolution não consegue enviar reply para esses JIDs
+    # (retorna 400 "exists:false") e não faz sentido engatilhar fluxo.
+    remote_jid = key.get("remoteJid", "") or ""
+    if not remote_jid:
+        return None
+
+    _UNSUPPORTED_SUFFIXES = (
+        "@g.us",           # grupos
+        "@broadcast",      # listas de transmissão e status@broadcast
+        "@lid",            # linked IDs / contatos anônimos
+        "@newsletter",     # canais
+    )
+    if any(remote_jid.endswith(sfx) for sfx in _UNSUPPORTED_SUFFIXES):
+        return None
+
+    sender_id = remote_jid.replace("@s.whatsapp.net", "")
+    # Após remover o sufixo DM, precisa sobrar só dígitos (número de telefone).
+    if not sender_id or not sender_id.isdigit():
         return None
 
     # Extrair texto da mensagem (múltiplos formatos possíveis)
