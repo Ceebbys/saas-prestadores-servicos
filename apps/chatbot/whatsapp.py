@@ -47,27 +47,45 @@ def parse_evolution_webhook(body: dict) -> tuple[str, str, str] | None:
     if key.get("fromMe", False):
         return None
 
-    # Extrair remoteJid e filtrar tipos não-DM
-    # O chatbot só processa mensagens diretas (DM) de contatos reais.
-    # Grupos (@g.us), status/broadcast (status@broadcast, @broadcast),
-    # contatos anônimos/canais (@lid, @newsletter) e mensagens sem número
-    # são ignoradas — a Evolution não consegue enviar reply para esses JIDs
-    # (retorna 400 "exists:false") e não faz sentido engatilhar fluxo.
     remote_jid = key.get("remoteJid", "") or ""
     if not remote_jid:
         return None
 
+    # Rejeita grupos, broadcasts, canais — a Evolution API não consegue
+    # enviar reply individual para esses e o fluxo não faz sentido em grupo.
     _UNSUPPORTED_SUFFIXES = (
         "@g.us",           # grupos
         "@broadcast",      # listas de transmissão e status@broadcast
-        "@lid",            # linked IDs / contatos anônimos
         "@newsletter",     # canais
     )
     if any(remote_jid.endswith(sfx) for sfx in _UNSUPPORTED_SUFFIXES):
         return None
 
-    sender_id = remote_jid.replace("@s.whatsapp.net", "")
-    # Após remover o sufixo DM, precisa sobrar só dígitos (número de telefone).
+    # WhatsApp 2024+ usa "addressing_mode=lid": o remoteJid vem como
+    # "<hash>@lid" (identidade anônima) e o número real chega em `senderPn`
+    # (ou variações: sender_pn, participantPn). Precisamos do número real
+    # para poder responder via Evolution (ela resolve @s.whatsapp.net).
+    sender_pn = (
+        key.get("senderPn")
+        or key.get("sender_pn")
+        or data.get("senderPn")
+        or data.get("sender_pn")
+        or key.get("participantPn")
+        or data.get("participantPn")
+        or ""
+    )
+
+    if remote_jid.endswith("@lid"):
+        # @lid puro sem sender_pn = contato verdadeiramente anônimo
+        # (canal, story) — ignorar. Com sender_pn resolvido, processar.
+        if sender_pn and sender_pn.endswith("@s.whatsapp.net"):
+            sender_id = sender_pn.replace("@s.whatsapp.net", "")
+        else:
+            return None
+    else:
+        sender_id = remote_jid.replace("@s.whatsapp.net", "")
+
+    # Precisa sobrar só dígitos (número de telefone válido).
     if not sender_id or not sender_id.isdigit():
         return None
 
@@ -314,6 +332,26 @@ def evolution_webhook_auto(request):
         header_token = request.headers.get("X-Webhook-Token", "")
         if header_token and header_token != webhook_token:
             return JsonResponse({"error": "Invalid webhook token"}, status=403)
+
+    # Log temporário de diagnóstico — ajuda a descobrir formato de payload
+    # para mensagens DM novas (@lid + senderPn) em debug.
+    if body.get("event") == "messages.upsert":
+        try:
+            _data = body.get("data", {}) or {}
+            _key = _data.get("key", {}) or {}
+            logger.info(
+                "Evolution webhook messages.upsert: remoteJid=%s fromMe=%s "
+                "senderPn_key=%s senderPn_data=%s participantPn=%s pushName=%s instance=%s",
+                _key.get("remoteJid"),
+                _key.get("fromMe"),
+                _key.get("senderPn") or _key.get("sender_pn"),
+                _data.get("senderPn") or _data.get("sender_pn"),
+                _key.get("participantPn") or _data.get("participantPn"),
+                _data.get("pushName"),
+                body.get("instance"),
+            )
+        except Exception:
+            pass
 
     parsed = parse_evolution_webhook(body)
     if not parsed:
