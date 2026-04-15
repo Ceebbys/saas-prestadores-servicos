@@ -333,25 +333,13 @@ def evolution_webhook_auto(request):
         if header_token and header_token != webhook_token:
             return JsonResponse({"error": "Invalid webhook token"}, status=403)
 
-    # Log temporário de diagnóstico — ajuda a descobrir formato de payload
-    # para mensagens DM novas (@lid + senderPn) em debug.
-    if body.get("event") == "messages.upsert":
-        try:
-            _data = body.get("data", {}) or {}
-            _key = _data.get("key", {}) or {}
-            logger.info(
-                "Evolution webhook messages.upsert: remoteJid=%s fromMe=%s "
-                "senderPn_key=%s senderPn_data=%s participantPn=%s pushName=%s instance=%s",
-                _key.get("remoteJid"),
-                _key.get("fromMe"),
-                _key.get("senderPn") or _key.get("sender_pn"),
-                _data.get("senderPn") or _data.get("sender_pn"),
-                _key.get("participantPn") or _data.get("participantPn"),
-                _data.get("pushName"),
-                body.get("instance"),
-            )
-        except Exception:
-            pass
+    # DEBUG TEMPORARIO: loga body completo para inspecionar formato Evolution.
+    # Remover apos validar integracao.
+    try:
+        import json as _json
+        logger.info("EVOLUTION_WEBHOOK_RAW: %s", _json.dumps(body)[:3000])
+    except Exception:
+        pass
 
     parsed = parse_evolution_webhook(body)
     if not parsed:
