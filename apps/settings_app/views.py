@@ -571,6 +571,81 @@ class WhatsAppConfigSaveView(EmpresaMixin, View):
     # A Evolution API rejeita nomes com espaços, caracteres especiais, etc.
     _INSTANCE_NAME_RE = __import__("re").compile(r"^[a-zA-Z0-9][a-zA-Z0-9_\-]{1,98}$")
 
+    # Palavras-chave nas respostas de erro da Evolution que indicam que o
+    # nome da instância já está em uso (v2.2.x retorna 403, v2.1 retornava
+    # 409 — ambos carregam alguma dessas frases na mensagem de erro).
+    _ALREADY_EXISTS_KEYWORDS = (
+        "already in use",
+        "already exists",
+        "is already in use",
+        "em uso",
+    )
+
+    @classmethod
+    def _is_already_exists_error(cls, status_code: int, detail) -> bool:
+        """Detecta 'instância já existe' olhando status e corpo da resposta."""
+        if status_code == 409:
+            return True
+        if status_code == 403:
+            # A Evolution v2.2+ retorna 403 genérico para vários erros; só
+            # consideramos "já existe" se a mensagem bater com as keywords.
+            try:
+                body_text = str(detail).lower()
+            except Exception:
+                return False
+            return any(kw in body_text for kw in cls._ALREADY_EXISTS_KEYWORDS)
+        return False
+
+    @staticmethod
+    def _fetch_instance_token(api_url: str, api_key: str, instance_name: str) -> str:
+        """Busca o apikey da instância existente na Evolution.
+
+        Lida com ambos os formatos de resposta:
+          - v2.2.x: `[{"instance": {"instanceName": "...", "apikey": "..."}, "hash": {...}}]`
+          - v2.3.x: `[{"name": "...", "id": "...", "token": "..."}]` (campos planos)
+
+        Retorna string vazia se não encontrar.
+        """
+        try:
+            import httpx
+
+            resp = httpx.get(
+                f"{api_url.rstrip('/')}/instance/fetchInstances",
+                headers={"apikey": api_key},
+                params={"instanceName": instance_name},
+                timeout=10.0,
+            )
+            if resp.status_code != 200:
+                return ""
+            data = resp.json()
+            instances = data if isinstance(data, list) else [data]
+            for inst in instances:
+                if not isinstance(inst, dict):
+                    continue
+                # Formato v2.2.x (aninhado em "instance")
+                nested = inst.get("instance") or {}
+                nested_name = nested.get("instanceName") or nested.get("name") or ""
+                flat_name = inst.get("name") or inst.get("instanceName") or ""
+                if nested_name != instance_name and flat_name != instance_name:
+                    continue
+                # Tenta múltiplos locais para o token (apikey / token / hash)
+                hash_val = inst.get("hash")
+                hash_token = ""
+                if isinstance(hash_val, dict):
+                    hash_token = hash_val.get("apikey", "")
+                elif isinstance(hash_val, str):
+                    hash_token = hash_val
+                return (
+                    nested.get("apikey")
+                    or inst.get("apikey")
+                    or inst.get("token")
+                    or hash_token
+                    or ""
+                )
+        except Exception:
+            logger.exception("Failed to fetch instance details for '%s'", instance_name)
+        return ""
+
     def post(self, request):
         empresa = request.empresa
         instance_name = request.POST.get("instance_name", "").strip()
@@ -674,52 +749,45 @@ class WhatsAppConfigSaveView(EmpresaMixin, View):
                         f"Instância '{instance_name}' criada com sucesso. "
                         "Agora escaneie o QR Code abaixo com seu celular.",
                     )
-                elif resp.status_code == 409:
-                    # Instância já existe — tentar buscar o token dela
-                    if not config.instance_token:
-                        try:
-                            fetch_resp = httpx.get(
-                                f"{effective_url.rstrip('/')}/instance/fetchInstances",
-                                headers={"apikey": effective_key},
-                                params={"instanceName": instance_name},
-                                timeout=10.0,
-                            )
-                            if fetch_resp.status_code == 200:
-                                instances = fetch_resp.json()
-                                if isinstance(instances, list):
-                                    for inst in instances:
-                                        inst_name = inst.get("instance", {}).get("instanceName", "")
-                                        if inst_name == instance_name:
-                                            token = (
-                                                inst.get("instance", {}).get("apikey", "")
-                                                or inst.get("hash", {}).get("apikey", "")
-                                                or ""
-                                            )
-                                            if token:
-                                                config.instance_token = token
-                                                config.save(update_fields=["instance_token", "updated_at"])
-                                                logger.info("Captured token from existing instance '%s'", instance_name)
-                                            break
-                        except Exception:
-                            logger.exception("Failed to fetch instance details for '%s'", instance_name)
-                    messages.success(
-                        request,
-                        f"Instância '{instance_name}' já existe na Evolution API. Configuração salva.",
-                    )
                 else:
-                    # Mostrar o erro real da Evolution API para facilitar o diagnóstico
+                    # Lê corpo do erro UMA vez para decidir e logar.
                     try:
                         err_detail = resp.json()
                     except Exception:
                         err_detail = resp.text[:300]
-                    logger.warning(
-                        "Evolution API create instance failed %s: %s", resp.status_code, err_detail
-                    )
-                    messages.warning(
-                        request,
-                        f"Configuração salva, mas a Evolution API retornou erro {resp.status_code}: "
-                        f"{err_detail}. Verifique a URL, a API Key e o nome da instância.",
-                    )
+
+                    if self._is_already_exists_error(resp.status_code, err_detail):
+                        # Instância já existe (409 legado ou 403 v2.2+).
+                        # Busca token só se ainda não temos um salvo.
+                        if not config.instance_token:
+                            token = self._fetch_instance_token(
+                                effective_url, effective_key, instance_name,
+                            )
+                            if token:
+                                config.instance_token = token
+                                config.save(
+                                    update_fields=["instance_token", "updated_at"],
+                                )
+                                logger.info(
+                                    "Captured token from existing instance '%s'",
+                                    instance_name,
+                                )
+                        messages.success(
+                            request,
+                            f"Instância '{instance_name}' já existe na Evolution API. "
+                            "Configuração salva.",
+                        )
+                    else:
+                        logger.warning(
+                            "Evolution API create instance failed %s: %s",
+                            resp.status_code, err_detail,
+                        )
+                        messages.warning(
+                            request,
+                            f"Configuração salva, mas a Evolution API retornou erro "
+                            f"{resp.status_code}: {err_detail}. Verifique a URL, a "
+                            "API Key e o nome da instância.",
+                        )
             except Exception:
                 logger.exception("Error creating Evolution API instance")
                 messages.warning(
