@@ -252,7 +252,11 @@ def process_response(session_key: str, user_response: str) -> dict:
 
     return {
         "error": False,
-        "message": "Obrigado! Suas informações foram registradas com sucesso.",
+        "message": (
+            "✅ Prontinho! Suas informações foram registradas. "
+            "Um de nossos especialistas vai te chamar em breve "
+            "(normalmente em até 2 horas úteis, dias úteis das 8h às 18h)."
+        ),
         "step": None,
         "is_complete": True,
         "lead_id": lead_id,
@@ -269,6 +273,11 @@ def _find_next_step(current_step: ChatbotStep, user_response: str) -> ChatbotSte
         choice = _resolve_choice(current_step, user_response)
         if choice and choice.next_step_id:
             return choice.next_step
+
+    # Passo marcado como terminal encerra o fluxo mesmo se houver steps de maior ordem
+    # (permite múltiplos ramos no mesmo flow sem fallthrough indevido).
+    if current_step.is_final:
+        return None
 
     # Default: próximo passo na ordem
     return current_step.flow.steps.filter(

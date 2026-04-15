@@ -87,6 +87,11 @@ class ChatbotStep(TimestampedModel):
         help_text="Campo do lead que receberá a resposta.",
     )
     is_required = models.BooleanField("Obrigatório", default=True)
+    is_final = models.BooleanField(
+        "Passo terminal",
+        default=False,
+        help_text="Se marcado, encerra o fluxo ao responder este passo (útil para branching).",
+    )
 
     class Meta:
         verbose_name = "Passo do Chatbot"
