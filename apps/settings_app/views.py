@@ -647,10 +647,19 @@ class WhatsAppConfigSaveView(EmpresaMixin, View):
                 )
                 if resp.status_code in (200, 201):
                     # Capturar e salvar o token específico desta instância
+                    # Evolution API v2.2.x retorna `hash` como string direta; versões anteriores
+                    # retornavam um objeto {apikey: "..."}. Tentamos ambos os formatos.
                     try:
                         resp_data = resp.json()
+                        hash_val = resp_data.get("hash")
+                        if isinstance(hash_val, dict):
+                            hash_token = hash_val.get("apikey", "")
+                        elif isinstance(hash_val, str):
+                            hash_token = hash_val
+                        else:
+                            hash_token = ""
                         instance_token = (
-                            resp_data.get("hash", {}).get("apikey")
+                            hash_token
                             or resp_data.get("instance", {}).get("apikey")
                             or resp_data.get("apikey")
                             or ""
@@ -659,7 +668,7 @@ class WhatsAppConfigSaveView(EmpresaMixin, View):
                             config.instance_token = instance_token
                             config.save(update_fields=["instance_token", "updated_at"])
                     except Exception:
-                        pass  # token não é crítico para salvar
+                        logger.exception("Failed to parse instance token from create response")
                     messages.success(
                         request,
                         f"Instância '{instance_name}' criada com sucesso. "
