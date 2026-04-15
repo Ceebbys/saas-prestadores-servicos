@@ -794,10 +794,15 @@ class WhatsAppStatusView(EmpresaMixin, View):
 
 
 class WhatsAppQRCodeView(EmpresaMixin, View):
-    """Busca e serve o QR code da instância diretamente da Evolution API.
+    """Busca e serve o QR code da instância diretamente da Evolution API v2.
 
-    Retorna HTML parcial (para HTMX) com a imagem base64 do QR code.
-    Enquanto conectado, retorna mensagem de sucesso.
+    Compatível com Evolution API v2.1.x que retorna:
+    - ``code``: texto raw para gerar QR code localmente
+    - ``pairingCode``: código de 8 dígitos para parear manualmente
+    - ``base64``: imagem QR pronta (versões mais antigas)
+    - ``count``: 0 quando a conexão WebSocket ainda não foi estabelecida
+
+    Retorna HTML parcial (para HTMX) com QR code ou pairing code.
     """
 
     def get(self, request):
@@ -809,7 +814,7 @@ class WhatsAppQRCodeView(EmpresaMixin, View):
 
         effective_url = config.effective_api_url.rstrip("/")
         effective_key = config.effective_instance_key
-        admin_key = config.effective_api_key  # para operações admin (logout)
+        admin_key = config.effective_api_key
 
         if not effective_url or not effective_key:
             return self._html_error(
@@ -845,28 +850,47 @@ class WhatsAppQRCodeView(EmpresaMixin, View):
                     config.save(update_fields=["is_connected", "connected_at", "updated_at"])
                 return self._html_connected(config)
 
-            # 2. Tentar /instance/connect/ (endpoint primário)
-            base64_img = self._try_connect_endpoint(effective_url, inst, headers)
+            # 2. Tentar /instance/connect/ (endpoint primário v2)
+            qr_result = self._try_connect_endpoint(effective_url, inst, headers)
 
-            # 3. Fallback: /instance/qrcode/ (endpoint alternativo)
-            if not base64_img:
-                logger.info("Primary connect returned no QR, trying /instance/qrcode/ fallback")
-                base64_img = self._try_qrcode_endpoint(effective_url, inst, headers)
+            # 3. Fallback: tentar GET /instance/qrcode/{inst} (algumas versoes expoem este endpoint)
+            if not qr_result:
+                qr_result = self._try_qrcode_endpoint(effective_url, inst, headers)
 
-            # 4. Recuperação: logout + reconnect (instância pode estar travada)
-            if not base64_img:
-                logger.info("No QR from either endpoint, attempting logout+reconnect for '%s'", inst)
-                base64_img = self._try_logout_reconnect(
+            # 4. Se connect retornou count=0, tentar logout + reconnect
+            if not qr_result:
+                logger.info(
+                    "Connect returned no QR (count=0), attempting logout+reconnect for '%s'",
+                    inst,
+                )
+                qr_result = self._try_logout_reconnect(
                     effective_url, inst, admin_headers, headers,
                 )
 
-            if base64_img:
-                return self._html_qrcode(base64_img)
+            if qr_result:
+                return self._render_qr_result(qr_result)
+
+            # 5. Estado connecting = WebSocket do Baileys tentando conectar
+            if state == "connecting":
+                return self._html_connecting()
+
+            # Incluir resposta bruta no log para diagnostico
+            connect_body = ""
+            try:
+                dbg_resp = httpx.get(
+                    f"{effective_url}/instance/connect/{inst}",
+                    headers=headers,
+                    timeout=8.0,
+                )
+                connect_body = dbg_resp.text[:200]
+            except Exception:
+                connect_body = "(sem resposta)"
 
             return self._html_error(
-                "QR code não disponível após todas as tentativas. "
-                "Verifique se a instância existe no Evolution API Manager e se a API Key está correta. "
-                "Tente salvar a configuração novamente para recriar a instância."
+                "QR code nao disponivel. A Evolution API nao retornou dados "
+                "de QR/pairing code para esta instancia. Resposta da API: "
+                f"{connect_body} "
+                "Tente salvar a configuracao novamente para recriar a instancia."
             )
 
         except Exception:
@@ -876,21 +900,61 @@ class WhatsAppQRCodeView(EmpresaMixin, View):
             )
 
     # ------------------------------------------------------------------
-    # Tentativas de obter QR code
+    # Extrair dados do QR code da resposta da Evolution API v2
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _extract_base64(data: dict) -> str:
-        """Tenta extrair base64 de múltiplos formatos de resposta da Evolution API."""
-        return (
-            data.get("base64", "")
-            or data.get("qrcode", {}).get("base64", "")
-            or data.get("qrcode", {}).get("pairingCode", "")
-            or data.get("code", "")  # alguns builds retornam apenas 'code'
-            or ""
-        )
+    def _extract_qr_data(data: dict) -> dict | None:
+        """Extrai dados de QR code da resposta da Evolution API v2.1.x/v2.2.x.
+
+        Retorna dict com chaves possíveis:
+        - ``base64_img``: imagem base64 pronta (data:image/...)
+        - ``code``: texto raw para gerar QR code localmente
+        - ``pairing_code``: código de pareamento de 8 dígitos
+
+        Retorna None se nenhum dado de QR code estiver disponível.
+        """
+        qrcode_sub = data.get("qrcode") if isinstance(data.get("qrcode"), dict) else {}
+
+        # count=0 significa "ainda conectando, sem QR"
+        if (
+            data.get("count", -1) == 0
+            and not data.get("code")
+            and not data.get("base64")
+            and not qrcode_sub.get("code")
+            and not qrcode_sub.get("base64")
+        ):
+            return None
+
+        result = {}
+
+        # Imagem base64 pronta (formato antigo ou futuro, em top-level ou nested em "qrcode")
+        base64_val = data.get("base64") or qrcode_sub.get("base64", "")
+        if base64_val:
+            if base64_val.startswith("data:image"):
+                result["base64_img"] = base64_val
+            else:
+                # Alguns forks retornam apenas o base64 cru sem prefixo data URI
+                result["base64_img"] = f"data:image/png;base64,{base64_val}"
+
+        # Texto raw do QR code (formato v2.1.x) — tanto top-level quanto em "qrcode"
+        code_val = data.get("code") or qrcode_sub.get("code", "")
+        if code_val and len(code_val) > 10:
+            result["code"] = code_val
+
+        # Pairing code de 8 dígitos — top-level ou nested
+        pairing_val = data.get("pairingCode") or qrcode_sub.get("pairingCode", "")
+        if pairing_val:
+            result["pairing_code"] = pairing_val
+
+        return result if result else None
+
+    # ------------------------------------------------------------------
+    # Tentativas de obter QR code
+    # ------------------------------------------------------------------
 
     def _try_connect_endpoint(self, base_url, inst, headers):
+        """Chama GET /instance/connect/{inst} e retorna dict de QR data ou None."""
         import httpx
 
         try:
@@ -905,35 +969,49 @@ class WhatsAppQRCodeView(EmpresaMixin, View):
             )
             if resp.status_code == 200:
                 data = resp.json()
-                # Se respondeu que já está conectado
                 if data.get("instance", {}).get("state") == "open":
-                    return None  # será tratado como "conectado" no caller
-                return self._extract_base64(data)
+                    return None
+                return self._extract_qr_data(data)
         except Exception:
             logger.exception("Error on /instance/connect/ for '%s'", inst)
-        return ""
+        return None
 
     def _try_qrcode_endpoint(self, base_url, inst, headers):
+        """Chama GET /instance/qrcode/{inst} como fallback alternativo.
+
+        Algumas versoes/forks da Evolution API expoem um endpoint dedicado para QR
+        separado de ``/instance/connect/``. O parametro ``image=false`` retorna o
+        campo ``base64`` quando suportado.
+        """
         import httpx
 
         try:
             resp = httpx.get(
-                f"{base_url}/instance/qrcode/{inst}?image=false",
+                f"{base_url}/instance/qrcode/{inst}",
                 headers=headers,
-                timeout=15.0,
+                params={"image": "false"},
+                timeout=10.0,
             )
             logger.info(
                 "Evolution qrcode '%s': status=%s body=%s",
-                inst, resp.status_code, resp.text[:500],
+                inst, resp.status_code, resp.text[:400],
             )
             if resp.status_code == 200:
-                return self._extract_base64(resp.json())
+                try:
+                    data = resp.json()
+                except Exception:
+                    return None
+                if data.get("instance", {}).get("state") == "open":
+                    return None
+                return self._extract_qr_data(data)
         except Exception:
             logger.exception("Error on /instance/qrcode/ for '%s'", inst)
-        return ""
+        return None
 
     def _try_logout_reconnect(self, base_url, inst, admin_headers, instance_headers):
+        """Faz logout da instância e tenta reconectar para gerar novo QR."""
         import httpx
+        import time
 
         try:
             logout_resp = httpx.delete(
@@ -945,7 +1023,10 @@ class WhatsAppQRCodeView(EmpresaMixin, View):
                 "Evolution logout '%s': status=%s body=%s",
                 inst, logout_resp.status_code, logout_resp.text[:200],
             )
-            # Retry connect após logout
+
+            # Dar tempo para o Baileys reiniciar o WebSocket
+            time.sleep(3)
+
             retry_resp = httpx.get(
                 f"{base_url}/instance/connect/{inst}",
                 headers=instance_headers,
@@ -956,38 +1037,100 @@ class WhatsAppQRCodeView(EmpresaMixin, View):
                 inst, retry_resp.status_code, retry_resp.text[:500],
             )
             if retry_resp.status_code == 200:
-                return self._extract_base64(retry_resp.json())
+                return self._extract_qr_data(retry_resp.json())
         except Exception:
             logger.exception("Logout+reconnect failed for '%s'", inst)
-        return ""
+        return None
+
+    # ------------------------------------------------------------------
+    # Gerar QR code a partir do texto raw (code)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _generate_qr_base64(code_text: str) -> str:
+        """Gera imagem PNG do QR code a partir do texto raw retornado pela Evolution API.
+
+        Usa a lib ``qrcode`` para criar a imagem e retorna como data URI base64.
+        """
+        import io
+        import base64
+        import qrcode
+
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=8,
+            border=2,
+        )
+        qr.add_data(code_text)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        return f"data:image/png;base64,{b64}"
 
     # ------------------------------------------------------------------
     # Helpers HTML parcial (HTMX swap)
     # ------------------------------------------------------------------
 
-    def _html_qrcode(self, base64_img):
+    def _render_qr_result(self, qr_result: dict):
+        """Renderiza o resultado do QR code conforme o tipo de dado disponível."""
         from django.http import HttpResponse
 
-        html = f"""
-        <div class="flex flex-col items-center gap-3">
-            <p class="text-xs text-slate-500">
-                Abra o WhatsApp no celular &rarr; <strong>Aparelhos conectados</strong> &rarr;
-                <strong>Conectar aparelho</strong> &rarr; escaneie o código abaixo.
-            </p>
-            <img src="{base64_img}"
-                 alt="QR Code WhatsApp"
-                 class="w-52 h-52 rounded-xl border border-slate-200 shadow-sm">
-            <p class="text-xs text-slate-400">
-                O QR code expira em ~60s.
-                <span class="text-indigo-500 cursor-pointer underline"
-                      hx-get="{self.request.build_absolute_uri('')}"
-                      hx-target="#qrcode-container"
-                      hx-swap="innerHTML">
-                    Clique para atualizar
-                </span>
-            </p>
-        </div>
-        """
+        parts = []
+
+        # Instrução principal
+        parts.append(
+            '<p class="text-xs text-slate-500">'
+            "Abra o WhatsApp no celular &rarr; <strong>Aparelhos conectados</strong> &rarr; "
+            "<strong>Conectar aparelho</strong>"
+            "</p>"
+        )
+
+        # QR code como imagem
+        if qr_result.get("base64_img"):
+            img_src = qr_result["base64_img"]
+        elif qr_result.get("code"):
+            img_src = self._generate_qr_base64(qr_result["code"])
+        else:
+            img_src = None
+
+        if img_src:
+            parts.append(
+                f'<img src="{img_src}" alt="QR Code WhatsApp" '
+                f'class="w-52 h-52 rounded-xl border border-slate-200 shadow-sm">'
+            )
+
+        # Pairing code (código manual alternativo)
+        if qr_result.get("pairing_code"):
+            code = qr_result["pairing_code"]
+            # Formatar como XXXX-XXXX
+            formatted = f"{code[:4]}-{code[4:]}" if len(code) == 8 else code
+            parts.append(
+                '<div class="mt-2 p-3 bg-indigo-50 rounded-lg border border-indigo-200">'
+                '<p class="text-xs text-indigo-600 font-medium mb-1">'
+                "Ou use o código de pareamento:</p>"
+                f'<p class="text-2xl font-mono font-bold text-indigo-800 tracking-widest">'
+                f"{formatted}</p>"
+                '<p class="text-xs text-indigo-400 mt-1">'
+                "No WhatsApp &rarr; Aparelhos conectados &rarr; "
+                "Conectar com número de telefone</p>"
+                "</div>"
+            )
+
+        # Botão atualizar
+        refresh_url = self.request.build_absolute_uri("")
+        parts.append(
+            '<p class="text-xs text-slate-400">'
+            "O QR code expira em ~60s. "
+            f'<span class="text-indigo-500 cursor-pointer underline" '
+            f'hx-get="{refresh_url}" hx-target="#qrcode-container" hx-swap="innerHTML">'
+            "Clique para atualizar</span></p>"
+        )
+
+        html = '<div class="flex flex-col items-center gap-3">' + "".join(parts) + "</div>"
         return HttpResponse(html)
 
     def _html_connected(self, config):
@@ -1003,6 +1146,27 @@ class WhatsAppQRCodeView(EmpresaMixin, View):
             </div>
             <p class="text-base font-semibold text-green-700">WhatsApp Conectado{number}</p>
             <p class="text-xs text-slate-500">Seu número já está ativo e recebendo mensagens.</p>
+        </div>
+        """
+        return HttpResponse(html)
+
+    def _html_connecting(self):
+        """Estado intermediário: WebSocket do Baileys tentando conectar ao WhatsApp."""
+        from django.http import HttpResponse
+
+        refresh_url = self.request.build_absolute_uri("")
+        html = f"""
+        <div class="flex flex-col items-center gap-3 py-4 text-center"
+             hx-get="{refresh_url}" hx-target="#qrcode-container"
+             hx-swap="innerHTML" hx-trigger="every 5s">
+            <div class="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full
+                        animate-spin"></div>
+            <p class="text-sm font-medium text-slate-700">Conectando ao WhatsApp...</p>
+            <p class="text-xs text-slate-500">
+                O servidor está estabelecendo conexão com o WhatsApp.<br>
+                O QR code aparecerá automaticamente quando estiver pronto.
+            </p>
+            <p class="text-xs text-slate-400">Atualizando a cada 5 segundos...</p>
         </div>
         """
         return HttpResponse(html)

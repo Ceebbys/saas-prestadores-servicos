@@ -40,6 +40,12 @@ theme/static_src/node_modules/
 # Tailwind CLI binaries (any platform)
 tailwindcss-linux-*
 
+# Claude Code MCP (contém API keys)
+.mcp.json
+
+# Deploy scripts (contêm credenciais de VPS — manter local)
+deploy/
+
 # Coverage
 htmlcov/
 .coverage
