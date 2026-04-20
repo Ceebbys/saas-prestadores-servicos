@@ -16,6 +16,14 @@
     {% include "components/_stat_card.html" with title="Vencidos" value=overdue_count|default:"0" icon_name="exclamation-triangle" color="rose" %}
 </div>
 
+<!-- Strategic KPIs (Fechamento / Follow-up / Inadimplência / Execução OS) -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    {% include "components/_stat_card.html" with title="Tempo Médio de Fechamento" value=avg_lead_closure_days|stringformat:"d"|add:" dias" icon_name="clock" color="indigo" subtitle="Lead → fechamento" %}
+    {% include "components/_stat_card.html" with title="Taxa de Follow-up" value=followup_rate|floatformat:1|add:"%" icon_name="phone" color="teal" subtitle=followup_contacted|stringformat:"d"|add:" de "|add:followup_total|stringformat:"d" %}
+    {% include "components/_stat_card.html" with title="Inadimplência" value=overdue_rate_pct|floatformat:1|add:"%" icon_name="exclamation-triangle" color="rose" subtitle=overdue_amount|currency %}
+    {% include "components/_stat_card.html" with title="Tempo Médio de Execução (OS)" value=avg_wo_execution_days|stringformat:"d"|add:" dias" icon_name="wrench" color="amber" subtitle="Início → conclusão" %}
+</div>
+
 <!-- Finance Summary + Pipeline -->
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
     <!-- Finance Cards -->
@@ -176,7 +184,12 @@
                         <p class="text-sm font-medium text-slate-900 truncate">{{ lead.name }}</p>
                         <p class="text-xs text-slate-400">{{ lead.company|default:lead.email|default:"Sem empresa" }}</p>
                     </div>
-                    {% status_badge lead.status %}
+                    {% if lead.pipeline_stage %}
+                    <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+                          style="background-color: {{ lead.pipeline_stage.color }}20; color: {{ lead.pipeline_stage.color }};">
+                        {{ lead.pipeline_stage.name }}
+                    </span>
+                    {% endif %}
                 </a>
             </li>
             {% endfor %}

@@ -2,7 +2,17 @@ import calendar as cal_module
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
-from django.db.models import Avg, Count, Q, Sum
+from django.db.models import (
+    Avg,
+    Count,
+    DateTimeField,
+    DurationField,
+    ExpressionWrapper,
+    F,
+    Q,
+    Sum,
+)
+from django.db.models.functions import Cast, Coalesce
 from django.utils import timezone
 from django.views.generic import TemplateView
 
@@ -71,7 +81,7 @@ class DashboardView(EmpresaMixin, HtmxResponseMixin, TemplateView):
         value_max = self._parse_decimal(self.request.GET.get("value_max"))
 
         # Import models
-        from apps.crm.models import Lead, Pipeline
+        from apps.crm.models import Lead, LeadContact, Opportunity, Pipeline
         from apps.finance.models import FinancialEntry
         from apps.operations.models import ServiceType, WorkOrder
         from apps.proposals.models import Proposal
@@ -263,6 +273,95 @@ class DashboardView(EmpresaMixin, HtmxResponseMixin, TemplateView):
             proposals.filter(status="accepted")
             .select_related("lead")
             .order_by("-updated_at")[:5]
+        )
+
+        # ===== NEW STRATEGIC KPIs =====
+
+        # 1. Avg lead closure days (Opportunity won/lost in period).
+        # Safety filter closed_at >= lead.created_at to avoid negative durations
+        # from clock skew or backfilled data.
+        closed_opps = Opportunity.objects.filter(empresa=empresa).filter(
+            Q(
+                current_stage__is_won=True,
+                won_at__date__gte=period_start,
+                won_at__date__lte=period_end,
+                won_at__gte=F("lead__created_at"),
+            )
+            | Q(
+                current_stage__is_lost=True,
+                lost_at__date__gte=period_start,
+                lost_at__date__lte=period_end,
+                lost_at__gte=F("lead__created_at"),
+            )
+        ).annotate(
+            closed_at=Coalesce("won_at", "lost_at"),
+        ).annotate(
+            closure=ExpressionWrapper(
+                F("closed_at") - F("lead__created_at"),
+                output_field=DurationField(),
+            )
+        ).aggregate(avg=Avg("closure"))
+        closure_avg = closed_opps["avg"]
+        context["avg_lead_closure_days"] = (
+            max(closure_avg.days, 0) if closure_avg else 0
+        )
+
+        # 2. Follow-up rate (% of leads created in period with >= 1 contact)
+        leads_in_period = Lead.objects.filter(
+            empresa=empresa,
+            created_at__date__gte=period_start,
+            created_at__date__lte=period_end,
+        )
+        total_leads_period = leads_in_period.count()
+        contacted_leads = (
+            leads_in_period.filter(contacts__isnull=False).distinct().count()
+        )
+        context["followup_rate"] = (
+            round(contacted_leads / total_leads_period * 100, 1)
+            if total_leads_period else 0
+        )
+        context["followup_contacted"] = contacted_leads
+        context["followup_total"] = total_leads_period
+
+        # 3. Overdue rate % (monetary — pending receivables past due)
+        receivables_qs = FinancialEntry.objects.filter(
+            empresa=empresa,
+            type="income",
+            date__gte=period_start,
+            date__lte=period_end,
+        ).exclude(status="cancelled")
+        total_receivable = receivables_qs.aggregate(t=Sum("amount"))["t"] or Decimal("0")
+        overdue_amount = receivables_qs.filter(
+            status__in=["pending", "overdue"], date__lt=today,
+        ).aggregate(t=Sum("amount"))["t"] or Decimal("0")
+        context["overdue_rate_pct"] = (
+            round(float(overdue_amount / total_receivable * 100), 1)
+            if total_receivable else 0
+        )
+        context["overdue_amount"] = overdue_amount
+
+        # 4. Avg work-order execution days (completed in period).
+        # Safety filter completed_at >= scheduled_date to avoid negative durations.
+        completed_wo = WorkOrder.objects.filter(
+            empresa=empresa,
+            status="completed",
+            completed_at__isnull=False,
+            scheduled_date__isnull=False,
+            completed_at__date__gte=period_start,
+            completed_at__date__lte=period_end,
+        ).filter(
+            completed_at__date__gte=F("scheduled_date"),
+        ).annotate(
+            start_dt=Cast("scheduled_date", output_field=DateTimeField()),
+        ).annotate(
+            exec_time=ExpressionWrapper(
+                F("completed_at") - F("start_dt"),
+                output_field=DurationField(),
+            )
+        ).aggregate(avg=Avg("exec_time"))
+        wo_avg = completed_wo["avg"]
+        context["avg_wo_execution_days"] = (
+            max(wo_avg.days, 0) if wo_avg else 0
         )
 
         return context

@@ -27,8 +27,14 @@
             {% form_field form.email %}
             {% form_field form.phone %}
             {% form_field form.company %}
+            <div x-data x-init="$el.querySelector('input').addEventListener('input', (e) => { let v = e.target.value.replace(/\D/g,'').slice(0,11); v = v.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2'); e.target.value = v; })">
+                {% form_field form.cpf %}
+            </div>
+            <div x-data x-init="$el.querySelector('input').addEventListener('input', (e) => { let v = e.target.value.replace(/\D/g,'').slice(0,14); v = v.replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d)/, '.$1/$2').replace(/(\d{4})(\d)/, '$1-$2'); e.target.value = v; })">
+                {% form_field form.cnpj %}
+            </div>
             {% form_field form.source %}
-            {% form_field form.status %}
+            {% form_field form.pipeline_stage %}
             {% form_field form.assigned_to %}
         </div>
 

@@ -139,6 +139,28 @@ def phone_format(value):
 
 
 @register.filter
+def cpf_format(value):
+    """Format a CPF as 000.000.000-00."""
+    if not value:
+        return ""
+    digits = "".join(c for c in str(value) if c.isdigit())
+    if len(digits) != 11:
+        return value
+    return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
+
+
+@register.filter
+def cnpj_format(value):
+    """Format a CNPJ as 00.000.000/0000-00."""
+    if not value:
+        return ""
+    digits = "".join(c for c in str(value) if c.isdigit())
+    if len(digits) != 14:
+        return value
+    return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
+
+
+@register.filter
 def cloud_provider(url):
     """Identifica o provedor de nuvem pelo domínio da URL."""
     if not url:

@@ -8,7 +8,7 @@
                 <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Nome</th>
                 <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Empresa</th>
                 <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Origem</th>
-                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Etapa</th>
                 <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Data</th>
                 <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Ações</th>
             </tr>
@@ -34,7 +34,14 @@
                     {% status_badge lead.source %}
                 </td>
                 <td class="px-5 py-3.5">
-                    {% status_badge lead.status %}
+                    {% if lead.pipeline_stage %}
+                    <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+                          style="background-color: {{ lead.pipeline_stage.color }}20; color: {{ lead.pipeline_stage.color }};">
+                        {{ lead.pipeline_stage.name }}
+                    </span>
+                    {% else %}
+                    <span class="text-xs text-slate-400">—</span>
+                    {% endif %}
                 </td>
                 <td class="px-5 py-3.5 text-sm text-slate-500 hidden lg:table-cell">
                     {{ lead.created_at|date:"d/m/Y" }}

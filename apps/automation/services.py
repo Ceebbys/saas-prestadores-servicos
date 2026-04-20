@@ -96,7 +96,6 @@ def create_lead_from_chatbot(empresa, flow, session_data):
         phone=session_data.get("phone", ""),
         company=session_data.get("company", ""),
         source=source,
-        status=Lead.Status.NOVO,
         external_ref=session_id,
         notes=session_data.get("notes", ""),
     )

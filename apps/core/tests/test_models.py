@@ -39,7 +39,6 @@ class ModelCreationTests(TestCase):
             email="joao@teste.com",
             phone="(11) 99999-1234",
             source=Lead.Source.WHATSAPP,
-            status=Lead.Status.NOVO,
         )
         self.assertEqual(str(lead), "João Silva")
         self.assertEqual(lead.empresa, self.empresa)

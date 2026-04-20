@@ -34,31 +34,31 @@
                 {% icon "search" "w-4 h-4 text-slate-400" %}
             </div>
             <input type="search" name="q" value="{{ request.GET.q|default:'' }}"
-                   placeholder="Buscar por nome, e-mail ou empresa..."
+                   placeholder="Buscar por nome, e-mail, empresa, CPF ou CNPJ..."
                    hx-get="{% url 'crm:lead_list' %}"
                    hx-trigger="input changed delay:300ms, search"
                    hx-target="#lead-table-container"
-                   hx-include="[name='status'],[name='source']"
+                   hx-include="[name='pipeline_stage'],[name='source']"
                    hx-indicator="#table-loading"
                    class="block w-full rounded-lg border-0 py-2 pl-10 pr-3 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
         </div>
-        <select name="status"
+        <select name="pipeline_stage"
                 hx-get="{% url 'crm:lead_list' %}"
                 hx-trigger="change"
                 hx-target="#lead-table-container"
                 hx-include="[name='q'],[name='source']"
                 hx-indicator="#table-loading"
                 class="rounded-lg border-0 py-2 pl-3 pr-8 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
-            <option value="">Todos os status</option>
-            {% for value, label in status_choices %}
-            <option value="{{ value }}" {% if current_status == value %}selected{% endif %}>{{ label }}</option>
+            <option value="">Todas as etapas</option>
+            {% for stage in stage_choices %}
+            <option value="{{ stage.pk }}" {% if current_stage == stage.pk|stringformat:"s" %}selected{% endif %}>{{ stage.name }}</option>
             {% endfor %}
         </select>
         <select name="source"
                 hx-get="{% url 'crm:lead_list' %}"
                 hx-trigger="change"
                 hx-target="#lead-table-container"
-                hx-include="[name='q'],[name='status']"
+                hx-include="[name='q'],[name='pipeline_stage']"
                 hx-indicator="#table-loading"
                 class="rounded-lg border-0 py-2 pl-3 pr-8 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
             <option value="">Todas as origens</option>

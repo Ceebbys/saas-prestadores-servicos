@@ -21,7 +21,11 @@ from apps.finance.models import BankAccount, FinancialEntry
 from apps.operations.models import ServiceType, WorkOrder
 from apps.proposals.models import Proposal, ProposalTemplate, ProposalTemplateItem
 
-from .helpers import create_test_empresa, create_test_user
+from .helpers import (
+    create_pipeline_for_empresa,
+    create_test_empresa,
+    create_test_user,
+)
 
 
 class AutomationPipelineTests(TransactionTestCase):
@@ -30,6 +34,7 @@ class AutomationPipelineTests(TransactionTestCase):
     def setUp(self):
         self.empresa = create_test_empresa()
         self.user = create_test_user("auto@test.com", "Auto User", self.empresa)
+        create_pipeline_for_empresa(self.empresa)
 
         self.flow = ChatbotFlow.objects.create(
             empresa=self.empresa,
@@ -78,7 +83,9 @@ class AutomationPipelineTests(TransactionTestCase):
         self.assertEqual(lead.name, "Cliente Teste")
         self.assertEqual(lead.source, "whatsapp")
         self.assertEqual(lead.external_ref, "test-session-001")
-        self.assertEqual(lead.status, Lead.Status.NOVO)
+        # Signal attributed the first stage of the default pipeline automatically
+        self.assertIsNotNone(lead.pipeline_stage)
+        self.assertEqual(lead.pipeline_stage.order, 0)
 
     def test_create_lead_idempotent(self):
         lead1 = create_lead_from_chatbot(self.empresa, self.flow, self.session_data)

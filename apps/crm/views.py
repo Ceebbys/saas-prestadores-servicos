@@ -16,8 +16,8 @@ from django.views.generic import (
 
 from apps.core.mixins import EmpresaMixin, HtmxResponseMixin
 
-from .forms import LeadForm, OpportunityForm
-from .models import Lead, Opportunity, Pipeline, PipelineStage
+from .forms import LeadContactForm, LeadForm, OpportunityForm
+from .models import Lead, LeadContact, Opportunity, Pipeline, PipelineStage
 
 
 # ---------------------------------------------------------------------------
@@ -33,9 +33,9 @@ class LeadListView(EmpresaMixin, HtmxResponseMixin, ListView):
     paginate_by = 20
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        qs = super().get_queryset().select_related("pipeline_stage", "assigned_to")
         q = self.request.GET.get("q", "").strip()
-        status = self.request.GET.get("status", "").strip()
+        stage_id = self.request.GET.get("pipeline_stage", "").strip()
         source = self.request.GET.get("source", "").strip()
 
         if q:
@@ -43,9 +43,11 @@ class LeadListView(EmpresaMixin, HtmxResponseMixin, ListView):
                 Q(name__icontains=q)
                 | Q(email__icontains=q)
                 | Q(company__icontains=q)
+                | Q(cpf__icontains=q)
+                | Q(cnpj__icontains=q)
             )
-        if status:
-            qs = qs.filter(status=status)
+        if stage_id:
+            qs = qs.filter(pipeline_stage_id=stage_id)
         if source:
             qs = qs.filter(source=source)
 
@@ -53,9 +55,9 @@ class LeadListView(EmpresaMixin, HtmxResponseMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["status_choices"] = Lead.Status.choices
+        context["stage_choices"] = _get_stage_choices(self.request.empresa)
         context["source_choices"] = Lead.Source.choices
-        context["current_status"] = self.request.GET.get("status", "")
+        context["current_stage"] = self.request.GET.get("pipeline_stage", "")
         context["current_source"] = self.request.GET.get("source", "")
         context["current_q"] = self.request.GET.get("q", "")
         return context
@@ -66,10 +68,24 @@ class LeadDetailView(EmpresaMixin, DetailView):
     template_name = "crm/lead_detail.html"
     context_object_name = "lead"
 
+    def get_queryset(self):
+        return super().get_queryset().select_related("pipeline_stage", "assigned_to")
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["status_choices"] = Lead.Status.choices
+        context["stage_choices"] = _get_stage_choices(self.request.empresa)
+        context["contacts"] = self.object.contacts.select_related("user")[:50]
+        context["contact_form"] = LeadContactForm()
         return context
+
+
+def _get_stage_choices(empresa):
+    pipeline = Pipeline.objects.filter(empresa=empresa, is_default=True).first()
+    if pipeline is None:
+        pipeline = Pipeline.objects.filter(empresa=empresa).first()
+    if pipeline is None:
+        return PipelineStage.objects.none()
+    return pipeline.stages.order_by("order")
 
 
 class LeadCreateView(EmpresaMixin, HtmxResponseMixin, CreateView):
@@ -262,20 +278,42 @@ class OpportunityDetailView(EmpresaMixin, DetailView):
         return context
 
 
-class LeadStatusView(EmpresaMixin, View):
-    """Altera o status de um lead."""
+class LeadMoveView(EmpresaMixin, View):
+    """Move um lead para outra etapa da pipeline."""
 
     def post(self, request, pk):
         lead = get_object_or_404(Lead, pk=pk, empresa=request.empresa)
-        new_status = request.POST.get("status")
+        stage_id = request.POST.get("stage_id") or request.POST.get("pipeline_stage")
 
-        if new_status in dict(Lead.Status.choices):
-            lead.status = new_status
-            lead.save(update_fields=["status", "updated_at"])
-            messages.success(request, "Status do lead atualizado.")
-        else:
-            messages.error(request, "Status inválido.")
+        stage = PipelineStage.objects.filter(
+            pk=stage_id, pipeline__empresa=request.empresa
+        ).first()
+        if not stage:
+            messages.error(request, "Etapa inválida.")
+            return redirect("crm:lead_detail", pk=lead.pk)
 
+        lead.pipeline_stage = stage
+        lead.save(update_fields=["pipeline_stage", "updated_at"])
+        messages.success(request, "Etapa do lead atualizada.")
+        return redirect("crm:lead_detail", pk=lead.pk)
+
+
+class LeadContactCreateView(EmpresaMixin, View):
+    """Registra um novo contato/follow-up com um lead."""
+
+    def post(self, request, lead_id):
+        lead = get_object_or_404(Lead, pk=lead_id, empresa=request.empresa)
+        form = LeadContactForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, "Preencha os campos corretamente.")
+            return redirect("crm:lead_detail", pk=lead.pk)
+
+        contact = form.save(commit=False)
+        contact.empresa = request.empresa
+        contact.lead = lead
+        contact.user = request.user if request.user.is_authenticated else None
+        contact.save()
+        messages.success(request, "Contato registrado com sucesso.")
         return redirect("crm:lead_detail", pk=lead.pk)
 
 

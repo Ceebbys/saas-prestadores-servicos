@@ -20,7 +20,12 @@
         <div>
             <div class="flex items-center gap-3">
                 <h1 class="text-2xl font-bold text-slate-900">{{ lead.name }}</h1>
-                {% status_badge lead.status %}
+                {% if lead.pipeline_stage %}
+                <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+                      style="background-color: {{ lead.pipeline_stage.color }}20; color: {{ lead.pipeline_stage.color }};">
+                    {{ lead.pipeline_stage.name }}
+                </span>
+                {% endif %}
             </div>
             {% if lead.company %}
             <p class="mt-1 text-sm text-slate-500">{{ lead.company }}</p>
@@ -28,12 +33,12 @@
         </div>
     </div>
     <div class="flex items-center gap-2 flex-wrap">
-        <!-- Status change dropdown -->
+        <!-- Pipeline stage change dropdown -->
         <div x-data="{ open: false }" class="relative">
             <button @click="open = !open" type="button"
                     class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50 transition-colors">
                 {% icon "funnel" "w-4 h-4" %}
-                Mudar Status
+                Mudar Etapa
                 {% icon "chevron-right" "w-3 h-3" %}
             </button>
             <div x-show="open" @click.outside="open = false"
@@ -43,14 +48,14 @@
                  x-transition:leave="transition ease-in duration-75"
                  x-transition:leave-start="opacity-100 scale-100"
                  x-transition:leave-end="opacity-0 scale-95"
-                 class="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg ring-1 ring-slate-200 py-1 z-20">
-                {% for value, label in status_choices %}
-                {% if value != lead.status %}
-                <form method="post" action="{% url 'crm:lead_status' lead.pk %}">
+                 class="absolute right-0 mt-1 w-56 bg-white rounded-lg shadow-lg ring-1 ring-slate-200 py-1 z-20">
+                {% for stage in stage_choices %}
+                {% if stage.pk != lead.pipeline_stage_id %}
+                <form method="post" action="{% url 'crm:lead_move' lead.pk %}">
                     {% csrf_token %}
-                    <input type="hidden" name="status" value="{{ value }}">
+                    <input type="hidden" name="stage_id" value="{{ stage.pk }}">
                     <button type="submit" class="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
-                        {{ label }}
+                        {{ stage.name }}
                     </button>
                 </form>
                 {% endif %}
@@ -102,6 +107,18 @@
                 <div>
                     <dt class="text-xs text-slate-400">Telefone</dt>
                     <dd class="text-sm text-slate-900 mt-0.5">{{ lead.phone|phone_format }}</dd>
+                </div>
+                {% endif %}
+                {% if lead.cpf %}
+                <div>
+                    <dt class="text-xs text-slate-400">CPF</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">{{ lead.cpf|cpf_format }}</dd>
+                </div>
+                {% endif %}
+                {% if lead.cnpj %}
+                <div>
+                    <dt class="text-xs text-slate-400">CNPJ</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">{{ lead.cnpj|cnpj_format }}</dd>
                 </div>
                 {% endif %}
                 <div>
@@ -193,6 +210,53 @@
             </ul>
             {% else %}
             <div class="px-5 py-6 text-center text-sm text-slate-400">Nenhuma proposta vinculada</div>
+            {% endif %}
+        </div>
+
+        <!-- Lead Contacts (follow-up history) -->
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                <h3 class="text-sm font-semibold text-slate-700">Histórico de Contatos</h3>
+                <span class="text-xs text-slate-400">{{ contacts|length }} registro{{ contacts|length|pluralize:"s" }}</span>
+            </div>
+            <form method="post" action="{% url 'crm:lead_contact_create' lead.pk %}" class="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+                {% csrf_token %}
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <select name="channel" class="rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        {% for value, label in contact_form.fields.channel.choices %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="text" name="note" placeholder="Observação (opcional)"
+                           class="rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500 sm:col-span-2">
+                </div>
+                <div class="mt-3 flex justify-end">
+                    <button type="submit"
+                            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm">
+                        {% icon "phone" "w-4 h-4" %}
+                        Registrar Contato
+                    </button>
+                </div>
+            </form>
+            {% if contacts %}
+            <ul class="divide-y divide-slate-100">
+                {% for contact in contacts %}
+                <li class="px-5 py-3">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-slate-900">{{ contact.get_channel_display }}</p>
+                            {% if contact.note %}<p class="text-xs text-slate-500 mt-0.5">{{ contact.note }}</p>{% endif %}
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xs text-slate-400">{{ contact.contacted_at|date:"d/m/Y H:i" }}</p>
+                            {% if contact.user %}<p class="text-xs text-slate-400">{{ contact.user.full_name|default:contact.user.email }}</p>{% endif %}
+                        </div>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="px-5 py-6 text-center text-sm text-slate-400">Nenhum contato registrado ainda</div>
             {% endif %}
         </div>
 

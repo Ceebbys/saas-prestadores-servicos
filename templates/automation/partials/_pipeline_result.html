@@ -17,7 +17,7 @@
             <a href="{% url 'crm:lead_detail' result.lead.pk %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-700">
                 {{ result.lead.name }}
             </a>
-            <p class="text-xs text-slate-400 mt-0.5">{{ result.lead.source|source_label }} — {% status_badge result.lead.status %}</p>
+            <p class="text-xs text-slate-400 mt-0.5">{{ result.lead.source|source_label }} — {{ result.lead.pipeline_stage.name|default:"Sem etapa" }}</p>
         </div>
         {% endif %}
 

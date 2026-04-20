@@ -11,7 +11,12 @@ urlpatterns = [
     path("leads/<int:pk>/", views.LeadDetailView.as_view(), name="lead_detail"),
     path("leads/<int:pk>/edit/", views.LeadUpdateView.as_view(), name="lead_update"),
     path("leads/<int:pk>/delete/", views.LeadDeleteView.as_view(), name="lead_delete"),
-    path("leads/<int:pk>/status/", views.LeadStatusView.as_view(), name="lead_status"),
+    path("leads/<int:pk>/move/", views.LeadMoveView.as_view(), name="lead_move"),
+    path(
+        "leads/<int:lead_id>/contacts/new/",
+        views.LeadContactCreateView.as_view(),
+        name="lead_contact_create",
+    ),
     # Pipeline
     path("pipeline/", views.PipelineBoardView.as_view(), name="pipeline_board"),
     # Opportunities

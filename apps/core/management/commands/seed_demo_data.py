@@ -1102,7 +1102,7 @@ class Command(BaseCommand):
     # ------------------------------------------------------------------
 
     def _create_leads(self, empresa, users, cdef, count):
-        from apps.crm.models import Lead
+        from apps.crm.models import Lead, Pipeline
 
         statuses = ["novo", "contatado", "qualificado", "perdido", "convertido"]
         status_weights = [25, 20, 25, 15, 15]
@@ -1111,31 +1111,58 @@ class Command(BaseCommand):
         leads_by_status = {"novo": [], "contatado": [], "qualificado": [], "perdido": [], "convertido": []}
         assignable_users = users[:3]  # admin, comercial, tecnico
 
-        for i in range(count):
+        # Map demo status buckets to real PipelineStage instances for this empresa.
+        pipeline = Pipeline.objects.filter(empresa=empresa, is_default=True).first()
+        stages_by_order = {}
+        won_stage = lost_stage = None
+        if pipeline:
+            for s in pipeline.stages.order_by("order"):
+                stages_by_order[s.order] = s
+                if s.is_won:
+                    won_stage = s
+                if s.is_lost:
+                    lost_stage = s
+
+        def _resolve_stage(status_key):
+            if not pipeline:
+                return None
+            if status_key == "convertido":
+                return won_stage or stages_by_order.get(0)
+            if status_key == "perdido":
+                return lost_stage or stages_by_order.get(0)
+            if status_key == "novo":
+                return stages_by_order.get(0)
+            if status_key == "contatado":
+                return stages_by_order.get(1) or stages_by_order.get(0)
+            if status_key == "qualificado":
+                return stages_by_order.get(2) or stages_by_order.get(1) or stages_by_order.get(0)
+            return stages_by_order.get(0)
+
+        def _create_one(status_key, *, notes=None, max_days=None):
             name = self._random_name()
-            status = self._pick(statuses, status_weights)
-            source = self._pick(LEAD_SOURCES, LEAD_SOURCE_WEIGHTS)
             company = self.rng.choice(client_companies) if self.rng.random() > 0.2 else ""
-            created_date = self._random_date()
-
-            # Newer leads are more likely to be novo
-            if status == "novo":
-                created_date = self._random_date(30)
-            elif status == "convertido":
-                created_date = self._random_date(120)
-
             lead = Lead.objects.create(
                 empresa=empresa,
                 name=name,
                 email=self._random_email(name),
                 phone=self._random_phone(),
                 company=company,
-                source=source,
-                status=status,
-                notes=self._lead_notes(status, cdef),
-                assigned_to=self.rng.choice(assignable_users) if self.rng.random() > 0.2 else None,
+                source=self._pick(LEAD_SOURCES, LEAD_SOURCE_WEIGHTS),
+                pipeline_stage=_resolve_stage(status_key),
+                notes=notes if notes is not None else self._lead_notes(status_key, cdef),
+                assigned_to=(
+                    self.rng.choice(assignable_users)
+                    if self.rng.random() > 0.2 else None
+                ),
             )
-            self._backdate(Lead, lead.pk, created_date)
+            days = max_days if max_days is not None else None
+            self._backdate(Lead, lead.pk, self._random_date(days) if days else self._random_date())
+            return lead
+
+        for _ in range(count):
+            status = self._pick(statuses, status_weights)
+            max_days = 30 if status == "novo" else (120 if status == "convertido" else None)
+            lead = _create_one(status, max_days=max_days)
             leads_by_status[status].append(lead)
 
         # Guarantee enough qualified leads to fill every pipeline stage
@@ -1143,30 +1170,17 @@ class Command(BaseCommand):
         min_qual = max(n_active_stages, 3 if cdef["volume"] != "minimal" else n_active_stages)
         min_conv = 3 if cdef["volume"] != "minimal" else 2
         while len(leads_by_status["qualificado"]) < min_qual:
-            name = self._random_name()
-            company = self.rng.choice(client_companies) if self.rng.random() > 0.2 else ""
-            lead = Lead.objects.create(
-                empresa=empresa, name=name, email=self._random_email(name),
-                phone=self._random_phone(), company=company,
-                source=self._pick(LEAD_SOURCES, LEAD_SOURCE_WEIGHTS),
-                status="qualificado", notes="Cliente qualificado, pronto para proposta.",
-                assigned_to=self.rng.choice(assignable_users),
+            leads_by_status["qualificado"].append(
+                _create_one("qualificado",
+                            notes="Cliente qualificado, pronto para proposta.",
+                            max_days=90)
             )
-            self._backdate(Lead, lead.pk, self._random_date(90))
-            leads_by_status["qualificado"].append(lead)
-
         while len(leads_by_status["convertido"]) < min_conv:
-            name = self._random_name()
-            company = self.rng.choice(client_companies) if self.rng.random() > 0.2 else ""
-            lead = Lead.objects.create(
-                empresa=empresa, name=name, email=self._random_email(name),
-                phone=self._random_phone(), company=company,
-                source=self._pick(LEAD_SOURCES, LEAD_SOURCE_WEIGHTS),
-                status="convertido", notes="Proposta aceita, contrato em elaboracao.",
-                assigned_to=self.rng.choice(assignable_users),
+            leads_by_status["convertido"].append(
+                _create_one("convertido",
+                            notes="Proposta aceita, contrato em elaboracao.",
+                            max_days=120)
             )
-            self._backdate(Lead, lead.pk, self._random_date(120))
-            leads_by_status["convertido"].append(lead)
 
         return leads_by_status
 

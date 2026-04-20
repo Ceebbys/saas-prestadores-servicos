@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Lead, Opportunity, Pipeline, PipelineStage
+from .models import Lead, LeadContact, Opportunity, Pipeline, PipelineStage
 
 
 class PipelineStageInline(admin.TabularInline):
@@ -11,10 +11,21 @@ class PipelineStageInline(admin.TabularInline):
 
 @admin.register(Lead)
 class LeadAdmin(admin.ModelAdmin):
-    list_display = ("name", "email", "company", "source", "status", "assigned_to", "created_at")
-    list_filter = ("status", "source", "empresa")
-    search_fields = ("name", "email", "company", "phone")
-    list_select_related = ("assigned_to", "empresa")
+    list_display = (
+        "name", "email", "company", "source", "pipeline_stage", "assigned_to", "created_at",
+    )
+    list_filter = ("pipeline_stage", "source", "empresa")
+    search_fields = ("name", "email", "company", "phone", "cpf", "cnpj")
+    list_select_related = ("assigned_to", "empresa", "pipeline_stage")
+
+
+@admin.register(LeadContact)
+class LeadContactAdmin(admin.ModelAdmin):
+    list_display = ("lead", "channel", "contacted_at", "user", "empresa")
+    list_filter = ("channel", "empresa")
+    search_fields = ("lead__name", "note")
+    list_select_related = ("lead", "user", "empresa")
+    date_hierarchy = "contacted_at"
 
 
 @admin.register(Pipeline)
