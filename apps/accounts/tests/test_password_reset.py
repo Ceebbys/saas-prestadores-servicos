@@ -43,7 +43,24 @@ class PasswordResetFlowTests(TestCase):
         message = mail.outbox[0]
         self.assertIn("reset@test.com", message.to)
         self.assertIn("ServiçoPro", message.subject)
+        # Plain-text body must contain the reset link
         self.assertIn("password-reset/confirm/", message.body)
+
+    def test_password_reset_email_is_multipart_html(self):
+        """Email should ship both plain text and HTML versions."""
+        self.client.post(
+            reverse("accounts:password_reset"),
+            {"email": "reset@test.com"},
+        )
+        message = mail.outbox[0]
+        # alternatives is a list of (content, mimetype) tuples
+        self.assertTrue(message.alternatives, "missing HTML alternative")
+        html_body, mimetype = message.alternatives[0]
+        self.assertEqual(mimetype, "text/html")
+        self.assertIn("<!DOCTYPE html>", html_body)
+        self.assertIn("Redefinir minha senha", html_body)
+        self.assertIn("password-reset/confirm/", html_body)
+        self.assertIn("ServiçoPro", html_body)
 
     def test_password_reset_does_not_leak_unknown_email(self):
         # Django still redirects to "done" even when the email is not found
