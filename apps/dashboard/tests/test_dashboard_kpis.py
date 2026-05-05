@@ -72,13 +72,20 @@ class DashboardKPITests(TestCase):
         from apps.finance.models import FinancialEntry
 
         today = timezone.now().date()
+        period_start = today.replace(day=1)
+        # Pick an overdue date guaranteed to be in current month AND past today.
+        # On the 1st of month there's no valid past-date in same month -> skip.
+        if today == period_start:
+            self.skipTest("First day of month: no past dates in current period")
+        overdue_date = period_start  # always in period; also < today since today != day 1
+
         # Create receivables: R$1000 total, R$300 overdue
         FinancialEntry.objects.create(
             empresa=self.empresa,
             type="income",
             status="paid",
-            date=today.replace(day=1),
-            paid_date=today.replace(day=1),
+            date=period_start,
+            paid_date=period_start,
             amount=Decimal("700"),
             description="Paid",
         )
@@ -86,7 +93,7 @@ class DashboardKPITests(TestCase):
             empresa=self.empresa,
             type="income",
             status="pending",
-            date=today - timedelta(days=10),
+            date=overdue_date,
             amount=Decimal("300"),
             description="Overdue",
         )

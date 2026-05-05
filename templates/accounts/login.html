@@ -29,6 +29,10 @@
                 <input type="checkbox" name="remember" class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600">
                 <span class="text-sm text-slate-600">Lembrar de mim</span>
             </label>
+            <a href="{% url 'accounts:password_reset' %}"
+               class="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+                Esqueci minha senha
+            </a>
         </div>
 
         <button type="submit"
