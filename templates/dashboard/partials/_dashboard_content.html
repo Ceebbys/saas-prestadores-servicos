@@ -182,6 +182,7 @@
                     </div>
                     <div class="flex-1 min-w-0">
                         <p class="text-sm font-medium text-slate-900 truncate">{{ lead.name }}</p>
+                        {% if lead.contato %}<p class="text-xs text-slate-400 truncate">{{ lead.contato.name }}</p>{% endif %}
                         <p class="text-xs text-slate-400">{{ lead.company|default:lead.email|default:"Sem empresa" }}</p>
                     </div>
                     {% if lead.pipeline_stage %}

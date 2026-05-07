@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.dashboard",
     "apps.crm",
+    "apps.contacts",
     "apps.proposals",
     "apps.contracts",
     "apps.operations",
@@ -144,6 +145,16 @@ EVOLUTION_API_URL = os.getenv("EVOLUTION_API_URL", "")
 EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY", "")
 EVOLUTION_INSTANCE_NAME = os.getenv("EVOLUTION_INSTANCE_NAME", "")
 EVOLUTION_WEBHOOK_TOKEN = os.getenv("EVOLUTION_WEBHOOK_TOKEN", "")
+
+# --- Celery + Redis ---
+CELERY_BROKER_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+CELERY_TIMEZONE = "America/Sao_Paulo"
+CELERY_TASK_ALWAYS_EAGER = (
+    os.getenv("CELERY_EAGER", "false").lower() in ("1", "true", "yes")
+)
+CELERY_TASK_EAGER_PROPAGATES = True
+# Beat schedule é importado em config/celery.py para evitar import cycle.
 
 # --- Email (transactional / password reset) ---
 # If EMAIL_HOST is empty, emails go to console (dev/staging without SMTP).

@@ -37,6 +37,13 @@
         <span>Leads</span>
     </a>
 
+    <a href="{% url 'contacts:list' %}"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+              {% if request.resolver_match.app_name == 'contacts' %}bg-slate-800 text-white{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+        {% icon "bookmark" "w-5 h-5" %}
+        <span>Contatos Salvos</span>
+    </a>
+
     <a href="{% url 'crm:pipeline_board' %}"
        class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
               {% if 'pipeline' in request.resolver_match.url_name|default:'' or 'opportunity' in request.resolver_match.url_name|default:'' %}bg-slate-800 text-white{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">

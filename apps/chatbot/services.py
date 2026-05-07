@@ -10,10 +10,26 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import timedelta
 
 from django.db import transaction
+from django.db.models import Q
+from django.utils import timezone
 
-from .models import ChatbotAction, ChatbotChoice, ChatbotFlow, ChatbotSession, ChatbotStep
+from apps.core.validators import (
+    mask_document,
+    normalize_document,
+    validate_cpf_or_cnpj,
+)
+
+from .models import (
+    ChatbotAction,
+    ChatbotChoice,
+    ChatbotFlow,
+    ChatbotFlowDispatch,
+    ChatbotSession,
+    ChatbotStep,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +133,13 @@ def _validate_response(step: ChatbotStep, user_response: str) -> str | None:
         if _resolve_choice(step, user_response) is None:
             options = ", ".join(step.choices.order_by("order").values_list("text", flat=True))
             return f"Por favor, escolha uma das opções: {options}."
+
+    elif step.step_type == ChatbotStep.StepType.DOCUMENT:
+        from django.core.exceptions import ValidationError
+        try:
+            validate_cpf_or_cnpj(text)
+        except ValidationError as exc:
+            return str(exc.messages[0]) if getattr(exc, "messages", None) else "Documento inválido."
 
     return None
 
@@ -228,6 +251,10 @@ def process_response(session_key: str, user_response: str) -> dict:
             session.lead_data["notes"] += f" | {text}"
         else:
             session.lead_data[step.lead_field_mapping] = text
+
+    # DOCUMENT step: pesquisa/cria Contato e vincula à sessão.
+    if step.step_type == ChatbotStep.StepType.DOCUMENT:
+        _handle_document_step(session, text)
 
     # Encontrar próximo passo
     next_step = _find_next_step(step, text)
@@ -359,3 +386,211 @@ def create_lead_from_chatbot(empresa, flow, session_data):
     """Delega para apps.automation.services.create_lead_from_chatbot."""
     from apps.automation.services import create_lead_from_chatbot as _create_lead
     return _create_lead(empresa, flow, session_data)
+
+
+# ---------------------------------------------------------------------------
+# DOCUMENT step: integração com Contato
+# ---------------------------------------------------------------------------
+
+def _handle_document_step(session: ChatbotSession, document_text: str) -> None:
+    """Pesquisa Contato pelo CPF/CNPJ e vincula à sessão.
+
+    - Se encontrar: armazena `contato_id` em session.lead_data e copia campos
+      úteis (name/phone/email) para evitar perguntas redundantes adiante.
+    - Se não encontrar: salva o documento normalizado em
+      session.lead_data["cpf_cnpj"] para criar Contato ao final do flow.
+    """
+    from apps.contacts.services import (
+        find_contato_by_document,
+        link_contato_to_session,
+    )
+
+    digits = normalize_document(document_text)
+    session.lead_data["cpf_cnpj"] = document_text
+    session.lead_data["cpf_cnpj_normalized"] = digits
+
+    empresa = session.flow.empresa
+    contato = find_contato_by_document(empresa, document_text)
+    if contato:
+        link_contato_to_session(contato, session)
+        logger.info(
+            "chatbot: linked existing Contato id=%s to session %s (doc=%s)",
+            contato.pk, session.session_key, mask_document(digits),
+        )
+    else:
+        # Mantém os dados na sessão; o Contato será criado quando a action
+        # CREATE_LEAD rodar (ver _create_lead_action via automation.services).
+        session.save(update_fields=["lead_data", "updated_at"])
+        logger.info(
+            "chatbot: no Contato found for session %s (doc=%s)",
+            session.session_key, mask_document(digits),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Seleção de fluxo: resolve qual fluxo dispara para uma mensagem entrante
+# ---------------------------------------------------------------------------
+
+def _normalize_message(text: str) -> str:
+    return (text or "").strip().lower()
+
+
+def _matches_keyword(flow: ChatbotFlow, message: str) -> bool:
+    keywords = flow.keyword_list
+    if not keywords:
+        return False
+    normalized = _normalize_message(message)
+    return any(kw in normalized for kw in keywords)
+
+
+def _has_recent_dispatch(flow: ChatbotFlow, sender_id: str) -> bool:
+    """Aplica cooldown: True se houve dispatch desse fluxo para esse sender
+    nos últimos `cooldown_minutes`."""
+    if not flow.cooldown_minutes:
+        return False
+    cutoff = timezone.now() - timedelta(minutes=flow.cooldown_minutes)
+    return ChatbotFlowDispatch.objects.filter(
+        flow=flow,
+        sender_id=sender_id,
+        triggered_at__gte=cutoff,
+        blocked=False,
+    ).exists()
+
+
+def _has_active_exclusive_session(empresa, sender_id: str) -> bool:
+    """Verifica se existe sessão ACTIVE de fluxo exclusivo para esse sender."""
+    return ChatbotSession.objects.filter(
+        flow__empresa=empresa,
+        flow__exclusive=True,
+        sender_id=sender_id,
+        status=ChatbotSession.Status.ACTIVE,
+    ).exists()
+
+
+def select_flow_for_message(
+    empresa,
+    sender_id: str,
+    message: str,
+    channel: str = "whatsapp",
+) -> ChatbotFlow | None:
+    """Seleciona o fluxo elegível para esta mensagem entrante.
+
+    Regras (em ordem):
+    1. Se existe sessão ACTIVE de fluxo exclusivo para este sender, NÃO inicia
+       outro fluxo — engine continua a sessão atual via process_response.
+    2. Se trigger_type=KEYWORD: busca match na mensagem.
+    3. Se trigger_type=FIRST_MESSAGE: dispara apenas se sender não tem sessão
+       ACTIVE ainda.
+    4. Empate: menor `priority` ganha. Cooldown bloqueia repetições.
+    5. Loga `ChatbotFlowDispatch` (blocked=False ao disparar; True ao bloquear).
+    """
+    if _has_active_exclusive_session(empresa, sender_id):
+        return None
+
+    flows = (
+        ChatbotFlow.objects
+        .filter(empresa=empresa, channel=channel, is_active=True)
+        .exclude(trigger_type=ChatbotFlow.TriggerType.INACTIVITY)  # tratado separadamente
+        .order_by("priority", "-created_at")
+    )
+
+    candidates: list[tuple[ChatbotFlow, str]] = []
+    has_active_session = ChatbotSession.objects.filter(
+        flow__empresa=empresa,
+        sender_id=sender_id,
+        status=ChatbotSession.Status.ACTIVE,
+    ).exists()
+
+    for flow in flows:
+        if _has_recent_dispatch(flow, sender_id):
+            continue
+
+        if flow.trigger_type == ChatbotFlow.TriggerType.KEYWORD:
+            if _matches_keyword(flow, message):
+                candidates.append((flow, "keyword"))
+        elif flow.trigger_type == ChatbotFlow.TriggerType.FIRST_MESSAGE:
+            if not has_active_session:
+                candidates.append((flow, "first_message"))
+        elif flow.trigger_type == ChatbotFlow.TriggerType.MANUAL:
+            # Manual nunca dispara automaticamente
+            continue
+
+    if not candidates:
+        return None
+
+    # Já vêm ordenados por priority; pega o primeiro.
+    chosen, reason = candidates[0]
+    ChatbotFlowDispatch.objects.create(
+        empresa=empresa,
+        flow=chosen,
+        sender_id=sender_id,
+        reason=reason,
+        blocked=False,
+        metadata={"channel": channel, "candidates": len(candidates)},
+    )
+    # Loga os outros como blocked
+    for flow, reason in candidates[1:]:
+        ChatbotFlowDispatch.objects.create(
+            empresa=empresa,
+            flow=flow,
+            sender_id=sender_id,
+            reason=f"blocked_by:{chosen.name}",
+            blocked=True,
+        )
+    return chosen
+
+
+# ---------------------------------------------------------------------------
+# Disparo de fluxos por inatividade (chamado por Celery beat)
+# ---------------------------------------------------------------------------
+
+def dispatch_inactivity_flows(empresa) -> int:
+    """Verifica sessões ativas inativas e dispara fluxos com trigger=INACTIVITY.
+
+    Retorna o número de fluxos disparados.
+    """
+    flows = ChatbotFlow.objects.filter(
+        empresa=empresa,
+        is_active=True,
+        trigger_type=ChatbotFlow.TriggerType.INACTIVITY,
+        inactivity_minutes__isnull=False,
+    ).order_by("priority")
+
+    if not flows.exists():
+        return 0
+
+    dispatched = 0
+    now = timezone.now()
+    for flow in flows:
+        cutoff = now - timedelta(minutes=flow.inactivity_minutes)
+        candidate_sessions = ChatbotSession.objects.filter(
+            flow__empresa=empresa,
+            status=ChatbotSession.Status.ACTIVE,
+            updated_at__lt=cutoff,
+        ).order_by("sender_id", "-updated_at")
+
+        seen_senders: set[str] = set()
+        for session in candidate_sessions:
+            sender_id = session.sender_id
+            if not sender_id or sender_id in seen_senders:
+                continue
+            seen_senders.add(sender_id)
+            if _has_recent_dispatch(flow, sender_id):
+                continue
+            ChatbotFlowDispatch.objects.create(
+                empresa=empresa,
+                flow=flow,
+                sender_id=sender_id,
+                reason=f"inactivity {flow.inactivity_minutes}min",
+                blocked=False,
+                metadata={"trigger_session": str(session.session_key)},
+            )
+            try:
+                start_session(flow, channel=session.channel, sender_id=sender_id)
+                dispatched += 1
+            except Exception:
+                logger.exception(
+                    "chatbot: failed to start inactivity flow %s for %s",
+                    flow.pk, sender_id,
+                )
+    return dispatched

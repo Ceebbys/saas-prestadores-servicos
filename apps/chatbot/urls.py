@@ -25,6 +25,11 @@ urlpatterns = [
         views.StepDeleteView.as_view(),
         name="step_delete",
     ),
+    path(
+        "flows/<int:pk>/steps/<int:step_pk>/choices/",
+        views.StepChoicesEditView.as_view(),
+        name="step_choices_edit",
+    ),
     # Actions (inline management)
     path("flows/<int:pk>/actions/add/", views.ActionAddView.as_view(), name="action_add"),
     path(

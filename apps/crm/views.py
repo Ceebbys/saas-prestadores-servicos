@@ -33,7 +33,11 @@ class LeadListView(EmpresaMixin, HtmxResponseMixin, ListView):
     paginate_by = 20
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("pipeline_stage", "assigned_to")
+        qs = (
+            super()
+            .get_queryset()
+            .select_related("pipeline_stage", "assigned_to", "contato")
+        )
         q = self.request.GET.get("q", "").strip()
         stage_id = self.request.GET.get("pipeline_stage", "").strip()
         source = self.request.GET.get("source", "").strip()
@@ -41,6 +45,11 @@ class LeadListView(EmpresaMixin, HtmxResponseMixin, ListView):
         if q:
             qs = qs.filter(
                 Q(name__icontains=q)
+                | Q(contato__name__icontains=q)
+                | Q(contato__cpf_cnpj_normalized__icontains=q)
+                | Q(contato__email__icontains=q)
+                | Q(contato__phone__icontains=q)
+                | Q(contato__whatsapp__icontains=q)
                 | Q(email__icontains=q)
                 | Q(company__icontains=q)
                 | Q(cpf__icontains=q)
@@ -51,7 +60,7 @@ class LeadListView(EmpresaMixin, HtmxResponseMixin, ListView):
         if source:
             qs = qs.filter(source=source)
 
-        return qs
+        return qs.distinct()
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -100,13 +109,43 @@ class LeadCreateView(EmpresaMixin, HtmxResponseMixin, CreateView):
         kwargs["empresa"] = self.request.empresa
         return kwargs
 
+    def get_initial(self):
+        """If URL has ?contato=ID, pre-select that contato in 'search' mode."""
+        initial = super().get_initial()
+        contato_id = self.request.GET.get("contato")
+        if contato_id:
+            from apps.contacts.models import Contato
+            contato = Contato.objects.filter(
+                pk=contato_id, empresa=self.request.empresa
+            ).first()
+            if contato:
+                initial["contato"] = contato.pk
+                initial["contact_mode"] = "search"
+        return initial
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Resolve preselected contato (if any) for the card preview.
+        from apps.contacts.models import Contato
+        contato_id = (
+            self.request.POST.get("contato")
+            or self.request.GET.get("contato")
+        )
+        if contato_id:
+            context["preselected_contato"] = Contato.objects.filter(
+                pk=contato_id, empresa=self.request.empresa
+            ).first()
+        return context
+
     def form_valid(self, form):
         response = super().form_valid(form)
         messages.success(self.request, "Lead criado com sucesso.")
         if self.request.htmx:
-            qs = Lead.objects.filter(empresa=self.request.empresa)
+            qs = Lead.objects.filter(empresa=self.request.empresa).select_related(
+                "contato", "pipeline_stage"
+            )
             return self.render_to_response(
-                self.get_context_data(leads=qs),
+                self.get_context_data(leads=qs, object_list=qs),
                 template_name="crm/partials/_lead_table.html",
             )
         return response
@@ -188,7 +227,11 @@ class PipelineBoardView(EmpresaMixin, HtmxResponseMixin, TemplateView):
                     opportunity_count=Count("opportunities"),
                     total_value=Sum("opportunities__value"),
                 )
-                .prefetch_related("opportunities", "opportunities__lead")
+                .prefetch_related(
+                    "opportunities",
+                    "opportunities__lead",
+                    "opportunities__lead__contato",
+                )
                 .order_by("order")
             )
 
@@ -296,6 +339,25 @@ class LeadMoveView(EmpresaMixin, View):
         lead.save(update_fields=["pipeline_stage", "updated_at"])
         messages.success(request, "Etapa do lead atualizada.")
         return redirect("crm:lead_detail", pk=lead.pk)
+
+
+class LeadContactCardView(EmpresaMixin, View):
+    """Retorna um card HTML com resumo do Contato selecionado (HTMX)."""
+
+    def get(self, request, contato_id):
+        from apps.contacts.models import Contato
+        from django.template.loader import render_to_string
+        from django.http import HttpResponse
+
+        contato = get_object_or_404(
+            Contato, pk=contato_id, empresa=request.empresa
+        )
+        html = render_to_string(
+            "crm/partials/_contact_card.html",
+            {"contato": contato},
+            request=request,
+        )
+        return HttpResponse(html)
 
 
 class LeadContactCreateView(EmpresaMixin, View):

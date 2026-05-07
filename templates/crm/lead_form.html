@@ -14,44 +14,12 @@
 {% block page_header %}
 <div class="mb-6">
     <h1 class="text-2xl font-bold text-slate-900">{% if form.instance.pk %}Editar Lead{% else %}Novo Lead{% endif %}</h1>
+    <p class="mt-1 text-sm text-slate-500">Cadastre um contato e dê um nome para a oportunidade comercial.</p>
 </div>
 {% endblock %}
 
 {% block content %}
-<div class="max-w-2xl">
-    <form method="post" class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6">
-        {% csrf_token %}
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
-            {% form_field form.name %}
-            {% form_field form.email %}
-            {% form_field form.phone %}
-            {% form_field form.company %}
-            <div x-data x-init="$el.querySelector('input').addEventListener('input', (e) => { let v = e.target.value.replace(/\D/g,'').slice(0,11); v = v.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2'); e.target.value = v; })">
-                {% form_field form.cpf %}
-            </div>
-            <div x-data x-init="$el.querySelector('input').addEventListener('input', (e) => { let v = e.target.value.replace(/\D/g,'').slice(0,14); v = v.replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d)/, '.$1/$2').replace(/(\d{4})(\d)/, '$1-$2'); e.target.value = v; })">
-                {% form_field form.cnpj %}
-            </div>
-            {% form_field form.source %}
-            {% form_field form.pipeline_stage %}
-            {% form_field form.assigned_to %}
-        </div>
-
-        <div class="mt-2">
-            {% form_field form.notes %}
-        </div>
-
-        <div class="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
-            <a href="{% url 'crm:lead_list' %}"
-               class="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
-                Cancelar
-            </a>
-            <button type="submit"
-                    class="px-6 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
-                {% if form.instance.pk %}Salvar{% else %}Criar Lead{% endif %}
-            </button>
-        </div>
-    </form>
+<div class="max-w-3xl" id="lead-form-container">
+    {% include "crm/partials/_lead_form.html" %}
 </div>
 {% endblock %}

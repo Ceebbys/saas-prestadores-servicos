@@ -64,3 +64,42 @@ def validate_cnpj(value: str) -> None:
     digits = _only_digits(value)
     if not _cnpj_is_valid(digits):
         raise ValidationError("CNPJ inválido.", code="invalid_cnpj")
+
+
+def validate_cpf_or_cnpj(value: str) -> None:
+    """Accept either a valid CPF or CNPJ. Empty string is allowed."""
+    if not value:
+        return
+    digits = _only_digits(value)
+    if len(digits) == 11:
+        if not _cpf_is_valid(digits):
+            raise ValidationError("CPF inválido.", code="invalid_cpf")
+    elif len(digits) == 14:
+        if not _cnpj_is_valid(digits):
+            raise ValidationError("CNPJ inválido.", code="invalid_cnpj")
+    else:
+        raise ValidationError(
+            "Documento inválido: informe um CPF (11 dígitos) ou CNPJ (14 dígitos).",
+            code="invalid_document",
+        )
+
+
+def normalize_document(value: str) -> str:
+    """Return only the digits of a CPF/CNPJ. Empty input returns empty string."""
+    return _only_digits(value)
+
+
+def mask_document(value: str) -> str:
+    """Mask a CPF/CNPJ for safe logging.
+
+    Examples:
+        '12345678901' -> '***.456.789-**'
+        '12345678000190' -> '**.345.678/0001-**'
+        '' or invalid length -> '***'
+    """
+    digits = _only_digits(value)
+    if len(digits) == 11:
+        return f"***.{digits[3:6]}.{digits[6:9]}-**"
+    if len(digits) == 14:
+        return f"**.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-**"
+    return "***"

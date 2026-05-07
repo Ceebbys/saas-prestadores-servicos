@@ -1,6 +1,5 @@
 from django.conf import settings
 from django.db import models
-from django.db.models import Q
 from django.utils import timezone
 
 from apps.core.models import TenantOwnedModel, TimestampedModel
@@ -19,15 +18,26 @@ class Lead(TenantOwnedModel):
         TELEFONE = "telefone", "Telefone"
         OUTRO = "outro", "Outro"
 
-    name = models.CharField("Nome", max_length=255)
-    email = models.EmailField("E-mail", blank=True)
-    phone = models.CharField("Telefone", max_length=20, blank=True)
-    company = models.CharField("Empresa", max_length=255, blank=True)
+    name = models.CharField("Nome da Oportunidade", max_length=255)
+    contato = models.ForeignKey(
+        "contacts.Contato",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="leads",
+        verbose_name="Contato",
+    )
+    # DEPRECATED: substituídos por lead.contato.email/phone/company/cpf_cnpj.
+    # Mantidos temporariamente para compatibilidade com automation/seed e leads
+    # antigos sem contato vinculado. Serão removidos em entrega futura.
+    email = models.EmailField("E-mail (legado)", blank=True)
+    phone = models.CharField("Telefone (legado)", max_length=20, blank=True)
+    company = models.CharField("Empresa (legado)", max_length=255, blank=True)
     cpf = models.CharField(
-        "CPF", max_length=14, blank=True, validators=[validate_cpf]
+        "CPF (legado)", max_length=14, blank=True, validators=[validate_cpf]
     )
     cnpj = models.CharField(
-        "CNPJ", max_length=18, blank=True, validators=[validate_cnpj]
+        "CNPJ (legado)", max_length=18, blank=True, validators=[validate_cnpj]
     )
     source = models.CharField(
         "Origem",
@@ -60,24 +70,39 @@ class Lead(TenantOwnedModel):
     )
 
     class Meta:
-        verbose_name = "Lead"
-        verbose_name_plural = "Leads"
+        verbose_name = "Lead / Oportunidade"
+        verbose_name_plural = "Leads / Oportunidades"
         ordering = ["-created_at"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["empresa", "cpf"],
-                condition=~Q(cpf=""),
-                name="unique_cpf_per_empresa",
-            ),
-            models.UniqueConstraint(
-                fields=["empresa", "cnpj"],
-                condition=~Q(cnpj=""),
-                name="unique_cnpj_per_empresa",
-            ),
-        ]
 
     def __str__(self):
+        if self.contato_id:
+            return f"{self.name} — {self.contato.name}"
         return self.name
+
+    @property
+    def contact_name(self) -> str:
+        """Nome do cliente: prioriza Contato, fallback no campo legado."""
+        if self.contato_id:
+            return self.contato.name
+        return self.name
+
+    @property
+    def contact_phone(self) -> str:
+        if self.contato_id:
+            return self.contato.whatsapp_or_phone or ""
+        return self.phone
+
+    @property
+    def contact_email(self) -> str:
+        if self.contato_id:
+            return self.contato.email
+        return self.email
+
+    @property
+    def contact_document(self) -> str:
+        if self.contato_id:
+            return self.contato.cpf_cnpj
+        return self.cpf or self.cnpj
 
 
 class Pipeline(TenantOwnedModel):

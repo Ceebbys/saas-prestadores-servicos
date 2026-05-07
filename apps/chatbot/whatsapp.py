@@ -348,11 +348,30 @@ def evolution_webhook_auto(request):
     if not config:
         return JsonResponse({"error": "No WhatsApp config for this instance"}, status=404)
 
-    flow = ChatbotFlow.objects.filter(
-        empresa=config.empresa, channel="whatsapp", is_active=True,
-    ).first()
+    # Selecionar o fluxo elegível usando o engine centralizado.
+    # Se houver sessão ativa exclusiva, retorna None e processamos como
+    # continuação da sessão atual (sem disparar fluxo novo).
+    from .services import select_flow_for_message
+
+    flow = select_flow_for_message(
+        empresa=config.empresa,
+        sender_id=sender_id,
+        message=message_text,
+        channel="whatsapp",
+    )
+
+    # Continuação de sessão ativa: identifica o fluxo da sessão em andamento.
     if not flow:
-        return JsonResponse({"error": "No active WhatsApp flow for this empresa"}, status=404)
+        active = ChatbotSession.objects.filter(
+            flow__empresa=config.empresa,
+            sender_id=sender_id,
+            status=ChatbotSession.Status.ACTIVE,
+        ).select_related("flow").first()
+        if active:
+            flow = active.flow
+
+    if not flow:
+        return JsonResponse({"error": "No eligible WhatsApp flow"}, status=404)
 
     try:
         reply_text, choices, is_complete, lead_id = _process_evolution_message(

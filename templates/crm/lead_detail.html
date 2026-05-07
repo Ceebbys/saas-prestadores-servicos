@@ -95,31 +95,64 @@
     <!-- Contact Info -->
     <div class="lg:col-span-1 space-y-6">
         <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
-            <h3 class="text-sm font-semibold text-slate-700 mb-4">Informações de Contato</h3>
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-sm font-semibold text-slate-700">Contato</h3>
+                {% if lead.contato %}
+                <a href="{% url 'contacts:detail' lead.contato.pk %}"
+                   class="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+                   Ver perfil
+                </a>
+                {% endif %}
+            </div>
             <dl class="space-y-3">
-                {% if lead.email %}
-                <div>
-                    <dt class="text-xs text-slate-400">E-mail</dt>
-                    <dd class="text-sm text-slate-900 mt-0.5">{{ lead.email }}</dd>
-                </div>
-                {% endif %}
-                {% if lead.phone %}
-                <div>
-                    <dt class="text-xs text-slate-400">Telefone</dt>
-                    <dd class="text-sm text-slate-900 mt-0.5">{{ lead.phone|phone_format }}</dd>
-                </div>
-                {% endif %}
-                {% if lead.cpf %}
-                <div>
-                    <dt class="text-xs text-slate-400">CPF</dt>
-                    <dd class="text-sm text-slate-900 mt-0.5">{{ lead.cpf|cpf_format }}</dd>
-                </div>
-                {% endif %}
-                {% if lead.cnpj %}
-                <div>
-                    <dt class="text-xs text-slate-400">CNPJ</dt>
-                    <dd class="text-sm text-slate-900 mt-0.5">{{ lead.cnpj|cnpj_format }}</dd>
-                </div>
+                {% if lead.contato %}
+                    <div>
+                        <dt class="text-xs text-slate-400">Nome do Contato</dt>
+                        <dd class="text-sm font-medium text-slate-900 mt-0.5">{{ lead.contato.name }}</dd>
+                    </div>
+                    {% if lead.contato.cpf_cnpj_normalized %}
+                    <div>
+                        <dt class="text-xs text-slate-400">{% if lead.contato.is_pessoa_juridica %}CNPJ{% else %}CPF{% endif %}</dt>
+                        <dd class="text-sm text-slate-900 mt-0.5">
+                            {% if lead.contato.is_pessoa_juridica %}{{ lead.contato.cpf_cnpj|cnpj_format }}{% else %}{{ lead.contato.cpf_cnpj|cpf_format }}{% endif %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    {% if lead.contato.email %}
+                    <div>
+                        <dt class="text-xs text-slate-400">E-mail</dt>
+                        <dd class="text-sm text-slate-900 mt-0.5">{{ lead.contato.email }}</dd>
+                    </div>
+                    {% endif %}
+                    {% if lead.contato.whatsapp_or_phone %}
+                    <div>
+                        <dt class="text-xs text-slate-400">Telefone/WhatsApp</dt>
+                        <dd class="text-sm text-slate-900 mt-0.5">{{ lead.contato.whatsapp_or_phone|phone_format }}</dd>
+                    </div>
+                    {% endif %}
+                    {% if lead.contato.company %}
+                    <div>
+                        <dt class="text-xs text-slate-400">Empresa</dt>
+                        <dd class="text-sm text-slate-900 mt-0.5">{{ lead.contato.company }}</dd>
+                    </div>
+                    {% endif %}
+                {% else %}
+                    <p class="text-xs text-slate-500 italic">
+                        Lead sem contato vinculado.
+                        <a href="{% url 'crm:lead_update' lead.pk %}" class="text-indigo-600 hover:text-indigo-700 font-medium">Adicionar contato</a>
+                    </p>
+                    {% if lead.email %}
+                    <div>
+                        <dt class="text-xs text-slate-400">E-mail (legado)</dt>
+                        <dd class="text-sm text-slate-900 mt-0.5">{{ lead.email }}</dd>
+                    </div>
+                    {% endif %}
+                    {% if lead.phone %}
+                    <div>
+                        <dt class="text-xs text-slate-400">Telefone (legado)</dt>
+                        <dd class="text-sm text-slate-900 mt-0.5">{{ lead.phone|phone_format }}</dd>
+                    </div>
+                    {% endif %}
                 {% endif %}
                 <div>
                     <dt class="text-xs text-slate-400">Origem</dt>
@@ -135,12 +168,6 @@
                     <dt class="text-xs text-slate-400">Criado em</dt>
                     <dd class="text-sm text-slate-900 mt-0.5">{{ lead.created_at|date:"d/m/Y H:i" }}</dd>
                 </div>
-                {% if lead.updated_at %}
-                <div>
-                    <dt class="text-xs text-slate-400">Atualizado em</dt>
-                    <dd class="text-sm text-slate-900 mt-0.5">{{ lead.updated_at|date:"d/m/Y H:i" }}</dd>
-                </div>
-                {% endif %}
             </dl>
         </div>
     </div>

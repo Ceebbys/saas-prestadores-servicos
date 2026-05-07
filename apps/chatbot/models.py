@@ -14,6 +14,12 @@ class ChatbotFlow(TenantOwnedModel):
         WEBCHAT = "webchat", "WebChat"
         TELEGRAM = "telegram", "Telegram"
 
+    class TriggerType(models.TextChoices):
+        FIRST_MESSAGE = "first_message", "Primeira mensagem do cliente"
+        KEYWORD = "keyword", "Palavra-chave"
+        INACTIVITY = "inactivity", "Inatividade"
+        MANUAL = "manual", "Manual / API"
+
     name = models.CharField("Nome", max_length=100)
     description = models.TextField("Descrição", blank=True)
     is_active = models.BooleanField("Ativo", default=False)
@@ -30,21 +36,65 @@ class ChatbotFlow(TenantOwnedModel):
         default=Channel.WHATSAPP,
     )
     welcome_message = models.TextField(
-        "Mensagem de boas-vindas",
+        "Mensagem",
         default="Olá! Seja bem-vindo(a). Vou ajudá-lo(a) com algumas perguntas rápidas.",
+        help_text="Texto enviado ao iniciar o fluxo (antes do primeiro passo).",
     )
     fallback_message = models.TextField(
         "Mensagem de fallback",
         default="Desculpe, não entendi. Pode repetir?",
     )
 
+    # --- Disparo / gatilhos ---
+    trigger_type = models.CharField(
+        "Tipo de gatilho",
+        max_length=20,
+        choices=TriggerType.choices,
+        default=TriggerType.FIRST_MESSAGE,
+    )
+    trigger_keywords = models.CharField(
+        "Palavras-chave",
+        max_length=500,
+        blank=True,
+        help_text="Separadas por vírgula. Aplica-se quando 'Tipo de gatilho' = palavra-chave.",
+    )
+    inactivity_minutes = models.PositiveIntegerField(
+        "Inatividade (minutos)",
+        null=True,
+        blank=True,
+        help_text="Disparar após X minutos sem resposta do cliente.",
+    )
+    priority = models.PositiveIntegerField(
+        "Prioridade",
+        default=100,
+        help_text="Menor valor = maior prioridade. Empate vai por mais recente.",
+    )
+    cooldown_minutes = models.PositiveIntegerField(
+        "Cooldown (minutos)",
+        default=60,
+        help_text="Tempo mínimo entre dois disparos do mesmo fluxo para a mesma sessão.",
+    )
+    exclusive = models.BooleanField(
+        "Exclusivo",
+        default=True,
+        help_text="Quando ativo, bloqueia outros fluxos enquanto este estiver em andamento.",
+    )
+
     class Meta:
         verbose_name = "Fluxo de Chatbot"
         verbose_name_plural = "Fluxos de Chatbot"
-        ordering = ["name"]
+        ordering = ["priority", "name"]
 
     def __str__(self):
         return self.name
+
+    @property
+    def keyword_list(self) -> list[str]:
+        return [
+            kw.strip().lower()
+            for kw in (self.trigger_keywords or "").split(",")
+            if kw.strip()
+        ]
 
 
 class ChatbotStep(TimestampedModel):
@@ -57,12 +107,14 @@ class ChatbotStep(TimestampedModel):
         PHONE = "phone", "Telefone"
         NAME = "name", "Nome"
         COMPANY = "company", "Empresa"
+        DOCUMENT = "document", "CPF/CNPJ"
 
     class LeadFieldMapping(models.TextChoices):
         NAME = "name", "Nome"
         EMAIL = "email", "E-mail"
         PHONE = "phone", "Telefone"
         COMPANY = "company", "Empresa"
+        DOCUMENT = "cpf_cnpj", "CPF/CNPJ"
         NOTES = "notes", "Observações"
 
     flow = models.ForeignKey(
@@ -297,3 +349,36 @@ class WhatsAppConfig(TimestampedModel):
         O instance_token é a chave mais específica e segura para operações por instância.
         """
         return self.instance_token or self.api_key or getattr(settings, "EVOLUTION_API_KEY", "")
+
+
+class ChatbotFlowDispatch(TenantOwnedModel):
+    """Log auditável de quando/por que cada fluxo foi disparado ou bloqueado."""
+
+    flow = models.ForeignKey(
+        ChatbotFlow,
+        on_delete=models.CASCADE,
+        related_name="dispatches",
+        verbose_name="Fluxo",
+    )
+    sender_id = models.CharField("Sender ID", max_length=255)
+    triggered_at = models.DateTimeField("Disparado em", auto_now_add=True)
+    reason = models.CharField(
+        "Motivo",
+        max_length=200,
+        help_text="Ex.: 'first_message', 'inactivity 180min', 'blocked_by:flow_X'.",
+    )
+    blocked = models.BooleanField("Bloqueado", default=False)
+    metadata = models.JSONField("Metadados", default=dict, blank=True)
+
+    class Meta:
+        verbose_name = "Disparo de Fluxo"
+        verbose_name_plural = "Disparos de Fluxo"
+        ordering = ["-triggered_at"]
+        indexes = [
+            models.Index(fields=["empresa", "flow", "-triggered_at"]),
+            models.Index(fields=["sender_id", "-triggered_at"]),
+        ]
+
+    def __str__(self):
+        prefix = "BLOCKED" if self.blocked else "DISPATCHED"
+        return f"{prefix} {self.flow.name} → {self.sender_id} ({self.reason})"

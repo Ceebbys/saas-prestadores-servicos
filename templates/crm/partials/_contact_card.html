@@ -1,0 +1,29 @@
+{% load ui_tags %}
+
+{% if contato %}
+<div class="rounded-lg bg-indigo-50 border border-indigo-200 p-4">
+    <div class="flex items-start gap-3">
+        <div class="w-10 h-10 rounded-full bg-indigo-200 flex items-center justify-center text-sm font-bold text-indigo-700 shrink-0">
+            {{ contato.name|make_list|first|upper }}
+        </div>
+        <div class="flex-1 min-w-0">
+            <p class="text-sm font-semibold text-slate-900">{{ contato.name }}</p>
+            <p class="text-xs text-slate-500 mt-0.5">
+                {% if contato.is_pessoa_juridica %}{{ contato.cpf_cnpj|cnpj_format }}{% elif contato.is_pessoa_fisica %}{{ contato.cpf_cnpj|cpf_format }}{% endif %}
+                {% if contato.cpf_cnpj_normalized and contato.whatsapp_or_phone %}<br>{% endif %}
+                {{ contato.whatsapp_or_phone|phone_format }}
+                {% if contato.email %}<br>{{ contato.email }}{% endif %}
+            </p>
+            <p class="text-xs text-indigo-600 mt-1">
+                <a href="{% url 'contacts:detail' contato.pk %}" target="_blank">Ver perfil completo</a>
+            </p>
+        </div>
+        <button type="button"
+                onclick="document.querySelector('#id_contato').value = ''; document.querySelector('#lead-contact-card').innerHTML = ''; document.querySelector('#lead-contact-search').value = '';"
+                class="text-slate-400 hover:text-slate-600"
+                title="Remover seleção">
+            {% icon "x-mark" "w-4 h-4" %}
+        </button>
+    </div>
+</div>
+{% endif %}

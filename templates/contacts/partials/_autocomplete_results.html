@@ -1,0 +1,27 @@
+{% load ui_tags %}
+
+{% if contacts %}
+<ul class="divide-y divide-slate-100 max-h-72 overflow-y-auto">
+    {% for contato in contacts %}
+    <li>
+        <button type="button"
+                class="w-full text-left px-3 py-2 hover:bg-indigo-50 transition-colors"
+                hx-get="{% url 'crm:lead_contact_card' contato.pk %}"
+                hx-target="#lead-contact-card"
+                hx-swap="innerHTML"
+                onclick="document.querySelector('#lead-contact-search').value = '{{ contato.name|escapejs }}'; document.querySelector('#id_contato').value = '{{ contato.pk }}'; document.querySelector('#contact-autocomplete').innerHTML = '';">
+            <p class="text-sm font-medium text-slate-900">{{ contato.name }}</p>
+            <p class="text-xs text-slate-500">
+                {% if contato.is_pessoa_juridica %}{{ contato.cpf_cnpj|cnpj_format }}{% elif contato.is_pessoa_fisica %}{{ contato.cpf_cnpj|cpf_format }}{% endif %}
+                {% if contato.cpf_cnpj_normalized and contato.whatsapp_or_phone %} · {% endif %}
+                {{ contato.whatsapp_or_phone|phone_format }}
+            </p>
+        </button>
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<div class="px-3 py-3 text-sm text-slate-400 text-center">
+    Nenhum contato encontrado.
+</div>
+{% endif %}

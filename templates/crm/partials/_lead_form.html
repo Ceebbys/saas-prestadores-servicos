@@ -4,20 +4,82 @@
       hx-post="{{ request.path }}"
       hx-target="#lead-form-container"
       hx-swap="innerHTML"
-      class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6">
+      class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6"
+      x-data="{ mode: '{{ form.contact_mode.value|default:'search' }}' }">
     {% csrf_token %}
 
+    {% if form.non_field_errors %}
+    <div class="mb-4 rounded-lg bg-rose-50 border border-rose-200 p-3">
+        {% for error in form.non_field_errors %}
+        <p class="text-sm text-rose-700">{{ error }}</p>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Contato selector -->
+    <div class="mb-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <p class="text-sm font-semibold text-slate-700 mb-3">Contato</p>
+
+        <div class="flex gap-2 mb-4">
+            <label class="flex-1 cursor-pointer">
+                <input type="radio" name="contact_mode" value="search" class="sr-only peer"
+                       :checked="mode === 'search'" @change="mode = 'search'">
+                <div class="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-slate-200 peer-checked:border-indigo-500 peer-checked:bg-white peer-checked:shadow-sm transition-colors">
+                    {% icon "search" "w-4 h-4 text-indigo-600" %}
+                    <span class="text-sm font-medium text-slate-700">Buscar contato existente</span>
+                </div>
+            </label>
+            <label class="flex-1 cursor-pointer">
+                <input type="radio" name="contact_mode" value="new" class="sr-only peer"
+                       :checked="mode === 'new'" @change="mode = 'new'">
+                <div class="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-slate-200 peer-checked:border-indigo-500 peer-checked:bg-white peer-checked:shadow-sm transition-colors">
+                    {% icon "plus" "w-4 h-4 text-indigo-600" %}
+                    <span class="text-sm font-medium text-slate-700">Criar novo contato</span>
+                </div>
+            </label>
+        </div>
+
+        <!-- Search mode -->
+        <div x-show="mode === 'search'" class="relative">
+            <input type="text"
+                   id="lead-contact-search"
+                   placeholder="Digite nome, CPF/CNPJ, telefone ou e-mail..."
+                   value="{% if preselected_contato %}{{ preselected_contato.name }}{% endif %}"
+                   hx-get="{% url 'contacts:autocomplete' %}"
+                   hx-trigger="input changed delay:300ms"
+                   hx-target="#contact-autocomplete"
+                   name="q"
+                   class="block w-full rounded-lg border-0 py-2 px-3 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+            <div id="contact-autocomplete" class="absolute z-10 mt-1 w-full bg-white rounded-lg shadow-lg ring-1 ring-slate-200 empty:hidden"></div>
+            <input type="hidden" name="contato" id="id_contato" value="{{ form.contato.value|default:'' }}">
+            {% if form.contato.errors %}
+                <p class="mt-1 text-sm text-rose-600">{{ form.contato.errors.0 }}</p>
+            {% endif %}
+            <div id="lead-contact-card" class="mt-3">
+                {% if preselected_contato %}
+                    {% include "crm/partials/_contact_card.html" with contato=preselected_contato %}
+                {% endif %}
+            </div>
+            <p class="text-xs text-slate-400 mt-2">Não encontrou? Clique em "Criar novo contato" acima.</p>
+        </div>
+
+        <!-- New mode -->
+        <div x-show="mode === 'new'" x-cloak class="space-y-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                {% form_field form.new_contato_name %}
+                <div x-data x-init="$el.querySelector('input').addEventListener('input', (e) => { let v = e.target.value.replace(/\D/g,''); if (v.length <= 11) { v = v.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2'); } else { v = v.slice(0,14).replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d)/, '.$1/$2').replace(/(\d{4})(\d)/, '$1-$2'); } e.target.value = v; })">
+                    {% form_field form.new_contato_document %}
+                </div>
+                {% form_field form.new_contato_phone %}
+                {% form_field form.new_contato_email %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Opportunity fields -->
+    <p class="text-sm font-semibold text-slate-700 mb-3">Oportunidade</p>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
         {% form_field form.name %}
-        {% form_field form.email %}
-        {% form_field form.phone %}
-        {% form_field form.company %}
-        <div x-data x-init="$el.querySelector('input').addEventListener('input', (e) => { let v = e.target.value.replace(/\D/g,'').slice(0,11); v = v.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2'); e.target.value = v; })">
-            {% form_field form.cpf %}
-        </div>
-        <div x-data x-init="$el.querySelector('input').addEventListener('input', (e) => { let v = e.target.value.replace(/\D/g,'').slice(0,14); v = v.replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d)/, '.$1/$2').replace(/(\d{4})(\d)/, '$1-$2'); e.target.value = v; })">
-            {% form_field form.cnpj %}
-        </div>
         {% form_field form.source %}
         {% form_field form.pipeline_stage %}
         {% form_field form.assigned_to %}

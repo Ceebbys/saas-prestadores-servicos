@@ -18,7 +18,12 @@ from django.views.generic import (
 
 from apps.core.mixins import EmpresaMixin, HtmxResponseMixin
 
-from .forms import ChatbotActionForm, ChatbotFlowForm, ChatbotStepForm
+from .forms import (
+    ChatbotActionForm,
+    ChatbotChoiceFormSet,
+    ChatbotFlowForm,
+    ChatbotStepForm,
+)
 from .models import ChatbotAction, ChatbotChoice, ChatbotFlow, ChatbotSession, ChatbotStep
 from .services import process_response, start_session
 
@@ -198,6 +203,60 @@ class StepDeleteView(EmpresaMixin, View):
         ChatbotStep.objects.filter(pk=step_pk, flow=flow).delete()
         messages.success(request, "Passo removido com sucesso.")
         return redirect("chatbot:flow_update", pk=flow.pk)
+
+
+class StepChoicesEditView(EmpresaMixin, View):
+    """Editor de ramificações: define `next_step` para cada choice de uma etapa.
+
+    GET: renderiza um inline formset com todas as choices da etapa.
+    POST: salva o formset (cria/edita/remove choices).
+    """
+
+    template_name = "chatbot/partials/_choice_form.html"
+
+    def _get_form_kwargs_for_choices(self, formset, flow, step):
+        """Injeta `flow` e `exclude_step` em cada form do formset."""
+        for form in formset.forms:
+            # Hack para passar params extras: setamos no field queryset diretamente.
+            qs = ChatbotStep.objects.filter(flow=flow).order_by("order")
+            qs = qs.exclude(pk=step.pk)
+            form.fields["next_step"].queryset = qs
+            form.fields["next_step"].required = False
+            form.fields["next_step"].empty_label = "(linear — próximo na ordem)"
+
+    def get(self, request, pk, step_pk):
+        flow = get_object_or_404(ChatbotFlow, pk=pk, empresa=request.empresa)
+        step = get_object_or_404(ChatbotStep, pk=step_pk, flow=flow)
+        formset = ChatbotChoiceFormSet(instance=step, prefix=f"choices-{step.pk}")
+        self._get_form_kwargs_for_choices(formset, flow, step)
+        return render(request, self.template_name, {
+            "flow": flow, "step": step, "formset": formset,
+        })
+
+    def post(self, request, pk, step_pk):
+        flow = get_object_or_404(ChatbotFlow, pk=pk, empresa=request.empresa)
+        step = get_object_or_404(ChatbotStep, pk=step_pk, flow=flow)
+        formset = ChatbotChoiceFormSet(
+            request.POST, instance=step, prefix=f"choices-{step.pk}"
+        )
+        self._get_form_kwargs_for_choices(formset, flow, step)
+        if formset.is_valid():
+            formset.save()
+            messages.success(request, "Opções de resposta atualizadas.")
+            if request.htmx:
+                # Re-render the partial with fresh state
+                fresh_formset = ChatbotChoiceFormSet(
+                    instance=step, prefix=f"choices-{step.pk}"
+                )
+                self._get_form_kwargs_for_choices(fresh_formset, flow, step)
+                return render(request, self.template_name, {
+                    "flow": flow, "step": step,
+                    "formset": fresh_formset, "saved": True,
+                })
+            return redirect("chatbot:flow_update", pk=flow.pk)
+        return render(request, self.template_name, {
+            "flow": flow, "step": step, "formset": formset,
+        })
 
 
 # ---------------------------------------------------------------------------

@@ -5,8 +5,8 @@
     <table class="min-w-full divide-y divide-slate-200">
         <thead class="bg-slate-50">
             <tr>
-                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Nome</th>
-                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Empresa</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Oportunidade</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Contato</th>
                 <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Origem</th>
                 <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Etapa</th>
                 <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Data</th>
@@ -22,14 +22,25 @@
                             <div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-700">
                                 {{ lead.name|make_list|first|upper }}
                             </div>
-                            <div>
-                                <p class="text-sm font-medium text-slate-900 group-hover:text-indigo-600">{{ lead.name }}</p>
-                                <p class="text-xs text-slate-400">{{ lead.email|default:"—" }}</p>
+                            <div class="min-w-0">
+                                <p class="text-sm font-medium text-slate-900 group-hover:text-indigo-600 truncate">{{ lead.name }}</p>
+                                <p class="text-xs text-slate-400">{{ lead.created_at|date:"d/m/Y" }}</p>
                             </div>
                         </div>
                     </a>
                 </td>
-                <td class="px-5 py-3.5 text-sm text-slate-600 hidden md:table-cell">{{ lead.company|default:"—" }}</td>
+                <td class="px-5 py-3.5 text-sm text-slate-600 hidden md:table-cell">
+                    {% if lead.contato %}
+                        <a href="{% url 'contacts:detail' lead.contato.pk %}" class="hover:text-indigo-600">
+                            {{ lead.contato.name }}
+                        </a>
+                        {% if lead.contato.whatsapp_or_phone %}
+                            <p class="text-xs text-slate-400">{{ lead.contato.whatsapp_or_phone|phone_format }}</p>
+                        {% endif %}
+                    {% else %}
+                        <span class="text-xs text-slate-400 italic">{{ lead.contact_name|default:"—" }}</span>
+                    {% endif %}
+                </td>
                 <td class="px-5 py-3.5 hidden lg:table-cell">
                     {% status_badge lead.source %}
                 </td>

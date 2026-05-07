@@ -1,0 +1,77 @@
+{% load ui_tags %}
+
+{% if object_list %}
+<div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 overflow-hidden">
+    <table class="min-w-full divide-y divide-slate-200">
+        <thead class="bg-slate-50">
+            <tr>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Nome</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">CPF/CNPJ</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Telefone</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">E-mail</th>
+                <th class="px-5 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Leads</th>
+                <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Ações</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+            {% for contato in object_list %}
+            <tr class="hover:bg-slate-50 transition-colors {% if not contato.is_active %}opacity-60{% endif %}">
+                <td class="px-5 py-3.5">
+                    <a href="{% url 'contacts:detail' contato.pk %}" class="group">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-700">
+                                {{ contato.name|make_list|first|upper }}
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-slate-900 group-hover:text-indigo-600">{{ contato.name }}</p>
+                                {% if contato.company %}
+                                <p class="text-xs text-slate-400">{{ contato.company }}</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </a>
+                </td>
+                <td class="px-5 py-3.5 text-sm text-slate-600 hidden md:table-cell">
+                    {% if contato.cpf_cnpj_normalized|length == 11 %}
+                        {{ contato.cpf_cnpj|cpf_format }}
+                    {% elif contato.cpf_cnpj_normalized|length == 14 %}
+                        {{ contato.cpf_cnpj|cnpj_format }}
+                    {% else %}
+                        <span class="text-slate-300">—</span>
+                    {% endif %}
+                </td>
+                <td class="px-5 py-3.5 text-sm text-slate-600 hidden lg:table-cell">
+                    {{ contato.whatsapp|default:contato.phone|default:"—"|phone_format }}
+                </td>
+                <td class="px-5 py-3.5 text-sm text-slate-600 hidden lg:table-cell">{{ contato.email|default:"—" }}</td>
+                <td class="px-5 py-3.5 text-center">
+                    <span class="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                        {{ contato.leads_count|default:0 }}
+                    </span>
+                </td>
+                <td class="px-5 py-3.5 text-right">
+                    <div class="flex items-center justify-end gap-1">
+                        <a href="{% url 'contacts:detail' contato.pk %}"
+                           class="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                           title="Ver detalhes">
+                            {% icon "eye" "w-4 h-4" %}
+                        </a>
+                        <a href="{% url 'contacts:update' contato.pk %}"
+                           class="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                           title="Editar">
+                            {% icon "pencil" "w-4 h-4" %}
+                        </a>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% include "components/_pagination.html" %}
+
+{% else %}
+{% url 'contacts:create' as contact_create_url %}
+{% include "components/_empty_state.html" with icon="bookmark" title="Nenhum contato salvo" description="Comece criando seu primeiro contato. Eles ficarão disponíveis para gerar leads/oportunidades depois." action_url=contact_create_url action_label="Novo Contato" %}
+{% endif %}

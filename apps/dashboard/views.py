@@ -238,7 +238,10 @@ class DashboardView(EmpresaMixin, HtmxResponseMixin, TemplateView):
         )
 
         # ===== LISTS =====
-        context["recent_leads"] = leads.order_by("-created_at")[:5]
+        context["recent_leads"] = (
+            leads.select_related("contato", "pipeline_stage")
+            .order_by("-created_at")[:5]
+        )
 
         # Upcoming work orders (always show upcoming, not filtered)
         context["upcoming_orders"] = (

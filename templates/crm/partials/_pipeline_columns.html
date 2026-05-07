@@ -21,7 +21,9 @@
              class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-4 cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow">
             <a href="{% url 'crm:opportunity_detail' opp.pk %}" class="block">
                 <h4 class="text-sm font-medium text-slate-900 mb-1">{{ opp.title }}</h4>
-                <p class="text-xs text-slate-500 mb-3">{{ opp.lead.name }}</p>
+                <p class="text-xs text-slate-500 mb-3">
+                    {% if opp.lead.contato %}{{ opp.lead.contato.name }}{% else %}{{ opp.lead.name }}{% endif %}
+                </p>
                 <div class="flex items-center justify-between">
                     <span class="text-sm font-semibold text-slate-700">{{ opp.value|currency }}</span>
                     {% status_badge opp.priority %}

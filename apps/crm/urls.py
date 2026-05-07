@@ -17,6 +17,11 @@ urlpatterns = [
         views.LeadContactCreateView.as_view(),
         name="lead_contact_create",
     ),
+    path(
+        "leads/contact-card/<int:contato_id>/",
+        views.LeadContactCardView.as_view(),
+        name="lead_contact_card",
+    ),
     # Pipeline
     path("pipeline/", views.PipelineBoardView.as_view(), name="pipeline_board"),
     # Opportunities
