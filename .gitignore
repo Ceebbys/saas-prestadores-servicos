@@ -13,6 +13,11 @@ db.sqlite3
 media/
 staticfiles/
 
+# Celery
+.celerybeat-schedule
+.celerybeat-schedule.*
+celerybeat.pid
+
 # Environment
 .env
 .venv/

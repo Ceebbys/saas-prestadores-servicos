@@ -14,10 +14,14 @@ Mantém coerência entre Lead, Opportunity, PipelineStage e LeadContact:
 
 from __future__ import annotations
 
+import logging
+
 from django.db.models.signals import post_save, pre_delete
 from django.dispatch import receiver
 
 from .models import Lead, LeadContact, Opportunity, Pipeline, PipelineStage
+
+logger = logging.getLogger(__name__)
 
 
 def _get_default_first_stage(empresa) -> PipelineStage | None:
@@ -108,6 +112,18 @@ def _chatbot_session_completed(sender, instance, created: bool, **kwargs):
         return
 
     lead = instance.lead
+    # Defesa em profundidade: garante que session.flow e lead pertencem
+    # à mesma empresa antes de criar LeadContact (evita cross-tenant leak
+    # caso uma session seja manipulada para apontar para um lead de outra
+    # empresa).
+    flow_empresa_id = getattr(getattr(instance, "flow", None), "empresa_id", None)
+    if flow_empresa_id is not None and flow_empresa_id != lead.empresa_id:
+        logger.warning(
+            "crm: refusing cross-tenant LeadContact (flow.empresa=%s lead.empresa=%s)",
+            flow_empresa_id, lead.empresa_id,
+        )
+        return
+
     ref = str(instance.session_key)
     LeadContact.objects.get_or_create(
         empresa=lead.empresa,

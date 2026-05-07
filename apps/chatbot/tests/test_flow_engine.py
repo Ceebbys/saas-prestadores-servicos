@@ -146,3 +146,24 @@ class FlowSelectionTests(TestCase):
         )
         chosen = select_flow_for_message(self.empresa, "555", "olá")
         self.assertIsNone(chosen)
+
+    def test_cooldown_counts_blocked_dispatches_too(self):
+        """Cooldown deve incluir dispatches blocked=True (defesa anti-flood)."""
+        from datetime import timedelta
+        from django.utils import timezone
+
+        from apps.chatbot.models import ChatbotFlowDispatch
+
+        flow = _bare_flow(self.empresa, name="Bloqueado", cooldown_minutes=60)
+        ChatbotStep.objects.create(flow=flow, order=0, question_text="Q")
+        # Dispatch BLOQUEADO recente — antigo cooldown ignorava, novo conta
+        ChatbotFlowDispatch.objects.create(
+            empresa=self.empresa,
+            flow=flow,
+            sender_id="666",
+            triggered_at=timezone.now() - timedelta(minutes=5),
+            reason="blocked_by:other_flow",
+            blocked=True,
+        )
+        chosen = select_flow_for_message(self.empresa, "666", "olá")
+        self.assertIsNone(chosen)

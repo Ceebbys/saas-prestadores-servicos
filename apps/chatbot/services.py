@@ -399,6 +399,9 @@ def _handle_document_step(session: ChatbotSession, document_text: str) -> None:
       úteis (name/phone/email) para evitar perguntas redundantes adiante.
     - Se não encontrar: salva o documento normalizado em
       session.lead_data["cpf_cnpj"] para criar Contato ao final do flow.
+
+    Atômico: doc/normalized são persistidos em ambos os caminhos (mesmo se
+    `link_contato_to_session` falhar, os dados crus do CPF não se perdem).
     """
     from apps.contacts.services import (
         find_contato_by_document,
@@ -410,21 +413,22 @@ def _handle_document_step(session: ChatbotSession, document_text: str) -> None:
     session.lead_data["cpf_cnpj_normalized"] = digits
 
     empresa = session.flow.empresa
-    contato = find_contato_by_document(empresa, document_text)
-    if contato:
-        link_contato_to_session(contato, session)
-        logger.info(
-            "chatbot: linked existing Contato id=%s to session %s (doc=%s)",
-            contato.pk, session.session_key, mask_document(digits),
-        )
-    else:
-        # Mantém os dados na sessão; o Contato será criado quando a action
-        # CREATE_LEAD rodar (ver _create_lead_action via automation.services).
+    with transaction.atomic():
+        # Sempre persiste o doc cru antes de tentar vincular contato
         session.save(update_fields=["lead_data", "updated_at"])
-        logger.info(
-            "chatbot: no Contato found for session %s (doc=%s)",
-            session.session_key, mask_document(digits),
-        )
+
+        contato = find_contato_by_document(empresa, document_text)
+        if contato:
+            link_contato_to_session(contato, session)
+            logger.info(
+                "chatbot: linked existing Contato id=%s to session %s (doc=%s)",
+                contato.pk, session.session_key, mask_document(digits),
+            )
+        else:
+            logger.info(
+                "chatbot: no Contato found for session %s (doc=%s)",
+                session.session_key, mask_document(digits),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -444,8 +448,14 @@ def _matches_keyword(flow: ChatbotFlow, message: str) -> bool:
 
 
 def _has_recent_dispatch(flow: ChatbotFlow, sender_id: str) -> bool:
-    """Aplica cooldown: True se houve dispatch desse fluxo para esse sender
-    nos últimos `cooldown_minutes`."""
+    """Aplica cooldown: True se houve QUALQUER dispatch desse fluxo
+    (bem-sucedido OU bloqueado) para esse sender nos últimos
+    `cooldown_minutes`.
+
+    Inclui blocked=True propositalmente: se o fluxo foi avaliado e bloqueado
+    por outro fluxo concorrente, ainda contou como "tentativa" — não devemos
+    re-disparar imediatamente porque o cliente acabou de receber outra mensagem.
+    """
     if not flow.cooldown_minutes:
         return False
     cutoff = timezone.now() - timedelta(minutes=flow.cooldown_minutes)
@@ -453,7 +463,6 @@ def _has_recent_dispatch(flow: ChatbotFlow, sender_id: str) -> bool:
         flow=flow,
         sender_id=sender_id,
         triggered_at__gte=cutoff,
-        blocked=False,
     ).exists()
 
 
@@ -563,34 +572,52 @@ def dispatch_inactivity_flows(empresa) -> int:
     now = timezone.now()
     for flow in flows:
         cutoff = now - timedelta(minutes=flow.inactivity_minutes)
-        candidate_sessions = ChatbotSession.objects.filter(
-            flow__empresa=empresa,
-            status=ChatbotSession.Status.ACTIVE,
-            updated_at__lt=cutoff,
-        ).order_by("sender_id", "-updated_at")
-
-        seen_senders: set[str] = set()
-        for session in candidate_sessions:
-            sender_id = session.sender_id
-            if not sender_id or sender_id in seen_senders:
-                continue
-            seen_senders.add(sender_id)
-            if _has_recent_dispatch(flow, sender_id):
-                continue
-            ChatbotFlowDispatch.objects.create(
-                empresa=empresa,
-                flow=flow,
-                sender_id=sender_id,
-                reason=f"inactivity {flow.inactivity_minutes}min",
-                blocked=False,
-                metadata={"trigger_session": str(session.session_key)},
-            )
-            try:
-                start_session(flow, channel=session.channel, sender_id=sender_id)
-                dispatched += 1
-            except Exception:
-                logger.exception(
-                    "chatbot: failed to start inactivity flow %s for %s",
-                    flow.pk, sender_id,
+        # Atomic block: dois beat schedulers concorrentes não criam sessão dupla
+        # nem deixam a sessão antiga ACTIVE — ela é EXPIRED antes da nova subir.
+        with transaction.atomic():
+            candidate_sessions = list(
+                ChatbotSession.objects
+                .select_for_update(skip_locked=True)
+                .filter(
+                    flow__empresa=empresa,
+                    status=ChatbotSession.Status.ACTIVE,
+                    updated_at__lt=cutoff,
                 )
+                .order_by("sender_id", "-updated_at")
+            )
+
+            seen_senders: set[str] = set()
+            for session in candidate_sessions:
+                sender_id = session.sender_id
+                if not sender_id or sender_id in seen_senders:
+                    continue
+                seen_senders.add(sender_id)
+                if _has_recent_dispatch(flow, sender_id):
+                    continue
+
+                # Encerra a sessão idle ANTES de criar a nova (evita leak)
+                ChatbotSession.objects.filter(
+                    sender_id=sender_id,
+                    flow__empresa=empresa,
+                    status=ChatbotSession.Status.ACTIVE,
+                ).update(status=ChatbotSession.Status.EXPIRED)
+
+                ChatbotFlowDispatch.objects.create(
+                    empresa=empresa,
+                    flow=flow,
+                    sender_id=sender_id,
+                    reason=f"inactivity {flow.inactivity_minutes}min",
+                    blocked=False,
+                    metadata={"trigger_session": str(session.session_key)},
+                )
+                try:
+                    start_session(
+                        flow, channel=session.channel, sender_id=sender_id,
+                    )
+                    dispatched += 1
+                except Exception:
+                    logger.exception(
+                        "chatbot: failed to start inactivity flow %s for %s",
+                        flow.pk, sender_id,
+                    )
     return dispatched
