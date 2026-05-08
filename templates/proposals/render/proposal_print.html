@@ -1,0 +1,232 @@
+{% load humanize %}<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Proposta {{ proposal.number }}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 18mm 15mm 22mm 15mm;
+            @bottom-center {
+                content: "Proposta " counter(page) "/" counter(pages);
+                font-family: Arial, sans-serif;
+                font-size: 9pt;
+                color: #94a3b8;
+            }
+        }
+        body {
+            font-family: Arial, "Helvetica Neue", sans-serif;
+            font-size: 11pt;
+            color: #0f172a;
+            line-height: 1.5;
+            margin: 0;
+        }
+        .header {
+            text-align: center;
+            border-bottom: 2px solid #4f46e5;
+            padding-bottom: 12px;
+            margin-bottom: 18px;
+        }
+        .header img.logo {
+            max-height: 80px;
+            max-width: 280px;
+            object-fit: contain;
+        }
+        .meta {
+            display: table;
+            width: 100%;
+            margin-bottom: 14px;
+        }
+        .meta .col {
+            display: table-cell;
+            vertical-align: top;
+        }
+        .meta .col.right {
+            text-align: right;
+        }
+        h1 {
+            font-size: 18pt;
+            margin: 0 0 4px 0;
+            color: #1e293b;
+        }
+        h2 {
+            font-size: 13pt;
+            margin: 16px 0 8px 0;
+            color: #4338ca;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 4px;
+        }
+        .number {
+            font-family: "Courier New", monospace;
+            color: #475569;
+            font-size: 10pt;
+        }
+        .client-block {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 10px 14px;
+            margin-bottom: 14px;
+        }
+        .client-block p {
+            margin: 2px 0;
+            font-size: 10pt;
+        }
+        .rich-content {
+            margin-bottom: 8px;
+        }
+        .rich-content p { margin: 0 0 8px 0; }
+        .rich-content ul, .rich-content ol { margin: 4px 0 8px 24px; }
+        table.items {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 6px;
+            font-size: 10pt;
+        }
+        table.items th {
+            background: #4f46e5;
+            color: white;
+            text-align: left;
+            padding: 8px 10px;
+        }
+        table.items td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        table.items td.right, table.items th.right {
+            text-align: right;
+        }
+        .totals {
+            margin-top: 14px;
+            text-align: right;
+            font-size: 11pt;
+        }
+        .totals .total {
+            font-size: 14pt;
+            font-weight: bold;
+            color: #4338ca;
+            border-top: 2px solid #4338ca;
+            padding-top: 6px;
+            display: inline-block;
+            min-width: 200px;
+        }
+        .footer-note {
+            margin-top: 24px;
+            padding-top: 10px;
+            border-top: 1px solid #e2e8f0;
+            color: #64748b;
+            font-size: 9pt;
+            text-align: center;
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 9pt;
+            font-weight: bold;
+        }
+        .badge.draft  { background: #f1f5f9; color: #475569; }
+        .badge.sent   { background: #dbeafe; color: #1e40af; }
+        .badge.accepted { background: #d1fae5; color: #065f46; }
+        .badge.rejected { background: #fee2e2; color: #991b1b; }
+        .badge.viewed { background: #fef3c7; color: #854d0e; }
+        .badge.expired { background: #f1f5f9; color: #475569; }
+        .badge.cancelled { background: #f1f5f9; color: #475569; }
+    </style>
+</head>
+<body>
+<div class="header">
+    {% if header_image_url %}
+    <img class="logo" src="{{ header_image_url }}" alt="Logo">
+    {% else %}
+    <strong style="font-size:18pt;">{{ empresa.name }}</strong>
+    {% endif %}
+</div>
+
+<div class="meta">
+    <div class="col">
+        <h1>{{ proposal.title }}</h1>
+        <p class="number">{{ proposal.number }}</p>
+    </div>
+    <div class="col right">
+        <p style="margin:0;font-size:10pt;color:#64748b;">Emitida em</p>
+        <p style="margin:0;font-weight:bold;">{{ now|date:"d/m/Y" }}</p>
+        {% if proposal.valid_until %}
+        <p style="margin:6px 0 0 0;font-size:10pt;color:#64748b;">Válida até</p>
+        <p style="margin:0;">{{ proposal.valid_until|date:"d/m/Y" }}</p>
+        {% endif %}
+        <p style="margin:6px 0 0 0;">
+            <span class="badge {{ proposal.status }}">{{ proposal.get_status_display }}</span>
+        </p>
+    </div>
+</div>
+
+{% if contato or lead %}
+<div class="client-block">
+    <strong>Cliente:</strong> {{ contato.name|default:lead.name }}<br>
+    {% if contato.email %}<p>E-mail: {{ contato.email }}</p>{% endif %}
+    {% if contato.phone or contato.whatsapp %}<p>Telefone: {{ contato.phone|default:contato.whatsapp }}</p>{% endif %}
+    {% if contato.cpf_cnpj %}<p>Documento: {{ contato.cpf_cnpj }}</p>{% endif %}
+</div>
+{% endif %}
+
+{% if proposal.introduction %}
+<h2>Introdução</h2>
+<div class="rich-content">{{ proposal.introduction|safe }}</div>
+{% endif %}
+
+{% if proposal.body %}
+<h2>Conteúdo</h2>
+<div class="rich-content">{{ proposal.body|safe }}</div>
+{% endif %}
+
+{% if items %}
+<h2>Itens</h2>
+<table class="items">
+    <thead>
+    <tr>
+        <th>Descrição</th>
+        <th class="right">Qtd</th>
+        <th class="right">Valor unit.</th>
+        <th class="right">Total</th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for item in items %}
+    <tr>
+        <td>
+            <strong>{{ item.description }}</strong>
+            {% if item.details %}<br><span style="color:#64748b;font-size:9pt;">{{ item.details }}</span>{% endif %}
+        </td>
+        <td class="right">{{ item.quantity }} {{ item.unit }}</td>
+        <td class="right">R$ {{ item.unit_price|floatformat:"2" }}</td>
+        <td class="right">R$ {{ item.total|floatformat:"2" }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<div class="totals">
+    <p>Subtotal: <strong>R$ {{ proposal.subtotal|floatformat:"2" }}</strong></p>
+    {% if proposal.discount_percent %}
+    <p>Desconto: {{ proposal.discount_percent }}%</p>
+    {% endif %}
+    <p class="total">Total: R$ {{ proposal.total|floatformat:"2" }}</p>
+    {% if proposal.is_installment and proposal.installment_count %}
+    <p style="margin-top:6px;">{{ proposal.installment_count }}x — {{ proposal.get_payment_method_display }}</p>
+    {% elif proposal.payment_method %}
+    <p style="margin-top:6px;">{{ proposal.get_payment_method_display }}</p>
+    {% endif %}
+</div>
+
+{% if proposal.terms %}
+<h2>Termos e Condições</h2>
+<div class="rich-content">{{ proposal.terms|safe }}</div>
+{% endif %}
+
+<div class="footer-note">
+    {{ empresa.name }} — Documento gerado em {{ now|date:"d/m/Y H:i" }}
+</div>
+</body>
+</html>

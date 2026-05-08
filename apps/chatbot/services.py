@@ -252,6 +252,14 @@ def process_response(session_key: str, user_response: str) -> dict:
         else:
             session.lead_data[step.lead_field_mapping] = text
 
+    # CHOICE com Serviço Pré-Fixado vinculado: grava na sessão para uso em
+    # automações posteriores (criação de lead/proposta).
+    if step.step_type == ChatbotStep.StepType.CHOICE:
+        chosen = _resolve_choice(step, user_response)
+        if chosen and chosen.servico_id:
+            session.lead_data["servico_id"] = chosen.servico_id
+            session.lead_data["servico_name"] = chosen.servico.name
+
     # DOCUMENT step: pesquisa/cria Contato e vincula à sessão.
     if step.step_type == ChatbotStep.StepType.DOCUMENT:
         _handle_document_step(session, text)
@@ -277,13 +285,23 @@ def process_response(session_key: str, user_response: str) -> dict:
 
     lead_id = _execute_flow_actions(session)
 
+    # Mensagem de encerramento — somente quando explicitamente configurada.
+    # Toda comunicação enviada ao cliente precisa ser visível/configurável.
+    completion_message = ""
+    if session.flow.send_completion_message and session.flow.completion_message:
+        completion_message = session.flow.completion_message
+        ChatbotFlowDispatch.objects.create(
+            empresa=session.flow.empresa,
+            flow=session.flow,
+            sender_id=session.sender_id or "",
+            reason="completion_message_sent",
+            blocked=False,
+            metadata={"session_key": str(session.session_key)},
+        )
+
     return {
         "error": False,
-        "message": (
-            "✅ Prontinho! Suas informações foram registradas. "
-            "Um de nossos especialistas vai te chamar em breve "
-            "(normalmente em até 2 horas úteis, dias úteis das 8h às 18h)."
-        ),
+        "message": completion_message,
         "step": None,
         "is_complete": True,
         "lead_id": lead_id,

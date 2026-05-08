@@ -21,8 +21,9 @@
 <div class="max-w-3xl space-y-6">
     <!-- Flow form -->
     <form method="post"
+          id="flow-config-form"
           class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6"
-          x-data="{ trigger: '{{ form.trigger_type.value|default:'first_message' }}' }">
+          x-data="{ trigger: '{{ form.trigger_type.value|default:'first_message' }}', sendCompletion: {{ form.send_completion_message.value|yesno:'true,false' }} }">
         {% csrf_token %}
 
         <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Configuração do Fluxo</p>
@@ -35,6 +36,18 @@
         {% form_field form.fallback_message %}
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
             {% form_field form.is_active %}
+        </div>
+
+        <hr class="my-6 border-slate-200">
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Encerramento</p>
+        <div class="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800 mb-3">
+            Toda mensagem enviada ao cliente é configurada aqui. Se desativar, o fluxo encerra silenciosamente.
+        </div>
+        <div @change="sendCompletion = document.getElementById('id_send_completion_message').checked">
+            {% form_field form.send_completion_message %}
+        </div>
+        <div x-show="sendCompletion" x-cloak>
+            {% form_field form.completion_message %}
         </div>
 
         <hr class="my-6 border-slate-200">
@@ -92,6 +105,16 @@
 
     <!-- Actions management -->
     {% include "chatbot/partials/_action_list.html" %}
+
+    <!-- Botão final: dispara o submit do form de configuração no topo. -->
+    <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5 flex items-center justify-between">
+        <p class="text-sm text-slate-500">Revisou tudo? Salve as configurações abaixo.</p>
+        <button type="submit" form="flow-config-form"
+                class="px-6 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
+            {% icon "check" "w-4 h-4 inline -mt-0.5 mr-1" %}
+            Salvar Configurações
+        </button>
+    </div>
     {% endif %}
 </div>
 {% endblock %}

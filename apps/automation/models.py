@@ -1,6 +1,72 @@
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.core.models import TenantOwnedModel
+
+
+class PipelineAutomationRule(TenantOwnedModel):
+    """Regra configurável: evento de proposta → mover lead para etapa do pipeline.
+
+    O usuário (cliente final do SaaS) configura quais eventos disparam quais
+    movimentações. Etapas são FK — não há nomes hardcoded ('Negociação',
+    'Fechado-Ganho', etc.). Se a etapa for deletada, a regra fica inativa.
+    """
+
+    class Event(models.TextChoices):
+        PROPOSTA_CRIADA = "proposta_criada", "Proposta criada"
+        PROPOSTA_ENVIADA = "proposta_enviada", "Proposta enviada"
+        PROPOSTA_ACEITA = "proposta_aceita", "Proposta aceita"
+        PROPOSTA_REJEITADA = "proposta_rejeitada", "Proposta rejeitada"
+        PROPOSTA_CANCELADA = "proposta_cancelada", "Proposta cancelada"
+        PROPOSTA_EXPIRADA = "proposta_expirada", "Proposta expirada"
+
+    name = models.CharField("Nome", max_length=120)
+    event = models.CharField(
+        "Evento",
+        max_length=40,
+        choices=Event.choices,
+        db_index=True,
+    )
+    target_pipeline = models.ForeignKey(
+        "crm.Pipeline",
+        on_delete=models.PROTECT,
+        related_name="automation_rules",
+        verbose_name="Pipeline destino",
+    )
+    target_stage = models.ForeignKey(
+        "crm.PipelineStage",
+        on_delete=models.PROTECT,
+        related_name="automation_rules",
+        verbose_name="Etapa destino",
+    )
+    is_active = models.BooleanField("Ativa", default=True, db_index=True)
+    priority = models.PositiveIntegerField(
+        "Prioridade",
+        default=100,
+        help_text="Menor valor = maior prioridade. Empate vai por nome.",
+    )
+    notes = models.TextField("Observações", blank=True)
+
+    class Meta:
+        verbose_name = "Regra de Automação"
+        verbose_name_plural = "Regras de Automação"
+        ordering = ["priority", "name"]
+        indexes = [
+            models.Index(fields=["empresa", "event", "is_active", "priority"]),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.get_event_display()})"
+
+    def clean(self):
+        if self.target_stage_id and self.target_pipeline_id:
+            stage = self.target_stage
+            if stage.pipeline_id != self.target_pipeline_id:
+                raise ValidationError({
+                    "target_stage": (
+                        "A etapa selecionada não pertence ao pipeline escolhido."
+                    ),
+                })
 
 
 class AutomationLog(TenantOwnedModel):
@@ -25,6 +91,10 @@ class AutomationLog(TenantOwnedModel):
         CONTRACT_TO_WORK_ORDER = "contract_to_work_order", "Contrato → OS"
         WORK_ORDER_TO_BILLING = "work_order_to_billing", "OS → Financeiro"
         FULL_PIPELINE = "full_pipeline", "Pipeline Completo"
+        PROPOSAL_PIPELINE_TRIGGER = (
+            "proposal_pipeline_trigger", "Proposta → Pipeline (regra)",
+        )
+        PROPOSAL_DELETED = "proposal_deleted", "Proposta excluída"
 
     class Status(models.TextChoices):
         SUCCESS = "success", "Sucesso"

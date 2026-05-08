@@ -1,0 +1,52 @@
+{% load ui_tags %}
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60"
+     @keydown.escape.window="document.getElementById('modal-container').innerHTML=''">
+    <div class="bg-white rounded-xl shadow-xl ring-1 ring-slate-200/60 max-w-lg w-full mx-4 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-start justify-between">
+            <div>
+                <h3 class="text-base font-semibold text-slate-900">Enviar por E-mail</h3>
+                <p class="text-sm text-slate-500 mt-0.5">Proposta {{ proposal.number }} — anexo PDF.</p>
+            </div>
+            <button type="button"
+                    onclick="document.getElementById('modal-container').innerHTML=''"
+                    class="p-1 rounded-lg text-slate-400 hover:bg-slate-100">
+                {% icon "x-mark" "w-5 h-5" %}
+            </button>
+        </div>
+
+        <form method="post" action="{% url 'proposals:send_email' proposal.pk %}">
+            {% csrf_token %}
+            <div class="px-6 py-4 space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Destinatário</label>
+                    <input type="email" name="to_email" required value="{{ default_email }}"
+                           class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Assunto</label>
+                    <input type="text" name="subject" value="{{ default_subject }}"
+                           class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Mensagem (opcional)</label>
+                    <textarea name="message" rows="4"
+                              placeholder="Olá! Conforme combinado, segue nossa proposta..."
+                              class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"></textarea>
+                </div>
+                <p class="text-xs text-slate-400">O PDF da proposta será anexado automaticamente.</p>
+            </div>
+            <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+                <button type="button"
+                        onclick="document.getElementById('modal-container').innerHTML=''"
+                        class="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
+                    Cancelar
+                </button>
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
+                    {% icon "paper-airplane" "w-4 h-4" %}
+                    Enviar E-mail
+                </button>
+            </div>
+        </form>
+    </div>
+</div>

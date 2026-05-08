@@ -3,7 +3,7 @@ import json
 from django.contrib import messages
 from django.db.models import Q
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django.views import View
@@ -20,6 +20,11 @@ from apps.proposals.models import (
     ProposalItem,
     ProposalTemplate,
     ProposalTemplateItem,
+)
+from apps.proposals.services.render import (
+    build_proposal_context,
+    render_proposal_docx,
+    render_proposal_pdf,
 )
 
 
@@ -95,16 +100,51 @@ class ProposalCreateView(EmpresaMixin, CreateView):
         initial = super().get_initial()
         lead_id = self.request.GET.get("lead_id")
         opportunity_id = self.request.GET.get("opportunity_id")
+        servico_id = self.request.GET.get("servico_id")
+
         if lead_id:
             from apps.crm.models import Lead
 
-            if Lead.objects.filter(pk=lead_id, empresa=self.request.empresa).exists():
+            lead = Lead.objects.filter(
+                pk=lead_id, empresa=self.request.empresa
+            ).select_related("servico").first()
+            if lead:
                 initial["lead"] = lead_id
+                # Se o lead tem serviço vinculado e nenhum servico_id
+                # explícito veio na URL, herda dele.
+                if not servico_id and lead.servico_id:
+                    servico_id = str(lead.servico_id)
+
         if opportunity_id:
             from apps.crm.models import Opportunity
 
             if Opportunity.objects.filter(pk=opportunity_id, empresa=self.request.empresa).exists():
                 initial["opportunity"] = opportunity_id
+
+        if servico_id:
+            from apps.operations.models import ServiceType
+
+            servico = ServiceType.objects.filter(
+                pk=servico_id, empresa=self.request.empresa,
+            ).select_related(
+                "default_proposal_template",
+            ).first()
+            if servico:
+                initial["servico"] = servico.pk
+                # Pré-preenche valor padrão, descrição, prazo
+                if servico.default_description and "introduction" not in initial:
+                    initial["introduction"] = servico.default_description
+                if servico.default_proposal_template_id and "template" not in initial:
+                    initial["template"] = servico.default_proposal_template_id
+                if servico.default_prazo_dias and "valid_until" not in initial:
+                    from datetime import timedelta
+                    initial["valid_until"] = (
+                        timezone.now().date()
+                        + timedelta(days=servico.default_prazo_dias)
+                    )
+                # Título padrão se ainda não tiver
+                if "title" not in initial:
+                    initial["title"] = servico.name
         return initial
 
     def get_context_data(self, **kwargs):
@@ -241,71 +281,126 @@ class ProposalItemDeleteView(EmpresaMixin, View):
 
 
 class ProposalStatusView(EmpresaMixin, View):
-    """Altera o status da proposta (enviar, aceitar, rejeitar)."""
+    """Altera o status da proposta. Permite todas as transições úteis,
+    incluindo desfazer (qualquer estado → DRAFT)."""
+
+    # Cada estado pode transicionar para qualquer outro a partir do conjunto
+    # abaixo. CANCELLED é alcançável de qualquer um. DRAFT é destino "desfazer"
+    # universal.
+    VALID_TRANSITIONS = {
+        Proposal.Status.DRAFT: [
+            Proposal.Status.SENT, Proposal.Status.CANCELLED,
+        ],
+        Proposal.Status.SENT: [
+            Proposal.Status.VIEWED, Proposal.Status.ACCEPTED,
+            Proposal.Status.REJECTED, Proposal.Status.EXPIRED,
+            Proposal.Status.CANCELLED, Proposal.Status.DRAFT,
+        ],
+        Proposal.Status.VIEWED: [
+            Proposal.Status.ACCEPTED, Proposal.Status.REJECTED,
+            Proposal.Status.EXPIRED, Proposal.Status.CANCELLED,
+            Proposal.Status.DRAFT,
+        ],
+        Proposal.Status.ACCEPTED: [
+            Proposal.Status.DRAFT, Proposal.Status.REJECTED,
+            Proposal.Status.CANCELLED,
+        ],
+        Proposal.Status.REJECTED: [
+            Proposal.Status.DRAFT, Proposal.Status.ACCEPTED,
+            Proposal.Status.CANCELLED,
+        ],
+        Proposal.Status.EXPIRED: [
+            Proposal.Status.DRAFT, Proposal.Status.SENT,
+            Proposal.Status.CANCELLED,
+        ],
+        Proposal.Status.CANCELLED: [Proposal.Status.DRAFT],
+    }
 
     def post(self, request, pk):
+        from apps.proposals.models import ProposalStatusHistory
+
         proposal = get_object_or_404(
             Proposal, pk=pk, empresa=request.empresa
         )
         new_status = request.POST.get("status")
+        note = (request.POST.get("note") or "").strip()
         now = timezone.now()
 
-        valid_transitions = {
-            Proposal.Status.DRAFT: [Proposal.Status.SENT],
-            Proposal.Status.SENT: [
-                Proposal.Status.VIEWED,
-                Proposal.Status.ACCEPTED,
-                Proposal.Status.REJECTED,
-                Proposal.Status.EXPIRED,
-            ],
-            Proposal.Status.VIEWED: [
-                Proposal.Status.ACCEPTED,
-                Proposal.Status.REJECTED,
-                Proposal.Status.EXPIRED,
-            ],
-        }
+        old_status = proposal.status
+        allowed = self.VALID_TRANSITIONS.get(old_status, [])
 
-        allowed = valid_transitions.get(proposal.status, [])
-        if new_status in allowed:
-            proposal.status = new_status
-            if new_status == Proposal.Status.SENT:
-                proposal.sent_at = now
-            elif new_status == Proposal.Status.ACCEPTED:
-                proposal.accepted_at = now
-            elif new_status == Proposal.Status.REJECTED:
-                proposal.rejected_at = now
-            proposal.save()
-
-            # Integração com financeiro: gera lançamentos ao aceitar
-            if new_status == Proposal.Status.ACCEPTED:
-                from apps.finance.services import (
-                    generate_entries_from_proposal,
+        if new_status not in allowed:
+            messages.error(
+                request,
+                f"Transição não permitida: {old_status} → {new_status}",
+            )
+            if request.htmx:
+                html = render_to_string(
+                    "proposals/partials/_proposal_status.html",
+                    {"proposal": proposal},
+                    request=request,
                 )
+                return HttpResponse(html)
+            return redirect(proposal.get_absolute_url())
 
-                try:
-                    entries = generate_entries_from_proposal(proposal)
-                    if entries:
-                        already = any(
-                            e.created_at < now for e in entries
-                        )
-                        if already:
-                            messages.info(
-                                request,
-                                "Lançamentos financeiros já existentes "
-                                "foram mantidos.",
-                            )
-                        else:
-                            messages.success(
-                                request,
-                                f"{len(entries)} lançamento(s) financeiro(s) "
-                                f"criado(s) a partir da proposta.",
-                            )
-                except Exception as exc:  # noqa: BLE001
-                    messages.warning(
-                        request,
-                        f"Proposta aceita, mas houve erro ao gerar "
-                        f"financeiro: {exc}",
+        proposal.status = new_status
+        if new_status == Proposal.Status.SENT:
+            proposal.sent_at = now
+        elif new_status == Proposal.Status.ACCEPTED:
+            proposal.accepted_at = now
+        elif new_status == Proposal.Status.REJECTED:
+            proposal.rejected_at = now
+        elif new_status == Proposal.Status.DRAFT and old_status == Proposal.Status.ACCEPTED:
+            # Desfazendo aceite — limpa accepted_at e avisa sobre financeiro
+            proposal.accepted_at = None
+            messages.warning(
+                request,
+                "Status desfeito. Lançamentos financeiros gerados anteriormente "
+                "permanecem — reverta manualmente se necessário.",
+            )
+        elif new_status == Proposal.Status.DRAFT and old_status == Proposal.Status.REJECTED:
+            proposal.rejected_at = None
+        proposal.save()
+
+        # Histórico de auditoria
+        ProposalStatusHistory.objects.create(
+            proposal=proposal,
+            from_status=old_status,
+            to_status=new_status,
+            changed_by=request.user if request.user.is_authenticated else None,
+            note=note,
+        )
+
+        # Integração com financeiro: gera lançamentos ao aceitar
+        if new_status == Proposal.Status.ACCEPTED:
+            from apps.finance.services import (
+                generate_entries_from_proposal,
+            )
+
+            try:
+                entries = generate_entries_from_proposal(proposal)
+                if entries:
+                    already = any(
+                        e.created_at < now for e in entries
                     )
+                    if already:
+                        messages.info(
+                            request,
+                            "Lançamentos financeiros já existentes "
+                            "foram mantidos.",
+                        )
+                    else:
+                        messages.success(
+                            request,
+                            f"{len(entries)} lançamento(s) financeiro(s) "
+                            f"criado(s) a partir da proposta.",
+                        )
+            except Exception as exc:  # noqa: BLE001
+                messages.warning(
+                    request,
+                    f"Proposta aceita, mas houve erro ao gerar "
+                    f"financeiro: {exc}",
+                )
 
         if request.htmx:
             html = render_to_string(
@@ -315,6 +410,55 @@ class ProposalStatusView(EmpresaMixin, View):
             )
             return HttpResponse(html)
         return redirect(proposal.get_absolute_url())
+
+
+class ProposalDeleteView(EmpresaMixin, View):
+    """Exclui proposta com confirmação. Hard delete + log de auditoria.
+
+    GET retorna form de confirmação (modal HTMX).
+    POST executa a exclusão após confirmação dupla.
+    """
+
+    def get(self, request, pk):
+        proposal = get_object_or_404(
+            Proposal, pk=pk, empresa=request.empresa
+        )
+        html = render_to_string(
+            "proposals/partials/_delete_confirm.html",
+            {"proposal": proposal},
+            request=request,
+        )
+        return HttpResponse(html)
+
+    def post(self, request, pk):
+        from apps.automation.models import AutomationLog
+
+        proposal = get_object_or_404(
+            Proposal, pk=pk, empresa=request.empresa
+        )
+        # Snapshot antes de deletar
+        snapshot = {
+            "number": proposal.number,
+            "title": proposal.title,
+            "status": proposal.status,
+            "total": str(proposal.total),
+            "lead_id": proposal.lead_id,
+            "lead_name": proposal.lead.name if proposal.lead else None,
+            "deleted_by_user_id": request.user.pk if request.user.is_authenticated else None,
+            "deleted_at": timezone.now().isoformat(),
+        }
+        AutomationLog.objects.create(
+            empresa=request.empresa,
+            action=AutomationLog.Action.PROPOSAL_DELETED,
+            entity_type=AutomationLog.EntityType.PROPOSAL,
+            entity_id=proposal.pk,
+            status=AutomationLog.Status.SUCCESS,
+            metadata={"event": "proposal_deleted", **snapshot},
+        )
+        number = proposal.number
+        proposal.delete()
+        messages.success(request, f"Proposta {number} excluída com sucesso.")
+        return redirect("proposals:list")
 
 
 # ---------------------------------------------------------------------------
@@ -378,6 +522,186 @@ class TemplateItemDeleteView(EmpresaMixin, View):
             request=request,
         )
         return HttpResponse(html)
+
+
+class ProposalPreviewView(EmpresaMixin, View):
+    """Renderiza preview HTML da proposta (mesmo template do PDF)."""
+
+    def get(self, request, pk):
+        proposal = get_object_or_404(
+            Proposal.objects.select_related("lead", "lead__contato", "template", "empresa")
+            .prefetch_related("items"),
+            pk=pk, empresa=request.empresa,
+        )
+        ctx = build_proposal_context(proposal, request=request)
+        ctx["preview_mode"] = True
+        return render(request, "proposals/render/proposal_print.html", ctx)
+
+
+class ProposalPDFView(EmpresaMixin, View):
+    """Gera e devolve o PDF da proposta."""
+
+    def get(self, request, pk):
+        proposal = get_object_or_404(
+            Proposal.objects.select_related("lead", "lead__contato", "template", "empresa")
+            .prefetch_related("items"),
+            pk=pk, empresa=request.empresa,
+        )
+        try:
+            pdf_bytes = render_proposal_pdf(proposal, request=request)
+        except Exception as exc:  # noqa: BLE001
+            messages.error(
+                request,
+                f"Não foi possível gerar PDF: {exc}. Verifique se WeasyPrint está instalado.",
+            )
+            return redirect(proposal.get_absolute_url())
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = (
+            f'attachment; filename="Proposta_{proposal.number}.pdf"'
+        )
+        return response
+
+
+class ProposalDOCXView(EmpresaMixin, View):
+    """Gera e devolve o DOCX (estruturado, sem rich formatting)."""
+
+    DOCX_CT = (
+        "application/vnd.openxmlformats-officedocument."
+        "wordprocessingml.document"
+    )
+
+    def get(self, request, pk):
+        proposal = get_object_or_404(
+            Proposal.objects.select_related("lead", "lead__contato", "template", "empresa")
+            .prefetch_related("items"),
+            pk=pk, empresa=request.empresa,
+        )
+        try:
+            docx_bytes = render_proposal_docx(proposal)
+        except Exception as exc:  # noqa: BLE001
+            messages.error(request, f"Não foi possível gerar DOCX: {exc}")
+            return redirect(proposal.get_absolute_url())
+        response = HttpResponse(docx_bytes, content_type=self.DOCX_CT)
+        response["Content-Disposition"] = (
+            f'attachment; filename="Proposta_{proposal.number}.docx"'
+        )
+        return response
+
+
+class ProposalSendEmailView(EmpresaMixin, View):
+    """Envia proposta por e-mail (form + service)."""
+
+    def get(self, request, pk):
+        proposal = get_object_or_404(
+            Proposal.objects.select_related("lead", "lead__contato"),
+            pk=pk, empresa=request.empresa,
+        )
+        contato = getattr(proposal.lead, "contato", None) if proposal.lead else None
+        default_email = (contato.email if contato else "") or proposal.lead.email
+        ctx = {
+            "proposal": proposal,
+            "default_email": default_email or "",
+            "default_subject": f"Proposta {proposal.number} — {proposal.empresa.name}",
+        }
+        html = render_to_string(
+            "proposals/partials/_send_email_form.html", ctx, request=request,
+        )
+        return HttpResponse(html)
+
+    def post(self, request, pk):
+        from apps.proposals.services.email import send_proposal_email
+
+        proposal = get_object_or_404(
+            Proposal, pk=pk, empresa=request.empresa,
+        )
+        to_email = (request.POST.get("to_email") or "").strip()
+        subject = (request.POST.get("subject") or "").strip() or None
+        message = request.POST.get("message") or ""
+        ok, err = send_proposal_email(
+            proposal, to_email=to_email, subject=subject,
+            message=message, request=request,
+        )
+        if ok:
+            messages.success(request, f"Proposta enviada para {to_email}.")
+        else:
+            messages.error(request, f"Falha ao enviar e-mail: {err}")
+        return redirect(proposal.get_absolute_url())
+
+
+class ProposalSendWhatsAppView(EmpresaMixin, View):
+    """Envia proposta por WhatsApp (anexo PDF + fallback link)."""
+
+    def get(self, request, pk):
+        proposal = get_object_or_404(
+            Proposal.objects.select_related("lead", "lead__contato"),
+            pk=pk, empresa=request.empresa,
+        )
+        contato = getattr(proposal.lead, "contato", None) if proposal.lead else None
+        default_phone = ""
+        if contato:
+            default_phone = contato.whatsapp or contato.phone or ""
+        elif proposal.lead and proposal.lead.phone:
+            default_phone = proposal.lead.phone
+        ctx = {
+            "proposal": proposal,
+            "default_phone": default_phone,
+            "default_message": (
+                f"Olá! Segue a proposta {proposal.number}."
+            ),
+        }
+        html = render_to_string(
+            "proposals/partials/_send_whatsapp_form.html", ctx, request=request,
+        )
+        return HttpResponse(html)
+
+    def post(self, request, pk):
+        from apps.proposals.services.whatsapp import send_proposal_whatsapp
+
+        proposal = get_object_or_404(
+            Proposal, pk=pk, empresa=request.empresa,
+        )
+        to_phone = (request.POST.get("to_phone") or "").strip()
+        message = request.POST.get("message") or ""
+        ok, mode, msg = send_proposal_whatsapp(
+            proposal, to_phone=to_phone, message=message, request=request,
+        )
+        if ok and mode == "attachment":
+            messages.success(request, msg)
+        elif ok and mode == "link":
+            messages.warning(request, msg)
+        else:
+            messages.error(request, msg)
+        return redirect(proposal.get_absolute_url())
+
+
+class ProposalPublicView(View):
+    """Visualização pública da proposta via token UUID — sem autenticação.
+
+    Marca `viewed_at` na primeira visualização e transita DRAFT/SENT → VIEWED.
+    Sem CSRF, sem EmpresaMixin — endpoint pensado para o cliente final.
+    """
+
+    def get(self, request, token):
+        proposal = get_object_or_404(
+            Proposal.objects.select_related("lead", "lead__contato", "template", "empresa")
+            .prefetch_related("items"),
+            public_token=token,
+        )
+        # Marca visualização e atualiza status na primeira vez
+        if proposal.viewed_at is None:
+            proposal.viewed_at = timezone.now()
+            update_fields = ["viewed_at", "updated_at"]
+            if proposal.status in (Proposal.Status.DRAFT, Proposal.Status.SENT):
+                proposal.status = Proposal.Status.VIEWED
+                update_fields.append("status")
+            proposal.save(update_fields=update_fields)
+
+        from apps.proposals.services.render import build_proposal_context
+
+        ctx = build_proposal_context(proposal, request=request)
+        ctx["preview_mode"] = False
+        ctx["public_view"] = True
+        return render(request, "proposals/render/proposal_print.html", ctx)
 
 
 class ProposalApplyTemplateItemsView(EmpresaMixin, View):

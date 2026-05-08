@@ -1,6 +1,16 @@
 from django.contrib import admin
 
-from .models import AutomationLog
+from .models import AutomationLog, PipelineAutomationRule
+
+
+@admin.register(PipelineAutomationRule)
+class PipelineAutomationRuleAdmin(admin.ModelAdmin):
+    list_display = [
+        "name", "empresa", "event", "target_pipeline", "target_stage",
+        "is_active", "priority",
+    ]
+    list_filter = ["event", "is_active", "empresa"]
+    search_fields = ["name", "notes"]
 
 
 @admin.register(AutomationLog)

@@ -1,0 +1,73 @@
+{% load humanize %}
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60"
+     x-data="{ confirmText: '', confirmed: false }"
+     @keydown.escape.window="document.getElementById('modal-container').innerHTML=''">
+    <div class="bg-white rounded-xl shadow-xl ring-1 ring-slate-200/60 max-w-md w-full mx-4 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-start justify-between">
+            <div class="flex items-start gap-3">
+                <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="text-base font-semibold text-slate-900">Excluir proposta</h3>
+                    <p class="text-sm text-slate-500 mt-0.5">Esta ação não pode ser desfeita.</p>
+                </div>
+            </div>
+            <button type="button"
+                    onclick="document.getElementById('modal-container').innerHTML=''"
+                    class="p-1 rounded-lg text-slate-400 hover:bg-slate-100">
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="px-6 py-4">
+            <dl class="space-y-2 text-sm">
+                <div class="flex justify-between"><dt class="text-slate-500">Número</dt><dd class="font-mono">{{ proposal.number }}</dd></div>
+                <div class="flex justify-between"><dt class="text-slate-500">Título</dt><dd>{{ proposal.title|truncatechars:40 }}</dd></div>
+                <div class="flex justify-between"><dt class="text-slate-500">Status</dt><dd>{{ proposal.get_status_display }}</dd></div>
+                <div class="flex justify-between"><dt class="text-slate-500">Total</dt><dd class="font-medium">R$ {{ proposal.total|floatformat:"2"|intcomma }}</dd></div>
+                {% if proposal.lead %}
+                <div class="flex justify-between"><dt class="text-slate-500">Lead</dt><dd>{{ proposal.lead.name|truncatechars:30 }}</dd></div>
+                {% endif %}
+            </dl>
+
+            {% if proposal.status == 'sent' or proposal.status == 'accepted' %}
+            <div class="mt-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                <strong>Atenção:</strong> esta proposta foi {{ proposal.get_status_display|lower }}.
+                A exclusão é definitiva e gera registro de auditoria.
+            </div>
+            {% endif %}
+
+            <div class="mt-4">
+                <label class="block text-xs font-medium text-slate-600 mb-1">
+                    Para confirmar, digite <code class="px-1 bg-slate-100 rounded font-mono">{{ proposal.number }}</code>
+                </label>
+                <input type="text" x-model="confirmText"
+                       @input="confirmed = (confirmText === '{{ proposal.number }}')"
+                       class="w-full rounded-lg border-slate-300 text-sm focus:border-red-500 focus:ring-red-500"
+                       placeholder="{{ proposal.number }}">
+            </div>
+        </div>
+
+        <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+            <button type="button"
+                    onclick="document.getElementById('modal-container').innerHTML=''"
+                    class="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
+                Cancelar
+            </button>
+            <form method="post" action="{% url 'proposals:delete' proposal.pk %}">
+                {% csrf_token %}
+                <button type="submit"
+                        :disabled="!confirmed"
+                        :class="confirmed ? 'bg-red-600 hover:bg-red-700 cursor-pointer' : 'bg-red-300 cursor-not-allowed'"
+                        class="px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors shadow-sm">
+                    Excluir definitivamente
+                </button>
+            </form>
+        </div>
+    </div>
+</div>

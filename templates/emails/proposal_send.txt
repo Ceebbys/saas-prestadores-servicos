@@ -1,0 +1,15 @@
+Olá{% if proposal.lead.contato %}, {{ proposal.lead.contato.name }}{% endif %}!
+
+Segue em anexo a proposta {{ proposal.number }} — {{ proposal.title }}.
+
+{% if custom_message %}
+{{ custom_message }}
+
+{% endif %}
+Total: R$ {{ proposal.total|floatformat:"2" }}{% if proposal.valid_until %}
+Válida até: {{ proposal.valid_until|date:"d/m/Y" }}{% endif %}
+
+Estamos à disposição para esclarecer dúvidas — basta responder a este e-mail.
+
+—
+{{ empresa.name }}

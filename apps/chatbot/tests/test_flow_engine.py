@@ -2,7 +2,12 @@
 
 from django.test import TestCase
 
-from apps.chatbot.models import ChatbotChoice, ChatbotFlow, ChatbotStep
+from apps.chatbot.models import (
+    ChatbotChoice,
+    ChatbotFlow,
+    ChatbotFlowDispatch,
+    ChatbotStep,
+)
 from apps.chatbot.services import (
     process_response,
     select_flow_for_message,
@@ -167,3 +172,91 @@ class FlowSelectionTests(TestCase):
         )
         chosen = select_flow_for_message(self.empresa, "666", "olá")
         self.assertIsNone(chosen)
+
+
+class CompletionMessageTests(TestCase):
+    """Garante que mensagem oculta hardcoded foi removida.
+
+    Toda comunicação ao cliente precisa ser explicitamente configurada via
+    `send_completion_message` + `completion_message`.
+    """
+
+    HARDCODED_PHRASES = [
+        "Prontinho",
+        "especialistas vai te chamar",
+        "2 horas úteis",
+    ]
+
+    def setUp(self):
+        self.empresa = create_test_empresa()
+        create_test_user("c@t.com", "C", self.empresa)
+        create_pipeline_for_empresa(self.empresa)
+
+    def _build_simple_flow(self, **flow_kwargs):
+        flow = _bare_flow(self.empresa, name="Encerramento", **flow_kwargs)
+        ChatbotStep.objects.create(
+            flow=flow, order=0, question_text="Único passo",
+            step_type=ChatbotStep.StepType.TEXT, is_final=True,
+        )
+        return flow
+
+    def _complete_flow(self, flow):
+        s = start_session(flow, channel="webchat", sender_id="completion-tester")
+        return process_response(s["session_key"], "qualquer resposta")
+
+    def test_default_flow_does_not_send_completion_message(self):
+        """Fluxos novos (default) NÃO enviam mensagem ao concluir.
+
+        Atende o pedido: 'mensagem hardcoded oculta não deve ser enviada quando
+        não configurada'.
+        """
+        flow = self._build_simple_flow()
+        result = self._complete_flow(flow)
+        self.assertTrue(result["is_complete"])
+        self.assertEqual(result["message"], "")
+        for phrase in self.HARDCODED_PHRASES:
+            self.assertNotIn(phrase, result["message"])
+
+    def test_enabled_completion_message_is_sent(self):
+        flow = self._build_simple_flow(
+            send_completion_message=True,
+            completion_message="Obrigado! Vamos retornar em breve.",
+        )
+        result = self._complete_flow(flow)
+        self.assertTrue(result["is_complete"])
+        self.assertEqual(result["message"], "Obrigado! Vamos retornar em breve.")
+
+    def test_enabled_with_empty_text_sends_nothing(self):
+        """Defesa: flag ativo + texto vazio = nada enviado (não cair em hardcode)."""
+        flow = self._build_simple_flow(
+            send_completion_message=True,
+            completion_message="",
+        )
+        result = self._complete_flow(flow)
+        self.assertTrue(result["is_complete"])
+        self.assertEqual(result["message"], "")
+
+    def test_disabled_does_not_send_default_text_either(self):
+        """Mesmo com texto padrão preenchido, flag desativado = nada enviado."""
+        flow = self._build_simple_flow(
+            send_completion_message=False,
+            completion_message="Texto padrão preservado mas desativado.",
+        )
+        result = self._complete_flow(flow)
+        self.assertTrue(result["is_complete"])
+        self.assertEqual(result["message"], "")
+
+    def test_completion_dispatch_is_logged(self):
+        """Auditoria: cada envio de mensagem de encerramento gera Dispatch."""
+        flow = self._build_simple_flow(
+            send_completion_message=True,
+            completion_message="Auditoria.",
+        )
+        before = ChatbotFlowDispatch.objects.filter(
+            reason="completion_message_sent"
+        ).count()
+        self._complete_flow(flow)
+        after = ChatbotFlowDispatch.objects.filter(
+            reason="completion_message_sent"
+        ).count()
+        self.assertEqual(after, before + 1)

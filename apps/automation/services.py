@@ -12,6 +12,7 @@ Regras:
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from decimal import Decimal
 from uuid import uuid4
@@ -19,7 +20,129 @@ from uuid import uuid4
 from django.db import transaction
 from django.utils import timezone
 
-from .models import AutomationLog
+from .models import AutomationLog, PipelineAutomationRule
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline triggers (Etapa 7) — eventos de proposta movem leads
+# ---------------------------------------------------------------------------
+
+# Mapa: status novo da proposta → evento da regra.
+PROPOSAL_STATUS_TO_EVENT = {
+    "sent": PipelineAutomationRule.Event.PROPOSTA_ENVIADA,
+    "accepted": PipelineAutomationRule.Event.PROPOSTA_ACEITA,
+    "rejected": PipelineAutomationRule.Event.PROPOSTA_REJEITADA,
+    "cancelled": PipelineAutomationRule.Event.PROPOSTA_CANCELADA,
+    "expired": PipelineAutomationRule.Event.PROPOSTA_EXPIRADA,
+}
+
+
+def execute_proposal_event(proposal, event: str):
+    """Executa todas as regras ativas para o evento.
+
+    Nunca propaga exceções — automação não bloqueia mudança de status.
+    Cada regra é tentada isoladamente; falha numa regra não afeta as outras.
+    """
+    try:
+        rules = (
+            PipelineAutomationRule.objects.filter(
+                empresa=proposal.empresa,
+                event=event,
+                is_active=True,
+            )
+            .select_related("target_pipeline", "target_stage")
+            .order_by("priority", "name")
+        )
+        for rule in rules:
+            _apply_rule(proposal, rule, event)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "execute_proposal_event outer failure (event=%s, proposal=%s)",
+            event, proposal.pk,
+        )
+
+
+def _apply_rule(proposal, rule, event: str):
+    """Aplica uma única regra. Tudo é logado em AutomationLog.
+
+    Defesas:
+    - Lead pode ser nulo (proposta órfã) — pula com log
+    - Lead já na etapa-alvo — pula com log informativo
+    - Stage pode ter sido removido (FK PROTECT bloqueia delete, mas mesmo assim)
+    - Pipeline mismatch já validado em clean(), mas re-checa em runtime
+    """
+    try:
+        lead = proposal.lead
+        if not lead:
+            AutomationLog.objects.create(
+                empresa=proposal.empresa,
+                action=AutomationLog.Action.PROPOSAL_PIPELINE_TRIGGER,
+                entity_type=AutomationLog.EntityType.PROPOSAL,
+                entity_id=proposal.pk,
+                status=AutomationLog.Status.SUCCESS,
+                metadata={
+                    "rule_id": rule.pk, "skipped": "no_lead",
+                    "event": event,
+                },
+            )
+            return
+
+        if lead.pipeline_stage_id == rule.target_stage_id:
+            AutomationLog.objects.create(
+                empresa=proposal.empresa,
+                action=AutomationLog.Action.PROPOSAL_PIPELINE_TRIGGER,
+                entity_type=AutomationLog.EntityType.LEAD,
+                entity_id=lead.pk,
+                source_entity_type="proposal",
+                source_entity_id=proposal.pk,
+                status=AutomationLog.Status.SUCCESS,
+                metadata={
+                    "rule_id": rule.pk,
+                    "rule_name": rule.name,
+                    "skipped": "already_in_target_stage",
+                    "stage_id": rule.target_stage_id,
+                    "event": event,
+                },
+            )
+            return
+
+        # Aplica: move o lead para a etapa-alvo. Suprime recursão de signals.
+        lead.pipeline_stage_id = rule.target_stage_id
+        lead._suppress_automation = True
+        lead.save(update_fields=["pipeline_stage", "updated_at"])
+
+        AutomationLog.objects.create(
+            empresa=proposal.empresa,
+            action=AutomationLog.Action.PROPOSAL_PIPELINE_TRIGGER,
+            entity_type=AutomationLog.EntityType.LEAD,
+            entity_id=lead.pk,
+            source_entity_type="proposal",
+            source_entity_id=proposal.pk,
+            status=AutomationLog.Status.SUCCESS,
+            metadata={
+                "rule_id": rule.pk,
+                "rule_name": rule.name,
+                "moved_to_stage_id": rule.target_stage_id,
+                "moved_to_stage_name": rule.target_stage.name,
+                "event": event,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Falha aplicando regra de automação")
+        try:
+            AutomationLog.objects.create(
+                empresa=proposal.empresa,
+                action=AutomationLog.Action.PROPOSAL_PIPELINE_TRIGGER,
+                entity_type=AutomationLog.EntityType.PROPOSAL,
+                entity_id=proposal.pk,
+                status=AutomationLog.Status.ERROR,
+                error_message=str(exc),
+                metadata={"rule_id": rule.pk, "event": event},
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Falha registrando erro de automação")
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +212,20 @@ def create_lead_from_chatbot(empresa, flow, session_data):
     channel = flow.channel if flow else "whatsapp"
     source = CHANNEL_SOURCE_MAP.get(channel, "outro")
 
+    # Resolve serviço pré-fixado (se chatbot gravou na sessão)
+    servico = None
+    servico_id = session_data.get("servico_id")
+    if servico_id:
+        from apps.operations.models import ServiceType
+
+        servico = ServiceType.objects.filter(
+            pk=servico_id, empresa=empresa,
+        ).first()
+
+    # Etapa do pipeline: se o serviço define etapa padrão, usa essa em vez
+    # da primeira etapa (que o signal de Lead atribuiria por default).
+    initial_stage_id = servico.default_stage_id if servico else None
+
     lead = Lead.objects.create(
         empresa=empresa,
         name=session_data.get("name", "Lead do Chatbot"),
@@ -98,6 +235,8 @@ def create_lead_from_chatbot(empresa, flow, session_data):
         source=source,
         external_ref=session_id,
         notes=session_data.get("notes", ""),
+        servico=servico,
+        pipeline_stage_id=initial_stage_id,  # signal só seta se ficar None
     )
 
     _log(
@@ -107,7 +246,12 @@ def create_lead_from_chatbot(empresa, flow, session_data):
         entity_id=lead.pk,
         source_entity_type="chatbot_flow",
         source_entity_id=flow.pk if flow else None,
-        metadata={"channel": channel, "session_id": session_id},
+        metadata={
+            "channel": channel,
+            "session_id": session_id,
+            "servico_id": servico.pk if servico else None,
+            "servico_name": servico.name if servico else None,
+        },
     )
 
     return lead

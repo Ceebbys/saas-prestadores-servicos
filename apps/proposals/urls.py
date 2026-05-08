@@ -30,6 +30,36 @@ urlpatterns = [
         name="status",
     ),
     path(
+        "<int:pk>/delete/",
+        views.ProposalDeleteView.as_view(),
+        name="delete",
+    ),
+    path(
+        "<int:pk>/send/email/",
+        views.ProposalSendEmailView.as_view(),
+        name="send_email",
+    ),
+    path(
+        "<int:pk>/send/whatsapp/",
+        views.ProposalSendWhatsAppView.as_view(),
+        name="send_whatsapp",
+    ),
+    path(
+        "<int:pk>/preview/",
+        views.ProposalPreviewView.as_view(),
+        name="preview",
+    ),
+    path(
+        "<int:pk>/pdf/",
+        views.ProposalPDFView.as_view(),
+        name="pdf",
+    ),
+    path(
+        "<int:pk>/docx/",
+        views.ProposalDOCXView.as_view(),
+        name="docx",
+    ),
+    path(
         "<int:pk>/apply-template-items/",
         views.ProposalApplyTemplateItemsView.as_view(),
         name="apply_template_items",

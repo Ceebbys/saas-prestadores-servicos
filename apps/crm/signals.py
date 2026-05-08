@@ -84,11 +84,16 @@ def opportunity_post_save(sender, instance: Opportunity, created: bool, **kwargs
 
 @receiver(pre_delete, sender=PipelineStage)
 def pipeline_stage_pre_delete(sender, instance: PipelineStage, **kwargs):
-    """Reassign leads to the previous stage before the FK goes NULL."""
-    affected_leads = Lead.objects.filter(pipeline_stage=instance)
-    if not affected_leads.exists():
-        return
+    """Captura IDs e fallback para re-atribuição em post_delete.
 
+    Não atualiza aqui: o Django já agendou um SET_NULL via on_delete que vai
+    rodar APÓS o pre_delete, sobrescrevendo qualquer update prematuro. Por
+    isso capturamos o snapshot e aplicamos a re-atribuição no post_delete,
+    quando o SET_NULL já ocorreu.
+    """
+    affected_ids = list(
+        Lead.objects.filter(pipeline_stage=instance).values_list("pk", flat=True)
+    )
     fallback = (
         instance.pipeline.stages.exclude(pk=instance.pk)
         .filter(order__lte=instance.order)
@@ -96,8 +101,23 @@ def pipeline_stage_pre_delete(sender, instance: PipelineStage, **kwargs):
         .first()
         or instance.pipeline.stages.exclude(pk=instance.pk).order_by("order").first()
     )
-    if fallback:
-        affected_leads.update(pipeline_stage=fallback)
+    instance._affected_lead_ids = affected_ids
+    instance._fallback_stage_id = fallback.pk if fallback else None
+
+
+from django.db.models.signals import post_delete  # noqa: E402
+
+
+@receiver(post_delete, sender=PipelineStage)
+def pipeline_stage_post_delete(sender, instance: PipelineStage, **kwargs):
+    """Aplica fallback para leads que ficaram com pipeline_stage=NULL após
+    SET_NULL."""
+    affected = getattr(instance, "_affected_lead_ids", None)
+    fallback_id = getattr(instance, "_fallback_stage_id", None)
+    if affected and fallback_id:
+        Lead.objects.filter(pk__in=affected, pipeline_stage__isnull=True).update(
+            pipeline_stage_id=fallback_id,
+        )
 
 
 def _chatbot_session_completed(sender, instance, created: bool, **kwargs):

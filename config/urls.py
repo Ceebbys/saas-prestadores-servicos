@@ -4,6 +4,8 @@ from django.contrib import admin
 from django.http import JsonResponse
 from django.urls import include, path
 
+from apps.proposals.views import ProposalPublicView
+
 
 def healthcheck(request):
     return JsonResponse({"status": "ok"})
@@ -12,6 +14,9 @@ def healthcheck(request):
 urlpatterns = [
     path("healthz/", healthcheck, name="healthcheck"),
     path("admin/", admin.site.urls),
+    # Visualização pública de proposta via token (cliente final, sem auth).
+    # Mantida fora de /proposals/ para evitar leak da estrutura interna.
+    path("p/<uuid:token>/", ProposalPublicView.as_view(), name="proposal_public"),
     path("", include("apps.dashboard.urls")),
     path("accounts/", include("apps.accounts.urls")),
     path("crm/", include("apps.crm.urls")),

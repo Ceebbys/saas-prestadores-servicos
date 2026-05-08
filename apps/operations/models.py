@@ -1,6 +1,8 @@
+from decimal import Decimal
 from urllib.parse import quote
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.core.models import TenantOwnedModel, TimestampedModel
@@ -8,10 +10,47 @@ from apps.core.utils import generate_number
 
 
 class ServiceType(TenantOwnedModel):
-    """Tipo de serviço oferecido pela empresa."""
+    """Serviço pré-fixado da empresa.
+
+    Catálogo de serviços padronizados que alimentam:
+    - Chatbot (opção do cliente vincula a um serviço)
+    - Lead (categoria + sugestões automáticas)
+    - Proposta (preço, descrição, modelo, prazo)
+    - Contrato (modelo padrão)
+    - Pipeline (etapa inicial sugerida)
+    """
 
     name = models.CharField("Nome", max_length=255)
-    description = models.TextField("Descrição", blank=True)
+    code = models.CharField(
+        "Código",
+        max_length=40,
+        blank=True,
+        db_index=True,
+        help_text="Código curto opcional (ex.: TOPO-001).",
+    )
+    category = models.CharField(
+        "Categoria",
+        max_length=80,
+        blank=True,
+        db_index=True,
+    )
+    description = models.TextField("Descrição interna", blank=True)
+    default_description = models.TextField(
+        "Descrição padrão (rich)",
+        blank=True,
+        help_text="HTML rich-text. Usado em propostas/leads como sugestão.",
+    )
+    default_price = models.DecimalField(
+        "Preço padrão",
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
+    default_prazo_dias = models.PositiveIntegerField(
+        "Prazo estimado (dias)",
+        null=True,
+        blank=True,
+    )
     estimated_duration_hours = models.DecimalField(
         "Duração estimada (horas)",
         max_digits=6,
@@ -19,15 +58,71 @@ class ServiceType(TenantOwnedModel):
         null=True,
         blank=True,
     )
+    default_proposal_template = models.ForeignKey(
+        "proposals.ProposalTemplate",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="default_for_service_types",
+        verbose_name="Modelo de proposta padrão",
+    )
+    default_contract_template = models.ForeignKey(
+        "contracts.ContractTemplate",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="default_for_service_types",
+        verbose_name="Modelo de contrato padrão",
+    )
+    default_pipeline = models.ForeignKey(
+        "crm.Pipeline",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="default_for_service_types",
+        verbose_name="Pipeline padrão",
+    )
+    default_stage = models.ForeignKey(
+        "crm.PipelineStage",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="default_for_service_types",
+        verbose_name="Etapa padrão",
+    )
+    tags = models.CharField(
+        "Tags",
+        max_length=255,
+        blank=True,
+        help_text="Separadas por vírgula (ex.: topografia, regularização).",
+    )
+    internal_notes = models.TextField("Observações internas", blank=True)
     is_active = models.BooleanField("Ativo", default=True)
 
     class Meta:
-        verbose_name = "Tipo de Serviço"
-        verbose_name_plural = "Tipos de Serviço"
+        verbose_name = "Serviço Pré-Fixado"
+        verbose_name_plural = "Serviços Pré-Fixados"
         ordering = ["name"]
+        indexes = [
+            models.Index(fields=["empresa", "category"]),
+            models.Index(fields=["empresa", "is_active"]),
+        ]
 
     def __str__(self):
         return self.name
+
+    def clean(self):
+        if self.default_stage_id and self.default_pipeline_id:
+            if self.default_stage.pipeline_id != self.default_pipeline_id:
+                raise ValidationError({
+                    "default_stage": (
+                        "A etapa precisa pertencer ao pipeline selecionado."
+                    ),
+                })
+
+    @property
+    def tag_list(self) -> list[str]:
+        return [t.strip() for t in (self.tags or "").split(",") if t.strip()]
 
 
 class ChecklistTemplate(TenantOwnedModel):

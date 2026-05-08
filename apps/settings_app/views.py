@@ -1260,3 +1260,70 @@ class WhatsAppQRCodeView(EmpresaMixin, View):
         </div>
         """
         return HttpResponse(html)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline Automation Rules — gatilhos proposta → pipeline (Etapa 7)
+# ---------------------------------------------------------------------------
+
+from apps.automation.models import PipelineAutomationRule  # noqa: E402
+
+from .forms import PipelineAutomationRuleForm  # noqa: E402
+
+
+class AutomationRuleListView(EmpresaMixin, ListView):
+    model = PipelineAutomationRule
+    template_name = "settings/automation_rule_list.html"
+    context_object_name = "rules"
+
+    def get_queryset(self):
+        return (
+            super()
+            .get_queryset()
+            .select_related("target_pipeline", "target_stage")
+            .order_by("priority", "name")
+        )
+
+
+class AutomationRuleCreateView(EmpresaMixin, CreateView):
+    model = PipelineAutomationRule
+    form_class = PipelineAutomationRuleForm
+    template_name = "settings/automation_rule_form.html"
+    success_url = reverse_lazy("settings_app:automation_rule_list")
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["empresa"] = self.request.empresa
+        return kwargs
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        messages.success(self.request, "Regra de automação criada com sucesso.")
+        return response
+
+
+class AutomationRuleUpdateView(EmpresaMixin, UpdateView):
+    model = PipelineAutomationRule
+    form_class = PipelineAutomationRuleForm
+    template_name = "settings/automation_rule_form.html"
+    success_url = reverse_lazy("settings_app:automation_rule_list")
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["empresa"] = self.request.empresa
+        return kwargs
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        messages.success(self.request, "Regra atualizada.")
+        return response
+
+
+class AutomationRuleDeleteView(EmpresaMixin, DeleteView):
+    model = PipelineAutomationRule
+    success_url = reverse_lazy("settings_app:automation_rule_list")
+    http_method_names = ["post"]
+
+    def post(self, request, *args, **kwargs):
+        messages.success(request, "Regra removida.")
+        return self.delete(request, *args, **kwargs)

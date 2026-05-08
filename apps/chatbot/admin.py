@@ -22,8 +22,18 @@ class ChatbotFlowAdmin(admin.ModelAdmin):
 
 @admin.register(ChatbotStep)
 class ChatbotStepAdmin(admin.ModelAdmin):
-    list_display = ["flow", "order", "step_type", "lead_field_mapping", "is_required"]
-    list_filter = ["step_type"]
+    list_display = [
+        "flow", "codigo_hierarquico", "order", "step_type",
+        "lead_field_mapping", "is_required", "is_final",
+    ]
+    list_filter = ["step_type", "is_final"]
+    readonly_fields = ["codigo_hierarquico", "nivel"]
+    fields = [
+        "flow", "order", "parent", "subordem",
+        "question_text", "step_type", "lead_field_mapping",
+        "is_required", "is_final",
+        "codigo_hierarquico", "nivel",
+    ]
 
 
 @admin.register(ChatbotChoice)

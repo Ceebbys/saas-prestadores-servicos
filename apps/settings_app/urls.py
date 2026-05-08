@@ -174,4 +174,25 @@ urlpatterns = [
     path("whatsapp/save/", views.WhatsAppConfigSaveView.as_view(), name="whatsapp_config_save"),
     path("whatsapp/status/", views.WhatsAppStatusView.as_view(), name="whatsapp_status"),
     path("whatsapp/qrcode/", views.WhatsAppQRCodeView.as_view(), name="whatsapp_qrcode"),
+    # Pipeline Automation Rules (gatilhos proposta → pipeline)
+    path(
+        "automation-rules/",
+        views.AutomationRuleListView.as_view(),
+        name="automation_rule_list",
+    ),
+    path(
+        "automation-rules/create/",
+        views.AutomationRuleCreateView.as_view(),
+        name="automation_rule_create",
+    ),
+    path(
+        "automation-rules/<int:pk>/edit/",
+        views.AutomationRuleUpdateView.as_view(),
+        name="automation_rule_update",
+    ),
+    path(
+        "automation-rules/<int:pk>/delete/",
+        views.AutomationRuleDeleteView.as_view(),
+        name="automation_rule_delete",
+    ),
 ]

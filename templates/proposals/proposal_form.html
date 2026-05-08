@@ -1,7 +1,21 @@
 {% extends "layouts/authenticated.html" %}
-{% load ui_tags %}
+{% load static ui_tags %}
 
 {% block title %}{% if form.instance.pk %}Editar Proposta{% else %}Nova Proposta{% endif %} — ServiçoPro{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/quill/quill.snow.css' %}">
+<style>
+    .rich-text-editor .ql-editor { min-height: 140px; font-size: 14px; line-height: 1.5; }
+    .rich-text-editor .ql-toolbar { border: none; border-bottom: 1px solid #e2e8f0; }
+    .rich-text-editor .ql-container { border: none; }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/quill/quill.js' %}"></script>
+<script src="{% static 'js/rich-text-init.js' %}"></script>
+{% endblock %}
 
 {% block breadcrumb %}
 <nav class="flex items-center gap-2 text-sm text-slate-500 mb-4">
@@ -19,9 +33,9 @@
 {% endblock %}
 
 {% block content %}
-<div class="max-w-2xl"
+<div class="max-w-3xl"
      x-data='proposalForm({{ templates_data|default:"{}"|safe }})'>
-    <form method="post" class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6">
+    <form method="post" enctype="multipart/form-data" class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6">
         {% csrf_token %}
 
         <!-- Toast: template aplicado -->
@@ -41,6 +55,7 @@
             {% form_field form.title %}
             {% form_field form.lead %}
             {% form_field form.opportunity %}
+            {% form_field form.servico %}
             <div @change="applyTemplate($event.target.value)">
                 {% form_field form.template %}
             </div>
@@ -68,11 +83,28 @@
             </div>
         </div>
 
-        <div class="mt-4">
-            {% form_field form.introduction %}
+        <!-- Cabeçalho / logo -->
+        <div class="mt-4 pt-4 border-t border-slate-200">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">Cabeçalho</h3>
+            {% if form.instance.pk and form.instance.header_image %}
+            <div class="mb-3 flex items-start gap-3">
+                <img src="{{ form.instance.header_image.url }}" alt="Logo atual"
+                     class="h-20 rounded-lg ring-1 ring-slate-200 bg-slate-50 object-contain p-2">
+                <div class="text-xs text-slate-500">
+                    <p>Logo atual.</p>
+                    <p>Para substituir, escolha uma nova imagem abaixo.</p>
+                </div>
+            </div>
+            {% endif %}
+            {% form_field form.header_image %}
+            {% form_field form.use_template_header_image %}
         </div>
 
-        <div class="mt-2">
+        <!-- Conteúdo rich-text -->
+        <div class="mt-4 pt-4 border-t border-slate-200">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">Conteúdo</h3>
+            {% form_field form.introduction %}
+            {% form_field form.body %}
             {% form_field form.terms %}
         </div>
 

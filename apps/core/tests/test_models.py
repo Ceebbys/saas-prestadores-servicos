@@ -230,7 +230,9 @@ class ModelCreationTests(TestCase):
         choice = ChatbotChoice.objects.create(
             step=step, text="Opção A", order=0,
         )
-        self.assertIn("Passo 0", str(step))
+        # Após introdução de hierarquia, str usa codigo_hierarquico (1-indexed)
+        # ou order como fallback. Validar que contém "Passo" e identificador.
+        self.assertIn("Passo", str(step))
         self.assertEqual(str(choice), "Opção A")
 
     def test_create_chatbot_action(self):

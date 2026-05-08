@@ -105,9 +105,10 @@ class FlowUpdateView(EmpresaMixin, HtmxResponseMixin, UpdateView):
         context = super().get_context_data(**kwargs)
         context["steps"] = self.object.steps.prefetch_related(
             "choices"
-        ).order_by("order")
+        ).order_by("codigo_hierarquico", "order")
+        context["steps_tree"] = self.object.steps_tree()
         context["actions"] = self.object.actions.all()
-        context["step_form"] = ChatbotStepForm()
+        context["step_form"] = ChatbotStepForm(flow=self.object)
         context["action_form"] = ChatbotActionForm()
         return context
 
@@ -149,7 +150,7 @@ class StepAddView(EmpresaMixin, View):
 
     def post(self, request, pk):
         flow = get_object_or_404(ChatbotFlow, pk=pk, empresa=request.empresa)
-        form = ChatbotStepForm(request.POST)
+        form = ChatbotStepForm(request.POST, flow=flow)
         if form.is_valid():
             step = form.save(commit=False)
             step.flow = flow
@@ -175,7 +176,7 @@ class StepUpdateView(EmpresaMixin, View):
     def post(self, request, pk, step_pk):
         flow = get_object_or_404(ChatbotFlow, pk=pk, empresa=request.empresa)
         step = get_object_or_404(ChatbotStep, pk=step_pk, flow=flow)
-        form = ChatbotStepForm(request.POST, instance=step)
+        form = ChatbotStepForm(request.POST, instance=step, flow=flow)
         if form.is_valid():
             form.save()
 

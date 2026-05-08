@@ -1,0 +1,74 @@
+{% autoescape off %}<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proposta {{ proposal.number }} — {{ empresa.name }}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#f1f5f9;">
+    <tr>
+        <td align="center" style="padding:32px 16px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:16px;box-shadow:0 1px 3px rgba(15,23,42,.08);overflow:hidden;">
+
+                <!-- Header -->
+                <tr>
+                    <td style="background:linear-gradient(135deg,#4f46e5 0%,#1e293b 100%);padding:28px 40px;text-align:center;">
+                        <h2 style="margin:0;color:#ffffff;font-size:18px;font-weight:600;letter-spacing:-0.2px;">
+                            {{ empresa.name }}
+                        </h2>
+                    </td>
+                </tr>
+
+                <!-- Body -->
+                <tr>
+                    <td style="padding:40px;">
+                        <h1 style="margin:0 0 12px 0;font-size:22px;line-height:1.3;color:#0f172a;font-weight:700;">
+                            Sua proposta está pronta
+                        </h1>
+                        <p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#334155;">
+                            Olá{% if proposal.lead.contato %}, <strong>{{ proposal.lead.contato.name }}</strong>{% endif %}!
+                        </p>
+                        <p style="margin:0 0 24px 0;font-size:15px;line-height:1.6;color:#475569;">
+                            Segue em anexo a proposta <strong>{{ proposal.number }}</strong> — <em>{{ proposal.title }}</em>.
+                        </p>
+
+                        {% if custom_message %}
+                        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#f8fafc;border-left:3px solid #4f46e5;border-radius:6px;margin:0 0 24px 0;">
+                            <tr><td style="padding:16px 20px;">
+                                <p style="margin:0;font-size:14px;line-height:1.6;color:#334155;white-space:pre-wrap;">{{ custom_message }}</p>
+                            </td></tr>
+                        </table>
+                        {% endif %}
+
+                        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 24px 0;">
+                            <tr>
+                                <td style="padding:14px 18px;background-color:#eef2ff;border-radius:10px;">
+                                    <p style="margin:0;font-size:13px;color:#4338ca;">
+                                        <strong>Total:</strong> R$ {{ proposal.total|floatformat:"2" }}
+                                        {% if proposal.valid_until %}
+                                        <br><strong>Válida até:</strong> {{ proposal.valid_until|date:"d/m/Y" }}
+                                        {% endif %}
+                                    </p>
+                                </td>
+                            </tr>
+                        </table>
+
+                        <p style="margin:0 0 24px 0;font-size:14px;line-height:1.6;color:#64748b;">
+                            Estamos à disposição para esclarecer dúvidas. Basta responder a este e-mail.
+                        </p>
+
+                        <hr style="border:0;border-top:1px solid #e2e8f0;margin:0 0 16px 0;">
+                        <p style="margin:0;font-size:12px;line-height:1.5;color:#94a3b8;">
+                            Este e-mail foi enviado pelo {{ empresa.name }} via ServiçoPro.
+                        </p>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+
+</body>
+</html>{% endautoescape %}

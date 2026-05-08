@@ -8,15 +8,16 @@
         </div>
     </div>
 
-    {% if steps %}
+    {% if steps_tree %}
     <div class="divide-y divide-slate-100">
-        {% for step in steps %}
-        <div class="px-6 py-4" x-data="{ editing: false }">
+        {% for entry in steps_tree %}{% with step=entry.step nivel=entry.nivel %}
+        <div class="px-6 py-4" x-data="{ editing: false }" style="padding-left: {{ nivel|add:'1'|add:'1' }}rem;">
             <!-- View mode -->
             <div x-show="!editing" class="flex items-start justify-between">
                 <div class="flex items-start gap-3">
-                    <span class="flex-shrink-0 w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-700">
-                        {{ step.order }}
+                    <span class="flex-shrink-0 inline-flex items-center justify-center min-w-[2.5rem] px-2 h-7 rounded-full bg-indigo-100 text-xs font-bold text-indigo-700"
+                          title="Código hierárquico">
+                        {{ step.codigo_hierarquico|default:step.order }}
                     </span>
                     <div>
                         <p class="text-sm font-medium text-slate-900">{{ step.question_text }}</p>
@@ -45,7 +46,7 @@
                                 <span class="text-slate-400">→</span>
                                 {% if choice.next_step %}
                                     <span class="inline-flex items-center rounded-lg px-2 py-0.5 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200">
-                                        Etapa {{ choice.next_step.order }}: {{ choice.next_step.question_text|truncatechars:40 }}
+                                        Etapa {{ choice.next_step.codigo_hierarquico|default:choice.next_step.order }}: {{ choice.next_step.question_text|truncatechars:40 }}
                                     </span>
                                 {% else %}
                                     <span class="italic text-slate-400">linear (próximo na ordem)</span>
@@ -136,6 +137,24 @@
                             Obrigatório
                         </label>
                     </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">Etapa pai (opcional)</label>
+                            <select name="parent" class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">— Sem pai (etapa raiz) —</option>
+                                {% for s in steps %}{% if s.pk != step.pk %}
+                                <option value="{{ s.pk }}" {% if step.parent_id == s.pk %}selected{% endif %}>
+                                    {{ s.codigo_hierarquico|default:s.order }} — {{ s.question_text|truncatechars:50 }}
+                                </option>
+                                {% endif %}{% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">Subordem (dentro do pai)</label>
+                            <input type="number" name="subordem" value="{{ step.subordem }}" min="0"
+                                   class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                    </div>
                     <div class="flex items-center gap-2 mt-4">
                         <button type="submit"
                                 class="px-4 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
@@ -149,7 +168,7 @@
                 </form>
             </div>
         </div>
-        {% endfor %}
+        {% endwith %}{% endfor %}
     </div>
     {% else %}
     <div class="px-6 py-8 text-center text-sm text-slate-400">Nenhum passo adicionado</div>
@@ -205,6 +224,24 @@
                     <label class="block text-xs font-medium text-slate-600 mb-1">Opções (uma por linha, apenas para tipo Escolha)</label>
                     <textarea name="choices_text" rows="3" placeholder="Solicitar orçamento&#10;Acompanhar serviço&#10;Falar com atendente"
                               class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"></textarea>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Etapa pai (opcional)</label>
+                        <select name="parent" class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">— Sem pai (etapa raiz) —</option>
+                            {% for s in steps %}
+                            <option value="{{ s.pk }}">
+                                {{ s.codigo_hierarquico|default:s.order }} — {{ s.question_text|truncatechars:50 }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Subordem (dentro do pai)</label>
+                        <input type="number" name="subordem" value="0" min="0"
+                               class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
                 </div>
                 <div class="mt-3 flex items-center gap-4">
                     <label class="flex items-center gap-2 text-sm text-slate-600">

@@ -6,8 +6,9 @@
         <thead class="bg-slate-50">
             <tr>
                 <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Nome</th>
-                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Descrição</th>
-                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Duração Est.</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Categoria</th>
+                <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Preço</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Prazo</th>
                 <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
                 <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Ações</th>
             </tr>
@@ -17,12 +18,16 @@
             <tr class="hover:bg-slate-50 transition-colors">
                 <td class="px-5 py-3.5">
                     <span class="text-sm font-medium text-slate-900">{{ st.name }}</span>
+                    {% if st.code %}<span class="ml-2 text-xs text-slate-400 font-mono">{{ st.code }}</span>{% endif %}
                 </td>
                 <td class="px-5 py-3.5 text-sm text-slate-500 hidden md:table-cell">
-                    {{ st.description|default:"—"|truncatewords:10 }}
+                    {{ st.category|default:"—" }}
+                </td>
+                <td class="px-5 py-3.5 text-sm text-slate-700 text-right hidden lg:table-cell">
+                    R$ {{ st.default_price|floatformat:"2" }}
                 </td>
                 <td class="px-5 py-3.5 text-sm text-slate-500 hidden lg:table-cell">
-                    {% if st.estimated_duration_hours %}{{ st.estimated_duration_hours }}h{% else %}—{% endif %}
+                    {% if st.default_prazo_dias %}{{ st.default_prazo_dias }}d{% elif st.estimated_duration_hours %}{{ st.estimated_duration_hours }}h{% else %}—{% endif %}
                 </td>
                 <td class="px-5 py-3.5">
                     {% if st.is_active %}

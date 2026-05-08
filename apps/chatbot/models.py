@@ -45,6 +45,25 @@ class ChatbotFlow(TenantOwnedModel):
         default="Desculpe, não entendi. Pode repetir?",
     )
 
+    # --- Encerramento ---
+    send_completion_message = models.BooleanField(
+        "Enviar mensagem ao concluir",
+        default=False,
+        help_text=(
+            "Se ativo, envia a mensagem abaixo quando o cliente termina o fluxo. "
+            "Se desativo, o fluxo encerra silenciosamente."
+        ),
+    )
+    completion_message = models.TextField(
+        "Mensagem ao concluir",
+        blank=True,
+        default=(
+            "✅ Prontinho! Suas informações foram registradas. "
+            "Um de nossos especialistas vai te chamar em breve."
+        ),
+        help_text="Texto enviado ao final do fluxo (somente se 'Enviar mensagem ao concluir' estiver ativo).",
+    )
+
     # --- Disparo / gatilhos ---
     trigger_type = models.CharField(
         "Tipo de gatilho",
@@ -96,6 +115,39 @@ class ChatbotFlow(TenantOwnedModel):
             if kw.strip()
         ]
 
+    def steps_tree(self):
+        """Retorna passos achatados em ordem visual (preorder DFS).
+
+        Cada item: dict com `step` e `nivel` para a UI indentar a árvore.
+        Ordem: codigo_hierarquico ASC, com fallback em `subordem` e `order`.
+        """
+        from collections import defaultdict
+
+        children_map = defaultdict(list)
+        roots = []
+        for step in self.steps.all():
+            if step.parent_id is None:
+                roots.append(step)
+            else:
+                children_map[step.parent_id].append(step)
+
+        # Ordenar irmãos por subordem -> order -> pk.
+        sort_key = lambda s: (s.subordem or 0, s.order or 0, s.pk)
+        roots.sort(key=sort_key)
+        for siblings in children_map.values():
+            siblings.sort(key=sort_key)
+
+        flat = []
+
+        def visit(step):
+            flat.append({"step": step, "nivel": step.nivel or 0})
+            for child in children_map.get(step.pk, []):
+                visit(child)
+
+        for root in roots:
+            visit(root)
+        return flat
+
 
 class ChatbotStep(TimestampedModel):
     """Passo/pergunta de um fluxo de chatbot."""
@@ -124,6 +176,34 @@ class ChatbotStep(TimestampedModel):
         verbose_name="Fluxo",
     )
     order = models.PositiveIntegerField("Ordem", default=0)
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="children",
+        verbose_name="Etapa pai",
+        help_text="Define o agrupamento hierárquico para visualização (1, 1.1, 1.2…).",
+    )
+    subordem = models.PositiveIntegerField(
+        "Subordem",
+        default=0,
+        help_text="Posição dentro do agrupamento do pai (0, 1, 2…).",
+    )
+    codigo_hierarquico = models.CharField(
+        "Código hierárquico",
+        max_length=64,
+        blank=True,
+        db_index=True,
+        editable=False,
+        help_text="Calculado automaticamente (ex.: '1.2.3').",
+    )
+    nivel = models.PositiveSmallIntegerField(
+        "Nível",
+        default=0,
+        editable=False,
+        help_text="Profundidade na árvore (raiz = 0).",
+    )
     question_text = models.TextField("Pergunta")
     step_type = models.CharField(
         "Tipo",
@@ -148,10 +228,62 @@ class ChatbotStep(TimestampedModel):
     class Meta:
         verbose_name = "Passo do Chatbot"
         verbose_name_plural = "Passos do Chatbot"
-        ordering = ["order"]
+        ordering = ["codigo_hierarquico", "order"]
+        indexes = [
+            models.Index(fields=["flow", "parent"]),
+            models.Index(fields=["flow", "codigo_hierarquico"]),
+        ]
 
     def __str__(self):
-        return f"Passo {self.order}: {self.question_text[:50]}"
+        prefix = self.codigo_hierarquico or str(self.order)
+        return f"Passo {prefix}: {self.question_text[:50]}"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.parent_id and self.pk and self.parent_id == self.pk:
+            raise ValidationError({"parent": "Um passo não pode ser pai de si mesmo."})
+
+        # Detecta ciclo: parent não pode estar na subárvore do step atual.
+        if self.parent_id and self.pk:
+            ancestor = self.parent
+            visited = set()
+            while ancestor is not None:
+                if ancestor.pk == self.pk:
+                    raise ValidationError(
+                        {"parent": "Ciclo detectado: o pai escolhido descende deste passo."}
+                    )
+                if ancestor.pk in visited:
+                    break
+                visited.add(ancestor.pk)
+                ancestor = ancestor.parent
+
+        # Pai precisa ser do mesmo fluxo (defesa multiempresa).
+        if self.parent_id and self.flow_id and self.parent.flow_id != self.flow_id:
+            raise ValidationError({"parent": "O pai precisa pertencer ao mesmo fluxo."})
+
+    def _compute_hierarchy(self):
+        """Calcula codigo_hierarquico e nivel walking até a raiz."""
+        if self.parent_id is None:
+            # Raízes: subordem entre os irmãos no mesmo fluxo sem pai.
+            self.nivel = 0
+            self.codigo_hierarquico = str(self.subordem + 1) if self.subordem is not None else "1"
+            return
+        parent = self.parent
+        if not parent:
+            self.nivel = 0
+            self.codigo_hierarquico = str((self.subordem or 0) + 1)
+            return
+        parent_code = parent.codigo_hierarquico or str((parent.subordem or 0) + 1)
+        self.nivel = parent.nivel + 1
+        self.codigo_hierarquico = f"{parent_code}.{(self.subordem or 0) + 1}"
+
+    def save(self, *args, **kwargs):
+        self._compute_hierarchy()
+        super().save(*args, **kwargs)
+        # Reescreve descendentes para refletir mudança de pai/subordem.
+        for child in self.children.all():
+            child.save()
 
 
 class ChatbotChoice(TimestampedModel):
@@ -173,6 +305,18 @@ class ChatbotChoice(TimestampedModel):
         related_name="incoming_choices",
         verbose_name="Próximo passo",
         help_text="Se vazio, avança para o próximo passo na ordem.",
+    )
+    servico = models.ForeignKey(
+        "operations.ServiceType",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="chatbot_choices",
+        verbose_name="Serviço associado",
+        help_text=(
+            "Quando o cliente escolhe esta opção, o serviço é salvo na sessão "
+            "e usado em automações futuras (lead, proposta)."
+        ),
     )
 
     class Meta:

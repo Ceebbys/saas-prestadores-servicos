@@ -209,6 +209,50 @@ class EvolutionAPIClient:
         lines.append("_Responda com o número da opção (1, 2, 3…) ou o texto._")
         return "\n".join(lines)
 
+    def send_media(
+        self,
+        phone: str,
+        base64_content: str,
+        filename: str,
+        caption: str = "",
+        mime_type: str = "application/pdf",
+    ) -> tuple[bool, str]:
+        """Envia mídia (PDF, imagem, etc.) via Evolution API.
+
+        Returns:
+            (success, error_message). error_message é "" em caso de sucesso.
+        """
+        if not self.configured:
+            return False, "Evolution API não configurada para esta empresa."
+
+        try:
+            import httpx
+
+            url = f"{self.api_url}/message/sendMedia/{self.instance}"
+            payload = {
+                "number": phone,
+                "mediatype": "document",
+                "mimetype": mime_type,
+                "media": base64_content,
+                "fileName": filename,
+            }
+            if caption:
+                payload["caption"] = caption
+            resp = httpx.post(
+                url,
+                headers=self._headers(),
+                json=payload,
+                timeout=30.0,
+            )
+            if resp.status_code >= 400:
+                msg = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                logger.warning("Evolution API send_media failed: %s", msg)
+                return False, msg
+            return True, ""
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Error sending media via Evolution API")
+            return False, str(exc)
+
 
 # ---------------------------------------------------------------------------
 # Views do webhook Evolution API

@@ -147,9 +147,74 @@ class TeamForm(TailwindFormMixin, forms.ModelForm):
 
 
 class ServiceTypeForm(TailwindFormMixin, forms.ModelForm):
+    """Form completo de Serviço Pré-Fixado.
+
+    Sanitiza `default_description` (rich) via apps.proposals.sanitizer.
+    """
+
     class Meta:
         model = ServiceType
-        fields = ["name", "description", "estimated_duration_hours", "is_active"]
+        fields = [
+            "name", "code", "category",
+            "description",
+            "default_description",
+            "default_price", "default_prazo_dias",
+            "estimated_duration_hours",
+            "default_proposal_template", "default_contract_template",
+            "default_pipeline", "default_stage",
+            "tags", "internal_notes",
+            "is_active",
+        ]
         widgets = {
-            "description": forms.Textarea(attrs={"rows": 3}),
+            "description": forms.Textarea(attrs={"rows": 2}),
+            "default_description": forms.Textarea(attrs={"rows": 5, "data-rich-text": "true"}),
+            "internal_notes": forms.Textarea(attrs={"rows": 2}),
+            "tags": forms.TextInput(attrs={"placeholder": "topografia, regularização"}),
         }
+
+    def __init__(self, *args, empresa=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if empresa:
+            from apps.contracts.models import ContractTemplate
+            from apps.crm.models import Pipeline, PipelineStage
+            from apps.proposals.models import ProposalTemplate
+
+            self.fields["default_proposal_template"].queryset = (
+                ProposalTemplate.objects.filter(empresa=empresa)
+            )
+            self.fields["default_contract_template"].queryset = (
+                ContractTemplate.objects.filter(empresa=empresa)
+            )
+            self.fields["default_pipeline"].queryset = (
+                Pipeline.objects.filter(empresa=empresa)
+            )
+            self.fields["default_stage"].queryset = (
+                PipelineStage.objects.filter(pipeline__empresa=empresa)
+                .select_related("pipeline")
+            )
+            self.fields["default_stage"].label_from_instance = (
+                lambda s: f"{s.pipeline.name} — {s.name}"
+            )
+            for f in [
+                "default_proposal_template", "default_contract_template",
+                "default_pipeline", "default_stage",
+            ]:
+                self.fields[f].required = False
+                self.fields[f].empty_label = "—"
+
+    def clean_default_description(self):
+        from apps.proposals.sanitizer import sanitize_proposal_html
+        return sanitize_proposal_html(
+            self.cleaned_data.get("default_description") or ""
+        )
+
+    def clean(self):
+        cleaned = super().clean()
+        stage = cleaned.get("default_stage")
+        pipeline = cleaned.get("default_pipeline")
+        if stage and pipeline and stage.pipeline_id != pipeline.pk:
+            self.add_error(
+                "default_stage",
+                "A etapa precisa pertencer ao pipeline selecionado.",
+            )
+        return cleaned

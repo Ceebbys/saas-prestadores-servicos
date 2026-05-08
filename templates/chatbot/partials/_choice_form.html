@@ -16,40 +16,46 @@
         {% csrf_token %}
         {{ formset.management_form }}
 
-        <div class="space-y-2">
+        <div class="space-y-3">
             {% for form in formset %}
-            <div class="grid grid-cols-12 gap-2 items-start">
-                <div class="col-span-12 sm:col-span-5">
-                    {% if forloop.first %}<label class="block text-xs text-slate-500 mb-1">Texto da opção</label>{% endif %}
-                    {{ form.text }}
-                    {% for err in form.text.errors %}<p class="text-xs text-rose-600 mt-1">{{ err }}</p>{% endfor %}
+            <div class="rounded-lg border border-slate-100 p-3 bg-slate-50/50">
+                <div class="grid grid-cols-12 gap-2 items-start">
+                    <div class="col-span-12 sm:col-span-4">
+                        <label class="block text-xs text-slate-500 mb-1">Texto</label>
+                        {{ form.text }}
+                        {% for err in form.text.errors %}<p class="text-xs text-rose-600 mt-1">{{ err }}</p>{% endfor %}
+                    </div>
+                    <div class="col-span-4 sm:col-span-1">
+                        <label class="block text-xs text-slate-500 mb-1">Ordem</label>
+                        {{ form.order }}
+                    </div>
+                    <div class="col-span-8 sm:col-span-3">
+                        <label class="block text-xs text-slate-500 mb-1">Próxima etapa</label>
+                        {{ form.next_step }}
+                        {% for err in form.next_step.errors %}<p class="text-xs text-rose-600 mt-1">{{ err }}</p>{% endfor %}
+                    </div>
+                    <div class="col-span-12 sm:col-span-3">
+                        <label class="block text-xs text-slate-500 mb-1">Serviço associado</label>
+                        {{ form.servico }}
+                        {% for err in form.servico.errors %}<p class="text-xs text-rose-600 mt-1">{{ err }}</p>{% endfor %}
+                    </div>
+                    <div class="col-span-12 sm:col-span-1 flex items-end h-full pb-1">
+                        {% if form.instance.pk %}
+                            <label class="inline-flex items-center gap-1 text-xs text-rose-600 cursor-pointer">
+                                {{ form.DELETE }}
+                                <span>Excl.</span>
+                            </label>
+                        {% endif %}
+                    </div>
+                    {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
                 </div>
-                <div class="col-span-6 sm:col-span-2">
-                    {% if forloop.first %}<label class="block text-xs text-slate-500 mb-1">Ordem</label>{% endif %}
-                    {{ form.order }}
-                </div>
-                <div class="col-span-6 sm:col-span-4">
-                    {% if forloop.first %}<label class="block text-xs text-slate-500 mb-1">Próxima etapa</label>{% endif %}
-                    {{ form.next_step }}
-                    {% for err in form.next_step.errors %}<p class="text-xs text-rose-600 mt-1">{{ err }}</p>{% endfor %}
-                </div>
-                <div class="col-span-12 sm:col-span-1 flex items-end h-full">
-                    {% if forloop.first %}<label class="block text-xs text-slate-500 mb-1 sm:invisible">.</label>{% endif %}
-                    {% if form.instance.pk %}
-                        <label class="inline-flex items-center gap-1 text-xs text-rose-600 cursor-pointer">
-                            {{ form.DELETE }}
-                            <span>Excluir</span>
-                        </label>
-                    {% endif %}
-                </div>
-                {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
             </div>
             {% endfor %}
         </div>
 
         <p class="text-xs text-slate-400 mt-3">
             💡 Use "Próxima etapa" para configurar o destino de cada opção.
-            Deixe em branco para o cliente seguir o fluxo na ordem (linear).
+            Vincule um <em>Serviço Pré-Fixado</em> para que o atendimento já registre o serviço escolhido pelo cliente.
         </p>
 
         <div class="mt-4 flex items-center justify-end gap-2">

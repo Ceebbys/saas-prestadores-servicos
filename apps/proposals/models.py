@@ -1,3 +1,4 @@
+import uuid
 from decimal import Decimal
 
 from django.db import models
@@ -7,11 +8,24 @@ from apps.core.models import TenantOwnedModel, TimestampedModel
 from apps.core.utils import generate_number
 
 
+def _proposal_header_image_path(instance, filename):
+    """Path por empresa: impede acesso cross-tenant via URL adivinhada."""
+    empresa_id = getattr(instance, "empresa_id", None) or "shared"
+    return f"proposals/headers/{empresa_id}/{filename}"
+
+
 class ProposalTemplate(TenantOwnedModel):
     """Modelo de template reutilizável para propostas."""
 
     name = models.CharField("Nome", max_length=255)
     content = models.TextField("Conteúdo", blank=True)
+    header_image = models.ImageField(
+        "Imagem do cabeçalho (logo)",
+        upload_to=_proposal_header_image_path,
+        blank=True,
+        null=True,
+        help_text="PNG, JPG ou WEBP. Máx. 2MB.",
+    )
     header_content = models.TextField("Conteúdo do Cabeçalho", blank=True)
     footer_content = models.TextField("Conteúdo do Rodapé", blank=True)
     introduction = models.TextField("Introdução padrão", blank=True)
@@ -55,6 +69,7 @@ class Proposal(TenantOwnedModel):
         ACCEPTED = "accepted", "Aceita"
         REJECTED = "rejected", "Rejeitada"
         EXPIRED = "expired", "Expirada"
+        CANCELLED = "cancelled", "Cancelada"
 
     number = models.CharField("Número", max_length=50, db_index=True)
     opportunity = models.ForeignKey(
@@ -79,8 +94,29 @@ class Proposal(TenantOwnedModel):
         related_name="proposals",
         verbose_name="Template",
     )
+    servico = models.ForeignKey(
+        "operations.ServiceType",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="proposals",
+        verbose_name="Serviço Pré-Fixado",
+    )
     title = models.CharField("Título", max_length=255)
+    header_image = models.ImageField(
+        "Imagem do cabeçalho (logo)",
+        upload_to=_proposal_header_image_path,
+        blank=True,
+        null=True,
+        help_text="PNG, JPG ou WEBP. Máx. 2MB. Se vazio, herda do template ou da empresa.",
+    )
+    use_template_header_image = models.BooleanField(
+        "Usar imagem do template",
+        default=True,
+        help_text="Se ativo, herda imagem do template/empresa quando esta proposta não tem própria.",
+    )
     introduction = models.TextField("Introdução", blank=True)
+    body = models.TextField("Corpo da proposta", blank=True)
     terms = models.TextField("Termos e Condições", blank=True)
     status = models.CharField(
         "Status",
@@ -123,6 +159,22 @@ class Proposal(TenantOwnedModel):
     sent_at = models.DateTimeField("Enviada em", null=True, blank=True)
     accepted_at = models.DateTimeField("Aceita em", null=True, blank=True)
     rejected_at = models.DateTimeField("Rejeitada em", null=True, blank=True)
+    viewed_at = models.DateTimeField("Visualizada em", null=True, blank=True)
+    last_email_sent_at = models.DateTimeField(
+        "Último envio por e-mail", null=True, blank=True,
+    )
+    last_whatsapp_sent_at = models.DateTimeField(
+        "Último envio por WhatsApp", null=True, blank=True,
+    )
+
+    # Token para visualização pública (envio por link). UUID4 indexado.
+    public_token = models.UUIDField(
+        "Token público",
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+    )
 
     class Meta:
         verbose_name = "Proposta"
@@ -185,6 +237,51 @@ class ProposalItem(TimestampedModel):
     def save(self, *args, **kwargs):
         self.total = self.quantity * self.unit_price
         super().save(*args, **kwargs)
+
+
+class ProposalStatusHistory(TimestampedModel):
+    """Registro auditável de cada alteração de status de uma proposta."""
+
+    proposal = models.ForeignKey(
+        Proposal,
+        on_delete=models.CASCADE,
+        related_name="status_history",
+        verbose_name="Proposta",
+    )
+    from_status = models.CharField(
+        "De",
+        max_length=20,
+        choices=Proposal.Status.choices,
+        blank=True,
+    )
+    to_status = models.CharField(
+        "Para",
+        max_length=20,
+        choices=Proposal.Status.choices,
+    )
+    changed_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="proposal_status_changes",
+        verbose_name="Alterado por",
+    )
+    note = models.TextField("Observação", blank=True)
+
+    class Meta:
+        verbose_name = "Histórico de Status da Proposta"
+        verbose_name_plural = "Históricos de Status das Propostas"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["proposal", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.proposal.number}: "
+            f"{self.from_status or '∅'} → {self.to_status}"
+        )
 
 
 class ProposalTemplateItem(TimestampedModel):

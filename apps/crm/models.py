@@ -53,6 +53,14 @@ class Lead(TenantOwnedModel):
         related_name="leads",
         verbose_name="Etapa",
     )
+    servico = models.ForeignKey(
+        "operations.ServiceType",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="leads",
+        verbose_name="Serviço Pré-Fixado",
+    )
     notes = models.TextField("Observações", blank=True)
     external_ref = models.CharField(
         "Referência Externa",
