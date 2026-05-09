@@ -174,6 +174,12 @@ urlpatterns = [
     path("whatsapp/save/", views.WhatsAppConfigSaveView.as_view(), name="whatsapp_config_save"),
     path("whatsapp/status/", views.WhatsAppStatusView.as_view(), name="whatsapp_status"),
     path("whatsapp/qrcode/", views.WhatsAppQRCodeView.as_view(), name="whatsapp_qrcode"),
+    # E-mail por tenant (SMTP da empresa)
+    path("email/", views.EmailConfigView.as_view(), name="email_config"),
+    path(
+        "email/test/", views.EmailConfigTestView.as_view(),
+        name="email_config_test",
+    ),
     # Pipeline Automation Rules (gatilhos proposta → pipeline)
     path(
         "automation-rules/",

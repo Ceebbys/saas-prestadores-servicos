@@ -1,5 +1,6 @@
 from django import forms
 
+from apps.accounts.models import EmpresaEmailConfig
 from apps.automation.models import PipelineAutomationRule
 from apps.core.forms import TailwindFormMixin
 from apps.crm.models import PipelineStage
@@ -62,6 +63,40 @@ class ContractTemplateForm(TailwindFormMixin, forms.ModelForm):
         widgets = {
             "content": forms.Textarea(attrs={"rows": 10}),
         }
+
+
+class EmpresaEmailConfigForm(TailwindFormMixin, forms.ModelForm):
+    """Form de SMTP por tenant. Senha é write-only (nunca exibe a atual)."""
+
+    password = forms.CharField(
+        label="Senha SMTP",
+        required=False,
+        widget=forms.PasswordInput(render_value=False),
+        help_text="Deixe em branco para manter a senha atual.",
+    )
+
+    class Meta:
+        model = EmpresaEmailConfig
+        fields = [
+            "host", "port", "username", "use_tls", "use_ssl",
+            "timeout_seconds", "from_email", "from_name", "is_active",
+        ]
+        widgets = {
+            "host": forms.TextInput(attrs={"placeholder": "smtp.gmail.com"}),
+            "port": forms.NumberInput(attrs={"placeholder": "587"}),
+            "username": forms.TextInput(attrs={"placeholder": "exemplo@suaempresa.com.br"}),
+            "from_email": forms.EmailInput(attrs={"placeholder": "exemplo@suaempresa.com.br"}),
+            "from_name": forms.TextInput(attrs={"placeholder": "Sua Empresa"}),
+        }
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        new_password = self.cleaned_data.get("password") or ""
+        if new_password:
+            instance.set_password(new_password)
+        if commit:
+            instance.save()
+        return instance
 
 
 class PipelineAutomationRuleForm(TailwindFormMixin, forms.ModelForm):

@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.db import models
 from django.urls import reverse
 
-from apps.core.models import TenantOwnedModel, TimestampedModel
+from apps.core.models import SoftDeletableModel, TenantOwnedModel, TimestampedModel
 from apps.core.utils import generate_number
 
 
@@ -59,8 +59,16 @@ class ProposalTemplate(TenantOwnedModel):
         super().save(*args, **kwargs)
 
 
-class Proposal(TenantOwnedModel):
-    """Proposta comercial enviada a um lead/oportunidade."""
+class Proposal(SoftDeletableModel, TenantOwnedModel):
+    """Proposta comercial enviada a um lead/oportunidade.
+
+    Soft-delete via `SoftDeletableModel`:
+    - `Proposal.objects` esconde excluídas
+    - `Proposal.all_objects` mostra todas (lixeira)
+    - `proposal.delete()` faz soft-delete
+    - `proposal.hard_delete()` força exclusão real
+    - `proposal.restore()` restaura
+    """
 
     class Status(models.TextChoices):
         DRAFT = "draft", "Rascunho"

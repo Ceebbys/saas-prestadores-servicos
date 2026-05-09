@@ -1,7 +1,16 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from .models import Empresa, Membership, User
+from .models import Empresa, EmpresaEmailConfig, Membership, User
+
+
+@admin.register(EmpresaEmailConfig)
+class EmpresaEmailConfigAdmin(admin.ModelAdmin):
+    list_display = ("empresa", "from_email", "host", "port", "is_active",
+                    "last_tested_at", "last_test_ok")
+    list_filter = ("is_active", "use_tls", "use_ssl")
+    readonly_fields = ("password_encrypted", "last_tested_at",
+                       "last_test_ok", "last_test_error")
 
 
 @admin.register(User)

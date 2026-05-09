@@ -1,7 +1,8 @@
 """Envio de proposta por e-mail.
 
-Reutiliza o backend SMTP global do projeto (configurado para password reset).
-SMTP por tenant é melhoria futura — documentado no plano.
+Resolve SMTP em duas camadas:
+1. `EmpresaEmailConfig` da empresa (se ativa) — usa SMTP do tenant
+2. Fallback para SMTP global do settings
 
 Returns sempre `(success: bool, error_message: str)` — view consome e exibe ao usuário.
 """
@@ -10,7 +11,7 @@ from __future__ import annotations
 import logging
 
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives
+from django.core.mail import EmailMultiAlternatives, get_connection
 from django.template.loader import render_to_string
 from django.utils import timezone
 
@@ -18,6 +19,35 @@ from apps.proposals.models import Proposal
 from apps.proposals.services.render import render_proposal_pdf
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_smtp_for(empresa):
+    """Retorna (connection, from_address) para envio em nome da empresa.
+
+    Se a empresa tem `EmpresaEmailConfig` ativa, usa o SMTP dela.
+    Caso contrário, retorna conexão default (SMTP global) e DEFAULT_FROM_EMAIL.
+    """
+    cfg = getattr(empresa, "email_config", None)
+    if cfg and cfg.is_active and cfg.host and cfg.from_email:
+        connection = get_connection(
+            backend="django.core.mail.backends.smtp.EmailBackend",
+            host=cfg.host,
+            port=cfg.port,
+            username=cfg.username,
+            password=cfg.get_password(),
+            use_tls=cfg.use_tls,
+            use_ssl=cfg.use_ssl,
+            timeout=cfg.timeout_seconds,
+        )
+        return connection, cfg.get_from_address()
+
+    # Fallback: SMTP global
+    from_email = (
+        getattr(settings, "DEFAULT_FROM_EMAIL", None)
+        or getattr(settings, "EMAIL_HOST_USER", "")
+        or "no-reply@servicopro.app"
+    )
+    return None, from_email
 
 
 def send_proposal_email(
@@ -69,17 +99,14 @@ def send_proposal_email(
         )
         html_body = None
 
-    from_email = (
-        getattr(settings, "DEFAULT_FROM_EMAIL", None)
-        or getattr(settings, "EMAIL_HOST_USER", "")
-        or "no-reply@servicopro.app"
-    )
+    connection, from_email = _resolve_smtp_for(proposal.empresa)
 
     msg = EmailMultiAlternatives(
         subject=subject,
         body=text_body,
         from_email=from_email,
         to=[to_email],
+        connection=connection,  # None = SMTP global default
     )
     if html_body:
         msg.attach_alternative(html_body, "text/html")

@@ -1,0 +1,101 @@
+{% extends "layouts/authenticated.html" %}
+{% load ui_tags %}
+
+{% block title %}E-mail (SMTP) — Configurações — ServiçoPro{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm text-slate-500 mb-4">
+    <a href="{% url 'settings_app:index' %}" class="hover:text-indigo-600">Configurações</a>
+    {% icon "chevron-right" "w-3 h-3" %}
+    <span class="text-slate-900 font-medium">E-mail (SMTP)</span>
+</nav>
+{% endblock %}
+
+{% block page_header %}
+<div class="mb-6">
+    <h1 class="text-2xl font-bold text-slate-900">E-mail (SMTP da empresa)</h1>
+    <p class="mt-1 text-sm text-slate-500">
+        Quando configurado, propostas e notificações saem do e-mail da sua empresa em vez do remetente padrão da plataforma.
+    </p>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl space-y-6">
+    {% if config %}
+    <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5 flex items-start justify-between gap-4">
+        <div>
+            <p class="text-xs text-slate-500 uppercase tracking-wider">Status</p>
+            <p class="text-sm text-slate-900 mt-1">
+                {% if config.is_active %}
+                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700">SMTP do tenant ativo</span>
+                {% else %}
+                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-600">Inativo (usando SMTP global)</span>
+                {% endif %}
+            </p>
+            {% if config.last_tested_at %}
+            <p class="text-xs text-slate-500 mt-2">
+                Último teste em {{ config.last_tested_at|date:"d/m/Y H:i" }}:
+                {% if config.last_test_ok %}
+                <span class="text-emerald-700 font-medium">OK</span>
+                {% else %}
+                <span class="text-rose-600 font-medium">falhou — {{ config.last_test_error|truncatechars:80 }}</span>
+                {% endif %}
+            </p>
+            {% endif %}
+        </div>
+        <form method="post" action="{% url 'settings_app:email_config_test' %}">
+            {% csrf_token %}
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm">
+                {% icon "paper-airplane" "w-4 h-4" %}
+                Testar conexão
+            </button>
+        </form>
+    </div>
+    {% endif %}
+
+    <form method="post" class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6">
+        {% csrf_token %}
+
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Servidor SMTP</p>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-x-4">
+            <div class="sm:col-span-2">{% form_field form.host %}</div>
+            {% form_field form.port %}
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+            {% form_field form.username %}
+            {% form_field form.password %}
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-x-4">
+            {% form_field form.use_tls %}
+            {% form_field form.use_ssl %}
+            {% form_field form.timeout_seconds %}
+        </div>
+
+        <hr class="my-6 border-slate-200">
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Remetente</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+            {% form_field form.from_email %}
+            {% form_field form.from_name %}
+        </div>
+        {% form_field form.is_active %}
+
+        <div class="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800 mt-4">
+            <strong>Dica:</strong> use uma senha de app (Gmail/Outlook) — senhas pessoais costumam ser bloqueadas por SMTP.
+            A senha é armazenada criptografada (Fernet) e nunca exibida de volta.
+        </div>
+
+        <div class="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
+            <a href="{% url 'settings_app:index' %}"
+               class="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
+                Voltar
+            </a>
+            <button type="submit"
+                    class="px-6 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
+                Salvar Configuração
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -146,6 +146,42 @@
         </div>
     </a>
 
+    <!-- E-mail (SMTP por tenant) -->
+    <a href="{% url 'settings_app:email_config' %}"
+       class="group bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6 hover:shadow-md hover:ring-indigo-200 transition-all duration-200">
+        <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 w-11 h-11 rounded-lg bg-indigo-50 flex items-center justify-center group-hover:bg-indigo-100 transition-colors">
+                {% icon "envelope" "w-5 h-5 text-indigo-600" %}
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">E-mail (SMTP)</h3>
+                    {% icon "chevron-right" "w-4 h-4 text-slate-300 group-hover:text-indigo-400 transition-colors" %}
+                </div>
+                <p class="mt-1 text-sm text-slate-500">Configure SMTP da empresa para envio de propostas</p>
+                <p class="mt-2 text-xs font-medium text-slate-400">Senha criptografada (Fernet)</p>
+            </div>
+        </div>
+    </a>
+
+    <!-- Automações de Pipeline -->
+    <a href="{% url 'settings_app:automation_rule_list' %}"
+       class="group bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6 hover:shadow-md hover:ring-amber-200 transition-all duration-200">
+        <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 w-11 h-11 rounded-lg bg-amber-50 flex items-center justify-center group-hover:bg-amber-100 transition-colors">
+                {% icon "bolt" "w-5 h-5 text-amber-600" %}
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-slate-900 group-hover:text-amber-700 transition-colors">Automações de Pipeline</h3>
+                    {% icon "chevron-right" "w-4 h-4 text-slate-300 group-hover:text-amber-400 transition-colors" %}
+                </div>
+                <p class="mt-1 text-sm text-slate-500">Mover leads automaticamente quando uma proposta muda de status</p>
+                <p class="mt-2 text-xs font-medium text-slate-400">Gatilhos configuráveis</p>
+            </div>
+        </div>
+    </a>
+
     <!-- Contas Bancárias -->
     <a href="{% url 'settings_app:bank_account_list' %}"
        class="group bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6 hover:shadow-md hover:ring-indigo-200 transition-all duration-200">

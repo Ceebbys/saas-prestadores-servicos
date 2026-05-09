@@ -436,7 +436,8 @@ class ProposalDeleteView(EmpresaMixin, View):
         proposal = get_object_or_404(
             Proposal, pk=pk, empresa=request.empresa
         )
-        # Snapshot antes de deletar
+        # Snapshot antes de excluir (mantido em AutomationLog para auditoria
+        # mesmo que a proposta seja restaurada depois — registra a ação)
         snapshot = {
             "number": proposal.number,
             "title": proposal.title,
@@ -446,6 +447,7 @@ class ProposalDeleteView(EmpresaMixin, View):
             "lead_name": proposal.lead.name if proposal.lead else None,
             "deleted_by_user_id": request.user.pk if request.user.is_authenticated else None,
             "deleted_at": timezone.now().isoformat(),
+            "soft": True,
         }
         AutomationLog.objects.create(
             empresa=request.empresa,
@@ -456,9 +458,89 @@ class ProposalDeleteView(EmpresaMixin, View):
             metadata={"event": "proposal_deleted", **snapshot},
         )
         number = proposal.number
-        proposal.delete()
-        messages.success(request, f"Proposta {number} excluída com sucesso.")
+        proposal.delete()  # soft-delete: seta deleted_at
+        messages.success(
+            request,
+            f"Proposta {number} movida para a lixeira. "
+            f"Você pode restaurá-la em /proposals/trash/.",
+        )
         return redirect("proposals:list")
+
+
+class ProposalTrashView(EmpresaMixin, ListView):
+    """Lixeira: lista propostas soft-deleted da empresa."""
+
+    template_name = "proposals/proposal_trash.html"
+    context_object_name = "proposals"
+    paginate_by = 30
+
+    def get_queryset(self):
+        return (
+            Proposal.all_objects.filter(
+                empresa=self.request.empresa,
+                deleted_at__isnull=False,
+            )
+            .select_related("lead")
+            .order_by("-deleted_at")
+        )
+
+
+class ProposalRestoreView(EmpresaMixin, View):
+    """Restaura uma proposta soft-deleted."""
+
+    def post(self, request, pk):
+        from apps.automation.models import AutomationLog
+
+        proposal = get_object_or_404(
+            Proposal.all_objects, pk=pk,
+            empresa=request.empresa, deleted_at__isnull=False,
+        )
+        proposal.restore()
+        AutomationLog.objects.create(
+            empresa=request.empresa,
+            action=AutomationLog.Action.PROPOSAL_DELETED,  # reusa enum
+            entity_type=AutomationLog.EntityType.PROPOSAL,
+            entity_id=proposal.pk,
+            status=AutomationLog.Status.SUCCESS,
+            metadata={
+                "event": "proposal_restored",
+                "number": proposal.number,
+                "restored_by_user_id": request.user.pk,
+                "restored_at": timezone.now().isoformat(),
+            },
+        )
+        messages.success(request, f"Proposta {proposal.number} restaurada.")
+        return redirect("proposals:trash")
+
+
+class ProposalHardDeleteView(EmpresaMixin, View):
+    """Exclusão definitiva (apenas a partir da lixeira)."""
+
+    def post(self, request, pk):
+        from apps.automation.models import AutomationLog
+
+        proposal = get_object_or_404(
+            Proposal.all_objects, pk=pk,
+            empresa=request.empresa, deleted_at__isnull=False,
+        )
+        AutomationLog.objects.create(
+            empresa=request.empresa,
+            action=AutomationLog.Action.PROPOSAL_DELETED,
+            entity_type=AutomationLog.EntityType.PROPOSAL,
+            entity_id=proposal.pk,
+            status=AutomationLog.Status.SUCCESS,
+            metadata={
+                "event": "proposal_hard_deleted",
+                "number": proposal.number,
+                "hard_deleted_by_user_id": request.user.pk,
+            },
+        )
+        number = proposal.number
+        proposal.hard_delete()
+        messages.success(
+            request, f"Proposta {number} excluída definitivamente.",
+        )
+        return redirect("proposals:trash")
 
 
 # ---------------------------------------------------------------------------

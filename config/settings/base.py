@@ -177,6 +177,11 @@ DEFAULT_FROM_EMAIL = os.getenv(
 )
 SERVER_EMAIL = os.getenv("SERVER_EMAIL", DEFAULT_FROM_EMAIL)
 
+# Chave Fernet para criptografar campos sensíveis (senhas SMTP por tenant).
+# Gere com: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Em DEBUG, se ausente, deriva de SECRET_KEY (apps/core/encryption.py).
+FERNET_KEY = os.getenv("FERNET_KEY", "")
+
 # Password reset tokens expire after this many days
 PASSWORD_RESET_TIMEOUT = int(os.getenv("PASSWORD_RESET_TIMEOUT_DAYS", "1")) * 24 * 60 * 60
 

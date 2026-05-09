@@ -34,6 +34,17 @@ urlpatterns = [
         views.ProposalDeleteView.as_view(),
         name="delete",
     ),
+    path("trash/", views.ProposalTrashView.as_view(), name="trash"),
+    path(
+        "<int:pk>/restore/",
+        views.ProposalRestoreView.as_view(),
+        name="restore",
+    ),
+    path(
+        "<int:pk>/hard-delete/",
+        views.ProposalHardDeleteView.as_view(),
+        name="hard_delete",
+    ),
     path(
         "<int:pk>/send/email/",
         views.ProposalSendEmailView.as_view(),

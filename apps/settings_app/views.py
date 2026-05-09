@@ -1263,6 +1263,108 @@ class WhatsAppQRCodeView(EmpresaMixin, View):
 
 
 # ---------------------------------------------------------------------------
+# SMTP por tenant — EmpresaEmailConfig (RV04-A)
+# ---------------------------------------------------------------------------
+
+from apps.accounts.models import EmpresaEmailConfig  # noqa: E402
+
+from .forms import EmpresaEmailConfigForm  # noqa: E402
+
+
+class EmailConfigView(EmpresaMixin, View):
+    """Tela única (singleton) de configuração SMTP da empresa."""
+
+    template_name = "settings/email_config.html"
+
+    def _get_or_none(self, empresa):
+        return EmpresaEmailConfig.objects.filter(empresa=empresa).first()
+
+    def get(self, request):
+        instance = self._get_or_none(request.empresa)
+        form = EmpresaEmailConfigForm(instance=instance)
+        from django.shortcuts import render
+
+        return render(request, self.template_name, {
+            "form": form, "config": instance,
+        })
+
+    def post(self, request):
+        instance = self._get_or_none(request.empresa)
+        form = EmpresaEmailConfigForm(request.POST, instance=instance)
+        if form.is_valid():
+            cfg = form.save(commit=False)
+            cfg.empresa = request.empresa
+            cfg.save()
+            messages.success(request, "Configuração de e-mail salva.")
+            return redirect("settings_app:email_config")
+        from django.shortcuts import render
+
+        return render(request, self.template_name, {
+            "form": form, "config": instance,
+        })
+
+
+class EmailConfigTestView(EmpresaMixin, View):
+    """Envia um e-mail de teste para o usuário logado usando o SMTP do tenant."""
+
+    def post(self, request):
+        from django.core.mail import EmailMessage, get_connection
+        from django.utils import timezone
+
+        cfg = EmpresaEmailConfig.objects.filter(empresa=request.empresa).first()
+        if not cfg or not cfg.host:
+            messages.error(request, "Configure o SMTP antes de testar.")
+            return redirect("settings_app:email_config")
+
+        if not request.user.email:
+            messages.error(
+                request,
+                "Seu usuário não tem e-mail cadastrado para receber o teste.",
+            )
+            return redirect("settings_app:email_config")
+
+        try:
+            connection = get_connection(
+                backend="django.core.mail.backends.smtp.EmailBackend",
+                host=cfg.host, port=cfg.port,
+                username=cfg.username, password=cfg.get_password(),
+                use_tls=cfg.use_tls, use_ssl=cfg.use_ssl,
+                timeout=cfg.timeout_seconds,
+            )
+            EmailMessage(
+                subject=f"[ServiçoPro] Teste de SMTP — {request.empresa.name}",
+                body=(
+                    "Este é um e-mail de teste enviado pelo SMTP configurado "
+                    f"em sua empresa ({request.empresa.name}). Se você recebeu, "
+                    "sua configuração está funcionando.\n\n"
+                    f"Enviado em: {timezone.now():%d/%m/%Y %H:%M:%S}"
+                ),
+                from_email=cfg.get_from_address(),
+                to=[request.user.email],
+                connection=connection,
+            ).send(fail_silently=False)
+            cfg.last_tested_at = timezone.now()
+            cfg.last_test_ok = True
+            cfg.last_test_error = ""
+            cfg.save(update_fields=[
+                "last_tested_at", "last_test_ok", "last_test_error",
+            ])
+            messages.success(
+                request,
+                f"E-mail de teste enviado para {request.user.email}.",
+            )
+        except Exception as exc:  # noqa: BLE001
+            cfg.last_tested_at = timezone.now()
+            cfg.last_test_ok = False
+            cfg.last_test_error = str(exc)[:500]
+            cfg.save(update_fields=[
+                "last_tested_at", "last_test_ok", "last_test_error",
+            ])
+            messages.error(request, f"Falha no teste: {exc}")
+        return redirect("settings_app:email_config")
+
+
+# ---------------------------------------------------------------------------
 # Pipeline Automation Rules — gatilhos proposta → pipeline (Etapa 7)
 # ---------------------------------------------------------------------------
 
