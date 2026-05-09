@@ -156,6 +156,17 @@ python manage.py runserver 8000
 
 ### Em produção (VPS)
 
+**Pré-requisito:** WeasyPrint precisa de libs nativas no sistema. Instalar uma única vez por host (Ubuntu 24.04):
+
+```bash
+sudo apt-get install -y \
+    libpango-1.0-0 libpangoft2-1.0-0 \
+    libcairo2 libgdk-pixbuf-2.0-0 \
+    shared-mime-info fonts-liberation
+```
+
+Sem essas libs, o `import weasyprint` carrega mas `dlopen('libpango-1.0-0')` falha em runtime — a view de PDF cai na exceção e redireciona silenciosamente para o detalhe da proposta. Sintoma: botão "PDF" não baixa nada, só recarrega a página.
+
 Após `git pull` e `pip install -r requirements/base.txt`:
 
 ```bash
