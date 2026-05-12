@@ -64,6 +64,86 @@
                         </button>
                         <div id="choice-editor-mount-{{ step.pk }}" class="mt-3"></div>
                         {% endif %}
+
+                        {# RV05-G — Ações automáticas desta etapa (inline) #}
+                        <div class="mt-3 pt-3 border-t border-slate-100" x-data="{ addAction: false }">
+                            <div class="flex items-center justify-between">
+                                <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                    Ações automáticas desta etapa
+                                </p>
+                                <button @click="addAction = !addAction" type="button"
+                                        class="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+                                    {% icon "plus" "w-3 h-3" %}
+                                    <span x-text="addAction ? 'Cancelar' : 'Nova ação'"></span>
+                                </button>
+                            </div>
+                            {% with step_actions=step.actions.all %}
+                            {% if step_actions %}
+                            <div class="mt-2 space-y-1.5">
+                                {% for action in step_actions %}
+                                <div class="flex items-center justify-between gap-2 text-xs bg-amber-50 rounded-lg px-2.5 py-1.5 ring-1 ring-amber-200">
+                                    <div class="flex items-center gap-2">
+                                        {% icon "bolt" "w-3.5 h-3.5 text-amber-700" %}
+                                        <span class="font-medium text-amber-900">
+                                            {{ action.get_action_type_display }}
+                                        </span>
+                                        <span class="text-amber-700">· ordem {{ action.order }}</span>
+                                        {% if not action.is_active %}
+                                        <span class="text-slate-400 italic">(inativa)</span>
+                                        {% endif %}
+                                    </div>
+                                    <form method="post" action="{% url 'chatbot:action_delete' form.instance.pk action.pk %}"
+                                          onsubmit="return confirm('Remover esta ação?')" class="inline-flex">
+                                        {% csrf_token %}
+                                        <button type="submit" class="p-0.5 text-amber-600 hover:text-red-600" title="Remover ação">
+                                            {% icon "x-mark" "w-3.5 h-3.5" %}
+                                        </button>
+                                    </form>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% else %}
+                            <p class="mt-1 text-xs text-slate-400 italic">Nenhuma ação configurada para esta etapa.</p>
+                            {% endif %}
+                            {% endwith %}
+
+                            {# Mini-form inline para adicionar ação vinculada a este step #}
+                            <div x-show="addAction" x-cloak class="mt-3 p-3 bg-slate-50 rounded-lg ring-1 ring-slate-200">
+                                <form method="post" action="{% url 'chatbot:action_add' form.instance.pk %}" class="flex items-end gap-2 flex-wrap">
+                                    {% csrf_token %}
+                                    {# step + trigger fixos: vinculado a esta etapa #}
+                                    <input type="hidden" name="step" value="{{ step.pk }}">
+                                    <input type="hidden" name="trigger" value="on_step">
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-600 mb-1">Tipo de ação</label>
+                                        <select name="action_type" class="rounded-lg border-slate-300 text-xs focus:border-indigo-500 focus:ring-indigo-500">
+                                            <option value="create_lead">Criar lead</option>
+                                            <option value="update_pipeline">Atualizar pipeline</option>
+                                            <option value="apply_tag">Aplicar tag</option>
+                                            <option value="link_servico">Vincular serviço</option>
+                                            <option value="send_email">Enviar e-mail</option>
+                                            <option value="send_whatsapp">Enviar WhatsApp</option>
+                                            <option value="create_task">Criar tarefa</option>
+                                            <option value="register_event">Registrar evento</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-600 mb-1">Ordem</label>
+                                        <input type="number" name="order" value="0" min="0" style="width: 70px;"
+                                               class="rounded-lg border-slate-300 text-xs focus:border-indigo-500 focus:ring-indigo-500">
+                                    </div>
+                                    <label class="flex items-center gap-1 text-xs text-slate-600 pb-2">
+                                        <input type="checkbox" name="is_active" checked
+                                               class="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600">
+                                        Ativa
+                                    </label>
+                                    <button type="submit"
+                                            class="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
+                                        Adicionar
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="flex items-center gap-1">
@@ -252,13 +332,22 @@
                                class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
                 </div>
-                <div class="mt-3 flex items-center gap-4">
+                <div class="mt-3 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
                     <label class="flex items-center gap-2 text-sm text-slate-600">
                         <input type="checkbox" name="is_required" checked
                                class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600">
                         Obrigatório
                     </label>
+                    {# RV05-G — checkbox is_final disponível já na criação #}
+                    <label class="flex items-center gap-2 text-sm text-slate-600">
+                        <input type="checkbox" name="is_final"
+                               class="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-600">
+                        <span class="font-medium">Encerrar conversa neste passo</span>
+                    </label>
                 </div>
+                <p class="text-xs text-slate-400 mt-1">
+                    Marque "Encerrar conversa" se este passo for o fim do atendimento automático.
+                </p>
                 <div class="mt-4">
                     <button type="submit"
                             class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
