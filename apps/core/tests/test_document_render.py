@@ -62,6 +62,30 @@ class MediaUrlFetcherTests(TestCase):
             mock_storage.exists.assert_not_called()
             mock_default.assert_called_once()
 
+
+class MakeMediaUrlFetcherTests(TestCase):
+    """Factory `_make_media_url_fetcher` permite host do request como interno."""
+
+    def test_includes_request_host_in_allowed_set(self):
+        from apps.core.document_render.pdf import _make_media_url_fetcher
+        fetcher = _make_media_url_fetcher(frozenset({"servicos.cebs-server.cloud"}))
+        with patch("apps.core.document_render.pdf.default_storage") as mock_storage:
+            mock_storage.exists.return_value = True
+            mock_storage.open.return_value = io.BytesIO(b"DATA")
+            result = fetcher("https://servicos.cebs-server.cloud/media/proposals/headers/1/logo.png")
+            self.assertEqual(result["file_obj"].read(), b"DATA")
+
+    def test_factory_still_blocks_external_attacker(self):
+        from apps.core.document_render.pdf import _make_media_url_fetcher
+        fetcher = _make_media_url_fetcher(frozenset({"servicos.cebs-server.cloud"}))
+        with patch("apps.core.document_render.pdf.default_storage") as mock_storage, \
+             patch("weasyprint.urls.default_url_fetcher") as mock_default:
+            mock_default.return_value = {"file_obj": io.BytesIO(b""), "mime_type": "image/png"}
+            # Host externo — não passa pelo storage
+            fetcher("https://attacker.com/media/secret.png")
+            mock_storage.exists.assert_not_called()
+            mock_default.assert_called_once()
+
     def test_media_missing_falls_through_to_default(self):
         with patch("apps.core.document_render.pdf.default_storage") as mock_storage, \
              patch("weasyprint.urls.default_url_fetcher") as mock_default:
