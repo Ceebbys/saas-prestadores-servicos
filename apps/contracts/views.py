@@ -198,3 +198,81 @@ class ContractStatusView(EmpresaMixin, View):
             )
             return HttpResponse(html)
         return redirect(contract.get_absolute_url())
+
+
+# ---------------------------------------------------------------------------
+# RV05 #11 — Preview / PDF / DOCX (padronização com Proposal)
+# ---------------------------------------------------------------------------
+
+
+class ContractPreviewView(EmpresaMixin, View):
+    """Renderiza preview HTML (mesmo template do PDF)."""
+
+    def get(self, request, pk):
+        from django.shortcuts import render
+        from apps.contracts.services.render import build_contract_context
+
+        contract = get_object_or_404(
+            Contract.objects.select_related("lead", "lead__contato", "template", "empresa"),
+            pk=pk, empresa=request.empresa,
+        )
+        ctx = build_contract_context(contract, request=request)
+        ctx["preview_mode"] = True
+        return render(request, "contracts/render/contract_print.html", ctx)
+
+
+class ContractPDFView(EmpresaMixin, View):
+    """Gera e devolve PDF do contrato."""
+
+    def get(self, request, pk):
+        from apps.contracts.services.render import render_contract_pdf
+        import logging
+
+        contract = get_object_or_404(
+            Contract.objects.select_related("lead", "lead__contato", "template", "empresa"),
+            pk=pk, empresa=request.empresa,
+        )
+        try:
+            pdf_bytes = render_contract_pdf(contract, request=request)
+        except ValueError as exc:
+            messages.error(request, f"Não foi possível gerar PDF: {exc}")
+            return redirect(contract.get_absolute_url())
+        except Exception:  # noqa: BLE001
+            logging.getLogger(__name__).exception(
+                "Falha inesperada ao gerar PDF do contrato %s (%s)",
+                contract.pk, contract.number,
+            )
+            messages.error(
+                request,
+                "Não foi possível gerar o PDF agora. Tente novamente — se persistir, contate o suporte.",
+            )
+            return redirect(contract.get_absolute_url())
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = (
+            f'attachment; filename="Contrato_{contract.number}.pdf"'
+        )
+        return response
+
+
+class ContractDOCXView(EmpresaMixin, View):
+    """Gera e devolve DOCX estruturado (limitação: rich vira plain)."""
+
+    DOCX_CT = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+    def get(self, request, pk):
+        from apps.contracts.services.render import render_contract_docx
+
+        contract = get_object_or_404(
+            Contract.objects.select_related("lead", "lead__contato", "template", "empresa"),
+            pk=pk, empresa=request.empresa,
+        )
+        try:
+            docx_bytes = render_contract_docx(contract)
+        except Exception as exc:  # noqa: BLE001
+            messages.error(request, f"Não foi possível gerar DOCX: {exc}")
+            return redirect(contract.get_absolute_url())
+        response = HttpResponse(docx_bytes, content_type=self.DOCX_CT)
+        response["Content-Disposition"] = (
+            f'attachment; filename="Contrato_{contract.number}.docx"'
+        )
+        return response

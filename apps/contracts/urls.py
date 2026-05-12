@@ -24,4 +24,12 @@ urlpatterns = [
         views.ContractDeleteView.as_view(),
         name="delete",
     ),
+    # RV05 #11 — render compartilhado
+    path(
+        "<int:pk>/preview/",
+        views.ContractPreviewView.as_view(),
+        name="preview",
+    ),
+    path("<int:pk>/pdf/", views.ContractPDFView.as_view(), name="pdf"),
+    path("<int:pk>/docx/", views.ContractDOCXView.as_view(), name="docx"),
 ]

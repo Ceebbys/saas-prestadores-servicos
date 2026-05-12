@@ -1,7 +1,22 @@
 {% extends "layouts/authenticated.html" %}
-{% load ui_tags %}
+{% load static ui_tags %}
 
 {% block title %}{% if form.instance.pk %}Editar Contrato{% else %}Novo Contrato{% endif %} — ServiçoPro{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/quill/quill.snow.css' %}">
+<link rel="stylesheet" href="{% static 'css/quill-fonts.css' %}">
+<style>
+    .rich-text-editor .ql-editor { min-height: 140px; font-size: 14px; line-height: 1.5; }
+    .rich-text-editor .ql-toolbar { border: none; border-bottom: 1px solid #e2e8f0; }
+    .rich-text-editor .ql-container { border: none; }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/quill/quill.js' %}"></script>
+<script src="{% static 'js/rich-text-init.js' %}"></script>
+{% endblock %}
 
 {% block breadcrumb %}
 <nav class="flex items-center gap-2 text-sm text-slate-500 mb-4">
@@ -14,15 +29,19 @@
 {% block page_header %}
 <div class="mb-6">
     <h1 class="text-2xl font-bold text-slate-900">{% if form.instance.pk %}Editar Contrato{% else %}Novo Contrato{% endif %}</h1>
-    <p class="mt-1 text-sm text-slate-500">{% if form.instance.pk %}Atualize os dados do contrato{% else %}Crie um novo contrato de serviço{% endif %}</p>
+    <p class="mt-1 text-sm text-slate-500">
+        {% if form.instance.pk %}Atualize os dados do contrato{% else %}Crie um novo contrato com cabeçalho, conteúdo rico e rodapé{% endif %}
+    </p>
 </div>
 {% endblock %}
 
 {% block content %}
-<div class="max-w-2xl">
-    <form method="post" class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6">
+<div class="max-w-3xl">
+    <form method="post" enctype="multipart/form-data"
+          class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6">
         {% csrf_token %}
 
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Dados</p>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
             {% form_field form.title %}
             {% form_field form.lead %}
@@ -33,13 +52,39 @@
             {% form_field form.end_date %}
         </div>
 
-        <div class="mt-2">
-            {% form_field form.content %}
+        <hr class="my-6 border-slate-200">
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Cabeçalho</p>
+        {% if form.instance.pk and form.instance.header_image %}
+        <div class="mb-3 flex items-start gap-3">
+            <img src="{{ form.instance.header_image.url }}" alt="Cabeçalho atual"
+                 class="h-20 rounded-lg ring-1 ring-slate-200 bg-slate-50 object-contain p-2">
+            <div class="text-xs text-slate-500">
+                <p>Imagem atual. Para substituir, escolha uma nova abaixo.</p>
+            </div>
         </div>
+        {% endif %}
+        {% form_field form.header_image %}
+        {% form_field form.header_content %}
 
-        <div class="mt-2">
-            {% form_field form.notes %}
+        <hr class="my-6 border-slate-200">
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Conteúdo</p>
+        {% form_field form.introduction %}
+        {% form_field form.body %}
+        {% form_field form.terms %}
+
+        <hr class="my-6 border-slate-200">
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Rodapé</p>
+        {% if form.instance.pk and form.instance.footer_image %}
+        <div class="mb-3 flex items-start gap-3">
+            <img src="{{ form.instance.footer_image.url }}" alt="Rodapé atual"
+                 class="h-16 rounded-lg ring-1 ring-slate-200 bg-slate-50 object-contain p-2">
         </div>
+        {% endif %}
+        {% form_field form.footer_image %}
+        {% form_field form.footer_content %}
+
+        <hr class="my-6 border-slate-200">
+        {% form_field form.notes %}
 
         <div class="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
             <a href="{% if form.instance.pk %}{% url 'contracts:detail' form.instance.pk %}{% else %}{% url 'contracts:list' %}{% endif %}"

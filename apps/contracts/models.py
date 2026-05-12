@@ -3,16 +3,53 @@ from decimal import Decimal
 from django.db import models
 from django.urls import reverse
 
-from apps.core.models import TenantOwnedModel
+from apps.core.models import SoftDeletableModel, TenantOwnedModel
 from apps.core.utils import generate_number
 
 
+def _contract_header_image_path(instance, filename):
+    """Path isolado por empresa para imagens de cabeçalho de contrato."""
+    empresa_id = getattr(instance, "empresa_id", None) or "shared"
+    return f"contracts/headers/{empresa_id}/{filename}"
+
+
+def _contract_footer_image_path(instance, filename):
+    empresa_id = getattr(instance, "empresa_id", None) or "shared"
+    return f"contracts/footers/{empresa_id}/{filename}"
+
+
 class ContractTemplate(TenantOwnedModel):
-    """Template reutilizável para contratos."""
+    """Template reutilizável para contratos (RV05 #11 — padronizado com proposta)."""
 
     name = models.CharField("Nome", max_length=255)
-    content = models.TextField("Conteúdo")
+    content = models.TextField(
+        "Conteúdo (legado)",
+        blank=True,
+        help_text="Campo legado. Use 'body' (rich-text) para novos templates.",
+    )
     is_default = models.BooleanField("Padrão", default=False)
+
+    # RV05 #11 — Cabeçalho/rodapé/rich
+    header_image = models.ImageField(
+        "Imagem do cabeçalho",
+        upload_to=_contract_header_image_path,
+        blank=True, null=True,
+        help_text="PNG, JPG ou WEBP. Máx. 2MB.",
+    )
+    header_content = models.TextField("Cabeçalho (texto rich)", blank=True)
+    introduction = models.TextField("Introdução padrão", blank=True)
+    body = models.TextField(
+        "Corpo do contrato (rich)",
+        blank=True,
+        help_text="Substitui o campo 'content' legado.",
+    )
+    terms = models.TextField("Termos padrão", blank=True)
+    footer_image = models.ImageField(
+        "Imagem do rodapé",
+        upload_to=_contract_footer_image_path,
+        blank=True, null=True,
+    )
+    footer_content = models.TextField("Rodapé (texto rich)", blank=True)
 
     class Meta:
         verbose_name = "Template de Contrato"
@@ -30,8 +67,13 @@ class ContractTemplate(TenantOwnedModel):
         super().save(*args, **kwargs)
 
 
-class Contract(TenantOwnedModel):
-    """Contrato firmado com um lead/cliente."""
+class Contract(SoftDeletableModel, TenantOwnedModel):
+    """Contrato firmado com um lead/cliente.
+
+    Soft-delete: Contract.objects esconde cancelados/excluídos; all_objects
+    inclui tudo (lixeira). Lead.contract = PROTECT preserva a relação
+    documental ao tentar excluir o Lead.
+    """
 
     class Status(models.TextChoices):
         DRAFT = "draft", "Rascunho"
@@ -70,7 +112,37 @@ class Contract(TenantOwnedModel):
         verbose_name="Template",
     )
     title = models.CharField("Título", max_length=255)
-    content = models.TextField("Conteúdo")
+    # Campo legado RV03/RV04 — preserva conteúdo de contratos antigos.
+    # Drop planejado para RV06 após migration RunPython sanitizar e copiar
+    # para `body`. Templates antigos ainda podem renderizar via fallback.
+    content = models.TextField(
+        "Conteúdo (legado)",
+        blank=True,
+        help_text="Campo legado. Use 'body' (rich-text) para novos contratos.",
+    )
+
+    # RV05 #11 — Padronização com Proposta.
+    header_image = models.ImageField(
+        "Imagem do cabeçalho",
+        upload_to=_contract_header_image_path,
+        blank=True, null=True,
+        help_text="PNG, JPG ou WEBP. Máx. 2MB. Se vazio, herda do template.",
+    )
+    header_content = models.TextField("Cabeçalho (texto rich)", blank=True)
+    introduction = models.TextField("Introdução", blank=True)
+    body = models.TextField(
+        "Corpo do contrato (rich)",
+        blank=True,
+        help_text="Substitui o campo 'content' legado. Aceita HTML formatado.",
+    )
+    terms = models.TextField("Termos e condições", blank=True)
+    footer_image = models.ImageField(
+        "Imagem do rodapé",
+        upload_to=_contract_footer_image_path,
+        blank=True, null=True,
+    )
+    footer_content = models.TextField("Rodapé (texto rich)", blank=True)
+
     value = models.DecimalField(
         "Valor", max_digits=12, decimal_places=2, default=Decimal("0.00")
     )

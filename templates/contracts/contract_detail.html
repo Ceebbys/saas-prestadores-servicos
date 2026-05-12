@@ -89,6 +89,22 @@
             </button>
         </form>
         {% endif %}
+        <!-- RV05 #11 — Documentos (alinhado com Proposal) -->
+        <a href="{% url 'contracts:preview' contract.pk %}" target="_blank"
+           class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50 transition-colors">
+            {% icon "eye" "w-4 h-4" %}
+            Visualizar
+        </a>
+        <a href="{% url 'contracts:pdf' contract.pk %}"
+           class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50 transition-colors">
+            {% icon "document-arrow-down" "w-4 h-4" %}
+            PDF
+        </a>
+        <a href="{% url 'contracts:docx' contract.pk %}"
+           class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50 transition-colors">
+            {% icon "document-arrow-down" "w-4 h-4" %}
+            Word
+        </a>
         {% if contract.status == 'draft' or contract.status == 'sent' %}
         <a href="{% url 'contracts:edit' contract.pk %}"
            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50 transition-colors">
@@ -191,11 +207,63 @@
 
     <!-- Main Content -->
     <div class="lg:col-span-2 space-y-6">
-        <!-- Contract Content -->
-        {% if contract.content %}
+        <!-- Header image (RV05 #11) -->
+        {% if contract.header_image %}
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5 flex items-center justify-center">
+            <img src="{{ contract.header_image.url }}" alt="Cabeçalho"
+                 class="max-h-32 object-contain">
+        </div>
+        {% endif %}
+
+        <!-- Header content rich -->
+        {% if contract.header_content %}
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">Cabeçalho</h3>
+            <div class="text-sm text-slate-700 prose prose-sm max-w-none">{{ contract.header_content|safe }}</div>
+        </div>
+        {% endif %}
+
+        {# Introduction (RV05 #11) #}
+        {% if contract.introduction %}
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">Introdução</h3>
+            <div class="text-sm text-slate-700 prose prose-sm max-w-none">{{ contract.introduction|safe }}</div>
+        </div>
+        {% endif %}
+
+        <!-- Contract Content — body (RV05 rich) com dual-read para content legado -->
+        {% if contract.body %}
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">Conteúdo do Contrato</h3>
+            <div class="text-sm text-slate-700 prose prose-sm max-w-none">{{ contract.body|safe }}</div>
+        </div>
+        {% elif contract.content %}
         <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
             <h3 class="text-sm font-semibold text-slate-700 mb-3">Conteúdo do Contrato</h3>
             <div class="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed">{{ contract.content }}</div>
+        </div>
+        {% endif %}
+
+        {# Terms #}
+        {% if contract.terms %}
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">Termos e Condições</h3>
+            <div class="text-sm text-slate-700 prose prose-sm max-w-none">{{ contract.terms|safe }}</div>
+        </div>
+        {% endif %}
+
+        {# Rodapé #}
+        {% if contract.footer_content or contract.footer_image %}
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">Rodapé</h3>
+            {% if contract.footer_image %}
+            <div class="mb-3 flex items-center justify-center">
+                <img src="{{ contract.footer_image.url }}" alt="Rodapé" class="max-h-20 object-contain">
+            </div>
+            {% endif %}
+            {% if contract.footer_content %}
+            <div class="text-sm text-slate-600 prose prose-sm max-w-none">{{ contract.footer_content|safe }}</div>
+            {% endif %}
         </div>
         {% endif %}
 
