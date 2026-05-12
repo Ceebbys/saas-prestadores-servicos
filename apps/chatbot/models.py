@@ -758,15 +758,29 @@ class ChatbotFlowVersion(TimestampedModel):
 
     def save(self, *args, **kwargs):
         if not self.numero:
-            # Calcula próximo número sequencial por flow
-            last = (
-                ChatbotFlowVersion.objects
-                .filter(flow=self.flow)
-                .order_by("-numero")
-                .first()
-            )
-            self.numero = (last.numero + 1) if last else 1
-        super().save(*args, **kwargs)
+            # RV06-H — sequência por flow com retry no IntegrityError.
+            # Dois saves simultâneos podem ler last=10 e ambos set numero=11.
+            # UniqueConstraint(flow, numero) garante que um deles falha; aqui
+            # repetimos lendo o novo last até conseguir um numero livre.
+            from django.db import IntegrityError, transaction
+            max_attempts = 5
+            for attempt in range(max_attempts):
+                last = (
+                    ChatbotFlowVersion.objects
+                    .filter(flow=self.flow)
+                    .order_by("-numero")
+                    .first()
+                )
+                self.numero = (last.numero + 1) if last else 1
+                try:
+                    with transaction.atomic():
+                        return super().save(*args, **kwargs)
+                except IntegrityError:
+                    if attempt == max_attempts - 1:
+                        raise
+                    continue
+        else:
+            super().save(*args, **kwargs)
 
     @property
     def is_publishable(self) -> bool:
@@ -808,6 +822,7 @@ class ChatbotMessage(TimestampedModel):
         "ID do nó",
         max_length=64,
         blank=True,
+        db_index=True,  # RV06-H — queries por node_id em dashboards
         help_text="ID do nó no graph_json OU 'step_<pk>' para fluxos legados.",
     )
 

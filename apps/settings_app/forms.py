@@ -127,6 +127,57 @@ class EmpresaEmailConfigForm(TailwindFormMixin, forms.ModelForm):
         return instance
 
 
+# V2A — ChatbotSecret CRUD form
+class ChatbotSecretForm(TailwindFormMixin, forms.ModelForm):
+    """Form do cofre de segredos do chatbot.
+
+    O campo `value` é write-only: nunca renderiza o valor existente. Ao editar
+    sem preencher, mantém o valor atual. Ao criar, é obrigatório.
+    """
+
+    value = forms.CharField(
+        label="Valor (segredo)",
+        widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "new-password"}),
+        required=False,
+        help_text=(
+            "Cole aqui a API key / token. Será encriptado com Fernet. "
+            "Deixe em branco ao editar para manter o valor atual."
+        ),
+    )
+
+    class Meta:
+        from apps.chatbot.models import ChatbotSecret
+        model = ChatbotSecret
+        fields = ["name", "description"]
+        widgets = {
+            "name": forms.TextInput(attrs={
+                "placeholder": "ex.: crm_api_key, webhook_zapier, hubspot_token",
+                "autocomplete": "off",
+            }),
+            "description": forms.Textarea(attrs={
+                "rows": 2,
+                "placeholder": "Para que serve este segredo? (opcional)",
+            }),
+        }
+
+    def clean_name(self):
+        name = (self.cleaned_data.get("name") or "").strip().lower()
+        if not name:
+            raise forms.ValidationError("Nome obrigatório.")
+        if not all(c.isalnum() or c in "_-" for c in name):
+            raise forms.ValidationError(
+                "Apenas letras, números, '_' e '-' são permitidos."
+            )
+        return name
+
+    def clean(self):
+        cleaned = super().clean()
+        # Em criação (sem pk), valor é obrigatório
+        if not self.instance.pk and not (cleaned.get("value") or "").strip():
+            self.add_error("value", "Valor obrigatório ao criar um segredo novo.")
+        return cleaned
+
+
 class PipelineAutomationRuleForm(TailwindFormMixin, forms.ModelForm):
     class Meta:
         model = PipelineAutomationRule

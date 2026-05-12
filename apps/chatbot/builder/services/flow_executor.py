@@ -173,14 +173,53 @@ def _advance_from(graph: dict, node: dict, session: ChatbotSession, validation: 
             continue
         edge_handle = e.get("sourceHandle") or "next"
         if edge_handle == handle:
-            return nodes_by_id.get(e["target"])
+            target = nodes_by_id.get(e["target"])
+            if target is None:
+                # RV06-H — edge aponta para node inexistente (graph corrompido).
+                # Loga + continua procurando outro handle (defensivo, não silencia).
+                _log(session, node["id"], "error", "error", {
+                    "reason": "edge_target_not_found",
+                    "edge_id": e.get("id"),
+                    "target": e.get("target"),
+                    "handle": edge_handle,
+                })
+                logger.warning(
+                    "Executor v2: edge %s aponta para node inexistente '%s' (source=%s)",
+                    e.get("id"), e.get("target"), node["id"],
+                )
+                continue
+            return target
     return None
+
+
+# RV06-H — tipos de node suportados pelo executor v2. api_call NÃO está aqui
+# (validator já bloqueia status=coming_soon, mas defesa em profundidade).
+_KNOWN_NODE_TYPES = {
+    "start", "message", "question", "menu", "condition",
+    "collect_data", "api_call", "handoff", "end",
+}
 
 
 def _enter_node(graph: dict, node: dict, session: ChatbotSession) -> dict:
     """Entra em um node: envia mensagem se aplicável, avança ou aguarda input."""
     ntype = node.get("type")
     data = node.get("data") or {}
+
+    # RV06-H — defesa contra graph publicado com tipo desconhecido (futuro tipo
+    # adicionado ao catálogo mas sem handler aqui; ou graph manipulado direto
+    # no DB). Loga + encerra com erro explícito ao invés de silenciar.
+    if ntype not in _KNOWN_NODE_TYPES:
+        _log(session, node["id"], "error", "error", {
+            "reason": "unknown_node_type",
+            "node_type": ntype,
+        })
+        logger.error(
+            "Executor v2: tipo '%s' não suportado (node_id=%s, flow=%s). "
+            "Adicione handler em flow_executor.py::_enter_node.",
+            ntype, node["id"], session.flow_id,
+        )
+        return _complete(session, graph, reason=f"unknown_node_type:{ntype}", node_id=node["id"])
+
     _log(session, node["id"], "node_entered", "info", {"type": ntype})
 
     # Nodes que enviam mensagem mas não aguardam input → seguir em frente
@@ -229,12 +268,154 @@ def _enter_node(graph: dict, node: dict, session: ChatbotSession) -> dict:
         # Marca como completed (transferência humana — bot sai do controle)
         return _complete(session, graph, reason="handoff", node_id=node["id"])
 
+    if ntype == "api_call":
+        # V2A — chamada HTTP externa com credencial do cofre
+        session.current_node_id = node["id"]
+        session.save(update_fields=["current_node_id", "updated_at"])
+        success = _execute_api_call(node, session)
+        # Segue handle 'success' ou 'error'
+        handle = "success" if success else "error"
+        nxt = _advance_from_handle(graph, node, session, handle)
+        if nxt is None:
+            return _complete(
+                session, graph,
+                reason=f"api_call_{handle}_no_branch", node_id=node["id"],
+            )
+        return _enter_node(graph, nxt, session)
+
     if ntype == "end":
         return _complete(session, graph, reason="end_node", node_id=node["id"])
 
-    # Default (api_call não chega aqui — validator bloqueia)
-    logger.warning("Executor v2: tipo de node desconhecido '%s' (id=%s)", ntype, node["id"])
-    return _complete(session, graph, reason="unknown_node_type")
+    # Defesa: já checado no início; defensive fallback
+    return _complete(session, graph, reason=f"unknown_node_type:{ntype}", node_id=node["id"])
+
+
+def _advance_from_handle(graph: dict, node: dict, session: ChatbotSession, handle: str) -> dict | None:
+    """Avança forçando um handle específico (api_call/condition)."""
+    nodes_by_id = graph_utils.index_nodes(graph)
+    for e in graph.get("edges", []):
+        if e["source"] != node["id"]:
+            continue
+        edge_handle = e.get("sourceHandle") or "next"
+        if edge_handle == handle:
+            target = nodes_by_id.get(e["target"])
+            if target is None:
+                _log(session, node["id"], "error", "error", {
+                    "reason": "edge_target_not_found",
+                    "edge_id": e.get("id"),
+                    "target": e.get("target"),
+                    "handle": handle,
+                })
+                continue
+            return target
+    return None
+
+
+def _execute_api_call(node: dict, session: ChatbotSession) -> bool:
+    """Executa node `api_call`: HTTP request com credencial do cofre.
+
+    Retorna True em sucesso (status 2xx), False em erro de qualquer tipo.
+    Grava resposta em session.lead_data[response_var] se configurado.
+    """
+    import json as _json
+    from string import Template
+    import httpx
+
+    from apps.chatbot.models import ChatbotSecret
+
+    data = node.get("data") or {}
+    secret_ref = (data.get("secret_ref") or "").strip()
+    method = (data.get("method") or "GET").upper()
+    path_template = (data.get("path_template") or "").strip()
+    payload_template = (data.get("payload_template") or "").strip()
+    response_var = (data.get("response_var") or "").strip()
+
+    if not secret_ref or not path_template:
+        _log(session, node["id"], "validation_failed", "error", {
+            "reason": "api_call_missing_fields",
+        })
+        return False
+
+    # Resolve segredo (tenant-isolated)
+    try:
+        secret = ChatbotSecret.objects.get(empresa=session.flow.empresa, name=secret_ref)
+    except ChatbotSecret.DoesNotExist:
+        _log(session, node["id"], "error", "error", {
+            "reason": "secret_not_found",
+            "secret_ref": secret_ref,
+        })
+        return False
+
+    from apps.chatbot.builder.services.secrets import get_secret_value
+    token = get_secret_value(secret)
+    if not token:
+        _log(session, node["id"], "error", "error", {
+            "reason": "secret_decrypt_failed",
+            "secret_ref": secret_ref,
+        })
+        return False
+
+    # Substituição de variáveis em path + payload via $vars (string.Template
+    # é restrito — apenas $name / ${name}, sem code execution).
+    safe_vars = {k: str(v) for k, v in (session.lead_data or {}).items()}
+    safe_vars["secret"] = token  # disponível para Authorization headers
+
+    try:
+        url = Template(path_template).safe_substitute(safe_vars)
+    except Exception:
+        url = path_template
+
+    body_json = None
+    if payload_template and method in ("POST", "PUT", "PATCH"):
+        try:
+            body_str = Template(payload_template).safe_substitute(safe_vars)
+            body_json = _json.loads(body_str)
+        except (_json.JSONDecodeError, ValueError) as exc:
+            _log(session, node["id"], "error", "error", {
+                "reason": "payload_template_invalid_json",
+                "error": str(exc)[:200],
+            })
+            return False
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "User-Agent": "ServicoPro-Chatbot/1.0",
+    }
+
+    _log(session, node["id"], "api_call", "info", {
+        "method": method,
+        "url_host": url.split("/")[2] if "://" in url else "?",  # log sem path completo
+        "has_payload": body_json is not None,
+    })
+
+    try:
+        with httpx.Client(timeout=10.0, follow_redirects=False) as client:
+            resp = client.request(method, url, json=body_json, headers=headers)
+    except (httpx.HTTPError, httpx.TimeoutException) as exc:
+        _log(session, node["id"], "error", "error", {
+            "reason": "http_error",
+            "error": str(exc)[:200],
+        })
+        return False
+
+    success = 200 <= resp.status_code < 300
+    _log(session, node["id"], "api_call", "info" if success else "warning", {
+        "status_code": resp.status_code,
+        "success": success,
+    })
+
+    if response_var:
+        try:
+            parsed = resp.json()
+        except ValueError:
+            parsed = resp.text[:2000]  # limita
+        if not session.lead_data:
+            session.lead_data = {}
+        session.lead_data[response_var] = parsed
+        session.save(update_fields=["lead_data", "updated_at"])
+
+    return success
 
 
 def _complete(session: ChatbotSession, graph: dict, reason: str, node_id: str = "") -> dict:
@@ -370,6 +551,15 @@ def _evaluate_condition(node: dict, session: ChatbotSession) -> bool:
     op = data.get("operator", "eq")
     value = data.get("value", "")
     actual = (session.lead_data or {}).get(field)
+
+    # RV06-H — operadores que NÃO sejam exists/not_exists, comparando contra
+    # campo nunca coletado, retornam False mas logam warning (debugging).
+    if actual is None and op not in ("exists", "not_exists"):
+        _log(session, node["id"], "validation_failed", "warning", {
+            "reason": "condition_field_missing",
+            "field": field,
+            "operator": op,
+        })
 
     if op == "exists":
         return actual is not None and actual != ""

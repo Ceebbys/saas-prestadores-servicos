@@ -5,6 +5,35 @@ import { useState } from "react";
 import { useBuilderStore } from "../store/builderStore";
 import { useGraphAPI } from "../hooks/useGraphAPI";
 
+function SimulatorToggle() {
+  const open = useBuilderStore((s) => s.simulatorOpen);
+  const setOpen = useBuilderStore((s) => s.setSimulatorOpen);
+  return (
+    <button
+      className={`btn ${open ? "btn--secondary" : "btn--ghost"}`}
+      onClick={() => setOpen(!open)}
+      title="Testar fluxo (draft, sem persistir)"
+    >
+      {open ? "Fechar simulador" : "Testar"}
+    </button>
+  );
+}
+
+
+function TemplatesButton() {
+  const setOpen = useBuilderStore((s) => s.setTemplateBrowserOpen);
+  return (
+    <button
+      className="btn btn--ghost"
+      onClick={() => setOpen(true)}
+      title="Aplicar template pronto"
+    >
+      Templates
+    </button>
+  );
+}
+
+
 function SaveIndicator() {
   const saveState = useBuilderStore((s) => s.saveState);
   const lastSavedAt = useBuilderStore((s) => s.lastSavedAt);
@@ -103,6 +132,8 @@ export function Topbar() {
       </div>
       <div className="topbar__right">
         {publishMsg && <span className="topbar__published-msg">{publishMsg}</span>}
+        <TemplatesButton />
+        <SimulatorToggle />
         <button
           className="btn btn--ghost"
           onClick={handleValidate}

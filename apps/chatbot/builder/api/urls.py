@@ -39,4 +39,26 @@ urlpatterns = [
         views.BuilderInitView.as_view(),
         name="builder_init",
     ),
+    # V2B — Simulador inline
+    path(
+        "flows/<int:pk>/simulator/start/",
+        views.SimulatorStartView.as_view(),
+        name="builder_simulator_start",
+    ),
+    path(
+        "flows/<int:pk>/simulator/step/",
+        views.SimulatorStepView.as_view(),
+        name="builder_simulator_step",
+    ),
+    # V2C — Templates pré-prontos
+    path(
+        "flow-templates/",
+        views.flow_templates_view,
+        name="flow_templates",
+    ),
+    path(
+        "flows/<int:pk>/apply-template/",
+        views.ApplyTemplateView.as_view(),
+        name="builder_apply_template",
+    ),
 ]

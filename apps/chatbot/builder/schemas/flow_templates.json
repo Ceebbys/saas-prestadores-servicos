@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "templates": [
+    {
+      "id": "captacao_basica",
+      "name": "Captação básica de leads",
+      "description": "Pergunta nome, e-mail e telefone, depois encerra. Ideal para webchat de site institucional.",
+      "category": "leads",
+      "icon": "users",
+      "color": "#4f46e5",
+      "graph": {
+        "schema_version": 1,
+        "viewport": {"x": 0, "y": 0, "zoom": 1},
+        "metadata": {"template_id": "captacao_basica"},
+        "nodes": [
+          {"id": "n_start", "type": "start", "position": {"x": 100, "y": 100},
+           "data": {"label": "Início", "welcome_message": "Olá! Vamos começar."}},
+          {"id": "n_name", "type": "collect_data", "position": {"x": 400, "y": 100},
+           "data": {"label": "Nome", "prompt": "Qual é o seu nome?", "lead_field": "name", "validator_strict": false}},
+          {"id": "n_email", "type": "collect_data", "position": {"x": 700, "y": 100},
+           "data": {"label": "Email", "prompt": "Qual é o seu melhor e-mail?", "lead_field": "email", "validator_strict": true}},
+          {"id": "n_phone", "type": "collect_data", "position": {"x": 1000, "y": 100},
+           "data": {"label": "Telefone", "prompt": "Qual é o seu WhatsApp?", "lead_field": "phone", "validator_strict": true}},
+          {"id": "n_end", "type": "end", "position": {"x": 1300, "y": 100},
+           "data": {"label": "Fim", "completion_message": "Obrigado! Em breve entraremos em contato."}}
+        ],
+        "edges": [
+          {"id": "e1", "source": "n_start", "sourceHandle": "next", "target": "n_name", "targetHandle": "in"},
+          {"id": "e2", "source": "n_name", "sourceHandle": "next", "target": "n_email", "targetHandle": "in"},
+          {"id": "e3", "source": "n_email", "sourceHandle": "next", "target": "n_phone", "targetHandle": "in"},
+          {"id": "e4", "source": "n_phone", "sourceHandle": "next", "target": "n_end", "targetHandle": "in"}
+        ]
+      }
+    },
+    {
+      "id": "triagem_atendimento",
+      "name": "Triagem de atendimento",
+      "description": "Menu inicial para direcionar ao departamento certo (Vendas / Suporte / Financeiro). Inclui transferência ao final.",
+      "category": "support",
+      "icon": "list-bullet",
+      "color": "#0ea5e9",
+      "graph": {
+        "schema_version": 1,
+        "viewport": {"x": 0, "y": 0, "zoom": 1},
+        "metadata": {"template_id": "triagem_atendimento"},
+        "nodes": [
+          {"id": "n_start", "type": "start", "position": {"x": 100, "y": 200}, "data": {"label": "Início"}},
+          {"id": "n_welcome", "type": "message", "position": {"x": 400, "y": 200},
+           "data": {"label": "Saudação", "text": "Olá! Sou o assistente virtual. Como posso te ajudar hoje?"}},
+          {"id": "n_menu", "type": "menu", "position": {"x": 700, "y": 200},
+           "data": {"label": "Triagem", "prompt": "Escolha uma das opções abaixo:",
+                    "options": [
+                      {"label": "Falar com Vendas", "handle_id": "vendas"},
+                      {"label": "Suporte técnico", "handle_id": "suporte"},
+                      {"label": "Questões financeiras", "handle_id": "financeiro"}
+                    ]}},
+          {"id": "n_h_vendas", "type": "handoff", "position": {"x": 1050, "y": 50},
+           "data": {"label": "Vendas", "message_to_user": "Transferindo para o time de Vendas. Em instantes alguém falará com você.", "queue": "vendas"}},
+          {"id": "n_h_suporte", "type": "handoff", "position": {"x": 1050, "y": 200},
+           "data": {"label": "Suporte", "message_to_user": "Conectando com o suporte técnico. Aguarde um momento.", "queue": "suporte"}},
+          {"id": "n_h_financeiro", "type": "handoff", "position": {"x": 1050, "y": 350},
+           "data": {"label": "Financeiro", "message_to_user": "Encaminhando para o financeiro.", "queue": "financeiro"}}
+        ],
+        "edges": [
+          {"id": "e1", "source": "n_start", "sourceHandle": "next", "target": "n_welcome", "targetHandle": "in"},
+          {"id": "e2", "source": "n_welcome", "sourceHandle": "next", "target": "n_menu", "targetHandle": "in"},
+          {"id": "e3", "source": "n_menu", "sourceHandle": "vendas", "target": "n_h_vendas", "targetHandle": "in"},
+          {"id": "e4", "source": "n_menu", "sourceHandle": "suporte", "target": "n_h_suporte", "targetHandle": "in"},
+          {"id": "e5", "source": "n_menu", "sourceHandle": "financeiro", "target": "n_h_financeiro", "targetHandle": "in"}
+        ]
+      }
+    },
+    {
+      "id": "qualificacao_lead",
+      "name": "Qualificação BANT",
+      "description": "Qualifica o lead com perguntas de orçamento, autoridade, necessidade e timing. Ramifica por orçamento alto/baixo.",
+      "category": "leads",
+      "icon": "funnel",
+      "color": "#8b5cf6",
+      "graph": {
+        "schema_version": 1,
+        "viewport": {"x": 0, "y": 0, "zoom": 1},
+        "metadata": {"template_id": "qualificacao_lead"},
+        "nodes": [
+          {"id": "n_start", "type": "start", "position": {"x": 100, "y": 250}, "data": {"label": "Início"}},
+          {"id": "n_name", "type": "question", "position": {"x": 400, "y": 250},
+           "data": {"label": "Nome", "prompt": "Para começarmos, qual seu nome?", "lead_field": "name", "validator": "name"}},
+          {"id": "n_company", "type": "question", "position": {"x": 700, "y": 250},
+           "data": {"label": "Empresa", "prompt": "Qual o nome da sua empresa?", "lead_field": "company"}},
+          {"id": "n_budget", "type": "menu", "position": {"x": 1000, "y": 250},
+           "data": {"label": "Orçamento", "prompt": "Qual a faixa de orçamento disponível?",
+                    "options": [
+                      {"label": "Até R$ 5.000", "handle_id": "low", "value": "low"},
+                      {"label": "R$ 5.000 a R$ 20.000", "handle_id": "mid", "value": "mid"},
+                      {"label": "Acima de R$ 20.000", "handle_id": "high", "value": "high"}
+                    ]}},
+          {"id": "n_h_qualified", "type": "handoff", "position": {"x": 1350, "y": 150},
+           "data": {"label": "Qualificado (alto)", "message_to_user": "Excelente! Um consultor sênior vai te atender agora mesmo.", "queue": "vendas-senior"}},
+          {"id": "n_email_low", "type": "collect_data", "position": {"x": 1350, "y": 350},
+           "data": {"label": "Email", "prompt": "Deixe seu e-mail e enviaremos materiais relevantes.", "lead_field": "email", "validator_strict": false}},
+          {"id": "n_end_nurture", "type": "end", "position": {"x": 1650, "y": 350},
+           "data": {"label": "Nurturing", "completion_message": "Obrigado! Você entrou na nossa lista de nutrição. Em breve receberá conteúdo no seu e-mail."}}
+        ],
+        "edges": [
+          {"id": "e1", "source": "n_start", "sourceHandle": "next", "target": "n_name", "targetHandle": "in"},
+          {"id": "e2", "source": "n_name", "sourceHandle": "next", "target": "n_company", "targetHandle": "in"},
+          {"id": "e3", "source": "n_company", "sourceHandle": "next", "target": "n_budget", "targetHandle": "in"},
+          {"id": "e4", "source": "n_budget", "sourceHandle": "high", "target": "n_h_qualified", "targetHandle": "in"},
+          {"id": "e5", "source": "n_budget", "sourceHandle": "mid", "target": "n_email_low", "targetHandle": "in"},
+          {"id": "e6", "source": "n_budget", "sourceHandle": "low", "target": "n_email_low", "targetHandle": "in"},
+          {"id": "e7", "source": "n_email_low", "sourceHandle": "next", "target": "n_end_nurture", "targetHandle": "in"}
+        ]
+      }
+    },
+    {
+      "id": "pesquisa_satisfacao",
+      "name": "Pesquisa de satisfação NPS",
+      "description": "Pergunta a nota NPS (0-10) e ramifica entre detratores, neutros e promotores.",
+      "category": "feedback",
+      "icon": "star",
+      "color": "#f59e0b",
+      "graph": {
+        "schema_version": 1,
+        "viewport": {"x": 0, "y": 0, "zoom": 1},
+        "metadata": {"template_id": "pesquisa_satisfacao"},
+        "nodes": [
+          {"id": "n_start", "type": "start", "position": {"x": 100, "y": 250}, "data": {"label": "Início"}},
+          {"id": "n_intro", "type": "message", "position": {"x": 400, "y": 250},
+           "data": {"label": "Intro", "text": "Olá! Adoraríamos saber sua opinião sobre nosso serviço."}},
+          {"id": "n_nps", "type": "menu", "position": {"x": 700, "y": 250},
+           "data": {"label": "NPS", "prompt": "Em uma escala de 0 a 10, o quanto você recomendaria nossa empresa a um amigo?",
+                    "options": [
+                      {"label": "0-6 (Não recomendaria)", "handle_id": "detrator", "value": "detrator"},
+                      {"label": "7-8 (Neutro)", "handle_id": "neutro", "value": "neutro"},
+                      {"label": "9-10 (Recomendaria muito)", "handle_id": "promotor", "value": "promotor"}
+                    ]}},
+          {"id": "n_q_detrator", "type": "question", "position": {"x": 1050, "y": 100},
+           "data": {"label": "Motivo (detrator)", "prompt": "Lamentamos. O que poderíamos melhorar?", "lead_field": "notes"}},
+          {"id": "n_q_neutro", "type": "question", "position": {"x": 1050, "y": 250},
+           "data": {"label": "Motivo (neutro)", "prompt": "O que faltou para você dar nota 9 ou 10?", "lead_field": "notes"}},
+          {"id": "n_q_promotor", "type": "question", "position": {"x": 1050, "y": 400},
+           "data": {"label": "Elogio (promotor)", "prompt": "Que ótimo! O que mais gostou?", "lead_field": "notes"}},
+          {"id": "n_end", "type": "end", "position": {"x": 1400, "y": 250},
+           "data": {"label": "Fim", "completion_message": "Muito obrigado pelo seu feedback! Ele é fundamental para nós."}}
+        ],
+        "edges": [
+          {"id": "e1", "source": "n_start", "sourceHandle": "next", "target": "n_intro", "targetHandle": "in"},
+          {"id": "e2", "source": "n_intro", "sourceHandle": "next", "target": "n_nps", "targetHandle": "in"},
+          {"id": "e3", "source": "n_nps", "sourceHandle": "detrator", "target": "n_q_detrator", "targetHandle": "in"},
+          {"id": "e4", "source": "n_nps", "sourceHandle": "neutro", "target": "n_q_neutro", "targetHandle": "in"},
+          {"id": "e5", "source": "n_nps", "sourceHandle": "promotor", "target": "n_q_promotor", "targetHandle": "in"},
+          {"id": "e6", "source": "n_q_detrator", "sourceHandle": "next", "target": "n_end", "targetHandle": "in"},
+          {"id": "e7", "source": "n_q_neutro", "sourceHandle": "next", "target": "n_end", "targetHandle": "in"},
+          {"id": "e8", "source": "n_q_promotor", "sourceHandle": "next", "target": "n_end", "targetHandle": "in"}
+        ]
+      }
+    }
+  ]
+}

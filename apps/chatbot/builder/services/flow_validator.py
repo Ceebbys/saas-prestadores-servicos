@@ -106,7 +106,7 @@ def validate_graph(graph: dict, *, flow: "ChatbotFlow | None" = None) -> dict:
 
     # 5/6/7/8. Validação por tipo de bloco (usando catálogo)
     for n in nodes:
-        _validate_node_data(n, graph, errors, warnings)
+        _validate_node_data(n, graph, errors, warnings, flow=flow)
 
     # 9. Ciclos sem saída
     if graph_utils.has_cycle_without_exit(graph):
@@ -170,7 +170,7 @@ def _validate_schema(graph: dict) -> list[dict]:
 
 
 def _validate_node_data(
-    node: dict, graph: dict, errors: list, warnings: list,
+    node: dict, graph: dict, errors: list, warnings: list, flow=None,
 ) -> None:
     """Valida `data` do node contra o catálogo + regras estruturais por tipo."""
     ntype = node.get("type")
@@ -242,7 +242,7 @@ def _validate_node_data(
     elif ntype == "condition":
         _validate_condition_handles(node, graph, errors)
     elif ntype == "api_call":
-        _validate_api_call_handles(node, graph, errors)
+        _validate_api_call_handles(node, graph, errors, flow=flow)
     elif ntype == "start":
         _validate_start(node, graph, errors)
 
@@ -291,8 +291,8 @@ def _validate_condition_handles(node: dict, graph: dict, errors: list) -> None:
             ))
 
 
-def _validate_api_call_handles(node: dict, graph: dict, errors: list) -> None:
-    """api_call: precisa de outbound `success` e `error`."""
+def _validate_api_call_handles(node: dict, graph: dict, errors: list, flow=None) -> None:
+    """api_call: precisa de outbound `success` e `error` + secret_ref válido."""
     outbound = graph_utils.outbound_handles_of(graph, node["id"])
     for required_handle in ("success", "error"):
         if required_handle not in outbound:
@@ -300,6 +300,21 @@ def _validate_api_call_handles(node: dict, graph: dict, errors: list) -> None:
                 node["id"], f"handle.{required_handle}",
                 f"A saída '{required_handle}' precisa estar conectada.",
                 "API_CALL_MISSING_BRANCH",
+            ))
+
+    # V2A — secret_ref precisa existir como ChatbotSecret na empresa
+    data = node.get("data") or {}
+    secret_ref = (data.get("secret_ref") or "").strip()
+    if secret_ref and flow is not None:
+        from apps.chatbot.models import ChatbotSecret
+        exists = ChatbotSecret.objects.filter(
+            empresa=flow.empresa, name=secret_ref,
+        ).exists()
+        if not exists:
+            errors.append(_err(
+                node["id"], "data.secret_ref",
+                f"Segredo '{secret_ref}' não está cadastrado em Configurações > Segredos do Chatbot.",
+                "SECRET_NOT_FOUND",
             ))
 
 

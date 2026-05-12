@@ -5,16 +5,23 @@
  * `apps/chatbot/builder/schemas/graph_v1.json`. Mantenha sincronizado.
  */
 
-export type NodeType =
-  | "start"
-  | "message"
-  | "question"
-  | "menu"
-  | "condition"
-  | "collect_data"
-  | "api_call"
-  | "handoff"
-  | "end";
+// RV06-H — Mantém union hard-coded sincronizado com node_catalog.json.
+// Lista canônica via Object.keys do KNOWN_NODE_TYPES (abaixo). Para adicionar
+// novo tipo: 1) catalog JSON, 2) graph_v1 enum, 3) este union, 4) frontend
+// componente (se UI customizada), 5) executor handler, 6) validator regra.
+export const KNOWN_NODE_TYPES = [
+  "start",
+  "message",
+  "question",
+  "menu",
+  "condition",
+  "collect_data",
+  "api_call",
+  "handoff",
+  "end",
+] as const;
+
+export type NodeType = (typeof KNOWN_NODE_TYPES)[number];
 
 export interface MenuOption {
   label: string;
@@ -98,6 +105,10 @@ export interface BuilderConfig {
     publish: string;
     init: string;
     catalog: string;
+    simulatorStart: string;
+    simulatorStep: string;
+    flowTemplates: string;
+    applyTemplate: string;
   };
   flowListUrl: string;
   flowEditUrl: string;

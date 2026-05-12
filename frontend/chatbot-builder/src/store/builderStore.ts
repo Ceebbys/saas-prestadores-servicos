@@ -30,6 +30,12 @@ interface BuilderState {
   saveState: "idle" | "saving" | "saved" | "error";
   lastSavedAt: string | null;
   isDirty: boolean;
+  // V2B — Simulador inline
+  simulatorOpen: boolean;
+  setSimulatorOpen: (open: boolean) => void;
+  // V2C — Browser de templates
+  templateBrowserOpen: boolean;
+  setTemplateBrowserOpen: (open: boolean) => void;
 
   // Setters
   setConfig: (c: BuilderConfig) => void;
@@ -66,6 +72,10 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
   saveState: "idle",
   lastSavedAt: null,
   isDirty: false,
+  simulatorOpen: false,
+  setSimulatorOpen: (simulatorOpen) => set({ simulatorOpen }),
+  templateBrowserOpen: false,
+  setTemplateBrowserOpen: (templateBrowserOpen) => set({ templateBrowserOpen }),
 
   setConfig: (config) => set({ config }),
   setCatalog: (catalog) => set({ catalog }),

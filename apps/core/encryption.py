@@ -14,9 +14,16 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import os
+import sys
 
 from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
+
+
+def _is_test_run() -> bool:
+    """True quando rodando o test runner do Django ou pytest."""
+    return "test" in sys.argv or bool(os.environ.get("PYTEST_CURRENT_TEST"))
 
 
 def _resolve_key() -> bytes:
@@ -24,15 +31,18 @@ def _resolve_key() -> bytes:
     if raw:
         return raw.encode() if isinstance(raw, str) else raw
 
-    if not getattr(settings, "DEBUG", False):
-        raise RuntimeError(
-            "FERNET_KEY não configurada — defina a variável de ambiente FERNET_KEY "
-            "antes de criptografar/descriptografar dados sensíveis em produção."
-        )
+    # Modo DEBUG ou suite de testes: deriva chave determinística do SECRET_KEY.
+    # Django força DEBUG=False sob test runner, mas ainda precisamos de uma
+    # chave funcional para os testes de encrypt/decrypt (FERNET_KEY produção
+    # não pode estar disponível em CI).
+    if getattr(settings, "DEBUG", False) or _is_test_run():
+        digest = hashlib.sha256(settings.SECRET_KEY.encode("utf-8")).digest()
+        return base64.urlsafe_b64encode(digest)
 
-    # Modo DEBUG: deriva chave do SECRET_KEY (32 bytes b64 = 44 chars).
-    digest = hashlib.sha256(settings.SECRET_KEY.encode("utf-8")).digest()
-    return base64.urlsafe_b64encode(digest)
+    raise RuntimeError(
+        "FERNET_KEY não configurada — defina a variável de ambiente FERNET_KEY "
+        "antes de criptografar/descriptografar dados sensíveis em produção."
+    )
 
 
 def _fernet() -> Fernet:

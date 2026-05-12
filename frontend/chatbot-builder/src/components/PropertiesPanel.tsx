@@ -170,7 +170,14 @@ function FieldEditor({
     );
   }
 
-  // string default
+  // string default — também fallback de tipos desconhecidos (com warning)
+  if (field.type !== "string" && field.type !== undefined) {
+    // RV06-H — avisa quando aparecer tipo novo no catálogo sem suporte no
+    // FieldEditor (mantém UX usável com input simples)
+    console.warn(
+      `[PropertiesPanel] Tipo de campo "${field.type}" sem editor dedicado — usando input string como fallback. Adicione case em FieldEditor.`,
+    );
+  }
   return (
     <div className="field">
       <label htmlFor={id}>{labelize(field)}</label>

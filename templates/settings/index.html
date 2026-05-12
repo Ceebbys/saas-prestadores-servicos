@@ -182,6 +182,24 @@
         </div>
     </a>
 
+    <!-- V2A — Segredos do Chatbot -->
+    <a href="{% url 'settings_app:chatbot_secret_list' %}"
+       class="group bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6 hover:shadow-md hover:ring-cyan-200 transition-all duration-200">
+        <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 w-11 h-11 rounded-lg bg-cyan-50 flex items-center justify-center group-hover:bg-cyan-100 transition-colors">
+                {% icon "bolt" "w-5 h-5 text-cyan-600" %}
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-slate-900 group-hover:text-cyan-700 transition-colors">Segredos do Chatbot</h3>
+                    {% icon "chevron-right" "w-4 h-4 text-slate-300 group-hover:text-cyan-400 transition-colors" %}
+                </div>
+                <p class="mt-1 text-sm text-slate-500">Cofre criptografado (Fernet) para API keys usadas em blocos "Chamar API"</p>
+                <p class="mt-2 text-xs font-medium text-slate-400">Tokens nunca expostos em texto plano</p>
+            </div>
+        </div>
+    </a>
+
     <!-- Contas Bancárias -->
     <a href="{% url 'settings_app:bank_account_list' %}"
        class="group bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6 hover:shadow-md hover:ring-indigo-200 transition-all duration-200">

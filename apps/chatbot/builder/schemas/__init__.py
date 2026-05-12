@@ -28,6 +28,22 @@ def load_node_catalog() -> dict:
         return json.load(f)
 
 
+@lru_cache(maxsize=4)
+def load_flow_templates() -> dict:
+    """V2C — Retorna o catálogo de templates pré-prontos de fluxo (cached)."""
+    with (_SCHEMAS_DIR / "flow_templates.json").open(encoding="utf-8") as f:
+        return json.load(f)
+
+
+def get_flow_template(template_id: str) -> dict | None:
+    """Retorna um template pelo id ou None."""
+    data = load_flow_templates()
+    for tpl in data.get("templates", []):
+        if tpl["id"] == template_id:
+            return tpl
+    return None
+
+
 def get_node_type(node_type: str) -> dict | None:
     """Retorna a definição de um tipo de bloco ou None se desconhecido."""
     catalog = load_node_catalog()

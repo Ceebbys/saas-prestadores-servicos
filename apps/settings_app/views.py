@@ -1429,3 +1429,83 @@ class AutomationRuleDeleteView(EmpresaMixin, DeleteView):
     def post(self, request, *args, **kwargs):
         messages.success(request, "Regra removida.")
         return self.delete(request, *args, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# V2A — ChatbotSecret CRUD (cofre Fernet para api_call)
+# ---------------------------------------------------------------------------
+
+
+class ChatbotSecretListView(EmpresaMixin, ListView):
+    template_name = "settings/chatbot_secret_list.html"
+    context_object_name = "secrets"
+
+    def get_queryset(self):
+        from apps.chatbot.models import ChatbotSecret
+        return ChatbotSecret.objects.filter(
+            empresa=self.request.empresa,
+        ).order_by("name")
+
+
+class ChatbotSecretCreateView(EmpresaMixin, CreateView):
+    template_name = "settings/chatbot_secret_form.html"
+    success_url = reverse_lazy("settings_app:chatbot_secret_list")
+
+    def get_form_class(self):
+        from .forms import ChatbotSecretForm
+        return ChatbotSecretForm
+
+    def form_valid(self, form):
+        from apps.chatbot.builder.services.secrets import set_secret_value
+
+        secret = form.save(commit=False)
+        secret.empresa = self.request.empresa
+        secret.created_by = self.request.user
+        set_secret_value(secret, form.cleaned_data["value"])
+        secret.save()
+        messages.success(self.request, f"Segredo '{secret.name}' criado.")
+        return redirect(self.success_url)
+
+
+class ChatbotSecretRotateView(EmpresaMixin, UpdateView):
+    """Permite rotacionar (atualizar) o valor de um segredo. Não muda o name."""
+
+    template_name = "settings/chatbot_secret_form.html"
+    success_url = reverse_lazy("settings_app:chatbot_secret_list")
+
+    def get_form_class(self):
+        from .forms import ChatbotSecretForm
+        return ChatbotSecretForm
+
+    def get_queryset(self):
+        from apps.chatbot.models import ChatbotSecret
+        return ChatbotSecret.objects.filter(empresa=self.request.empresa)
+
+    def form_valid(self, form):
+        from apps.chatbot.builder.services.secrets import set_secret_value
+
+        secret = form.save(commit=False)
+        new_value = (form.cleaned_data.get("value") or "").strip()
+        if new_value:
+            set_secret_value(secret, new_value)
+            messages.success(self.request, f"Segredo '{secret.name}' rotacionado (valor atualizado).")
+        else:
+            messages.success(self.request, f"Segredo '{secret.name}' atualizado (valor mantido).")
+        secret.save()
+        return redirect(self.success_url)
+
+
+class ChatbotSecretDeleteView(EmpresaMixin, DeleteView):
+    success_url = reverse_lazy("settings_app:chatbot_secret_list")
+    http_method_names = ["post"]
+
+    def get_queryset(self):
+        from apps.chatbot.models import ChatbotSecret
+        return ChatbotSecret.objects.filter(empresa=self.request.empresa)
+
+    def post(self, request, *args, **kwargs):
+        secret = self.get_object()
+        name = secret.name
+        secret.delete()
+        messages.success(request, f"Segredo '{name}' removido permanentemente.")
+        return redirect(self.success_url)

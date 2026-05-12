@@ -266,8 +266,13 @@ class ConditionValidationTests(SimpleTestCase):
 # ---------------------------------------------------------------------------
 
 
-class APICallComingSoonTests(SimpleTestCase):
-    def test_api_call_block_is_blocked(self):
+class APICallTests(SimpleTestCase):
+    """V2A — api_call agora é status=active. Validator não bloqueia mais por
+    'coming_soon'. Mas sem flow (tenant), não consegue verificar se
+    secret_ref existe — pula validação de SECRET_NOT_FOUND quando flow=None."""
+
+    def test_api_call_block_passes_without_flow_context(self):
+        """Sem flow no validate_graph(), api_call passa (validation tenant-aware)."""
         graph = _graph([
             _node("s1", "start"),
             _node("a1", "api_call", secret_ref="crm", method="POST", path_template="/x"),
@@ -279,9 +284,25 @@ class APICallComingSoonTests(SimpleTestCase):
             _edge("e_err", "a1", "e_err", sourceHandle="error"),
         ])
         result = validate_graph(graph)
+        # Sem flow=None, não vai erro de SECRET_NOT_FOUND
+        codes = [e["code"] for e in result["errors"]]
+        self.assertNotIn("NODE_TYPE_COMING_SOON", codes)
+        # Graph é estruturalmente OK (handles success/error conectados)
+        self.assertTrue(result["valid"], result["errors"])
+
+    def test_api_call_missing_branches_fails(self):
+        graph = _graph([
+            _node("s1", "start"),
+            _node("a1", "api_call", secret_ref="crm", method="POST", path_template="/x"),
+            _node("e1", "end"),
+        ], [
+            _edge("e_s", "s1", "a1"),
+            _edge("e_ok", "a1", "e1", sourceHandle="success"),
+        ])
+        result = validate_graph(graph)
         self.assertFalse(result["valid"])
         codes = [e["code"] for e in result["errors"]]
-        self.assertIn("NODE_TYPE_COMING_SOON", codes)
+        self.assertIn("API_CALL_MISSING_BRANCH", codes)
 
 
 # ---------------------------------------------------------------------------

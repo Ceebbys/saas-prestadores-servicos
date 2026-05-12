@@ -9,6 +9,8 @@ import { Topbar } from "./components/Topbar";
 import { Sidebar } from "./components/Sidebar";
 import { Canvas } from "./components/Canvas";
 import { PropertiesPanel } from "./components/PropertiesPanel";
+import { Simulator } from "./components/Simulator";
+import { TemplateBrowser } from "./components/TemplateBrowser";
 import { useBuilderStore } from "./store/builderStore";
 import type { BuilderConfig, GraphJson, NodeCatalog } from "./types";
 
@@ -45,6 +47,19 @@ export function App({ config, initialGraph }: AppProps) {
         return r.json();
       })
       .then((cat: NodeCatalog) => {
+        // RV06-H — valida que catálogo do servidor está sincronizado com types.ts
+        import("./types").then(({ KNOWN_NODE_TYPES }) => {
+          const known = new Set<string>(KNOWN_NODE_TYPES);
+          const catalogTypes = cat.nodes.map((n) => n.type);
+          const unknown = catalogTypes.filter((t) => !known.has(t));
+          if (unknown.length > 0) {
+            console.warn(
+              "[chatbot-builder] Catálogo do backend tem tipos não conhecidos pelo frontend:",
+              unknown,
+              "→ Atualize KNOWN_NODE_TYPES em src/types.ts.",
+            );
+          }
+        });
         setCatalog(cat);
         setCatalogLoaded(true);
       })
@@ -78,6 +93,22 @@ export function App({ config, initialGraph }: AppProps) {
         <Canvas />
         <PropertiesPanel />
       </div>
+      <SimulatorContainer />
+      <TemplateBrowserContainer />
     </div>
   );
+}
+
+
+function SimulatorContainer() {
+  const open = useBuilderStore((s) => s.simulatorOpen);
+  const setOpen = useBuilderStore((s) => s.setSimulatorOpen);
+  return <Simulator open={open} onClose={() => setOpen(false)} />;
+}
+
+
+function TemplateBrowserContainer() {
+  const open = useBuilderStore((s) => s.templateBrowserOpen);
+  const setOpen = useBuilderStore((s) => s.setTemplateBrowserOpen);
+  return <TemplateBrowser open={open} onClose={() => setOpen(false)} />;
 }

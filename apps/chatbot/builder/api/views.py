@@ -14,7 +14,11 @@ from django.utils import timezone
 from django.utils.decorators import method_decorator
 
 from apps.chatbot.builder.api.auth import BuilderAPIView
-from apps.chatbot.builder.schemas import load_node_catalog
+from apps.chatbot.builder.schemas import (
+    get_flow_template,
+    load_flow_templates,
+    load_node_catalog,
+)
 from apps.chatbot.builder.services.flow_converter import convert_legacy_flow_to_graph
 from apps.chatbot.builder.services.flow_validator import validate_graph
 from apps.chatbot.models import ChatbotFlow, ChatbotFlowVersion
@@ -173,15 +177,20 @@ class GraphPublishView(BuilderAPIView):
             }, status=422)
 
         with transaction.atomic():
+            # RV06-H — select_for_update no row do flow para serializar publishes
+            # concorrentes. Sem isso, dois requests simultâneos podem criar 2
+            # versões PUBLISHED e a última a fazer save() vence (orfana a outra).
+            flow_locked = ChatbotFlow.objects.select_for_update().get(pk=self.flow.pk)
+
             # Arquiva published anterior
             ChatbotFlowVersion.objects.filter(
-                flow=self.flow, status=ChatbotFlowVersion.Status.PUBLISHED,
+                flow=flow_locked, status=ChatbotFlowVersion.Status.PUBLISHED,
             ).update(status=ChatbotFlowVersion.Status.ARCHIVED)
 
             # Cria nova versão PUBLISHED (snapshot do graph atual do draft)
             now = timezone.now()
             published = ChatbotFlowVersion.objects.create(
-                flow=self.flow,
+                flow=flow_locked,
                 graph_json=draft.graph_json,
                 schema_version=draft.schema_version,
                 validation_errors=[],
@@ -192,10 +201,11 @@ class GraphPublishView(BuilderAPIView):
                 created_by=draft.created_by,
             )
 
-            # Atualiza flow
-            self.flow.current_published_version = published
-            self.flow.use_visual_builder = True
-            self.flow.save(update_fields=["current_published_version", "use_visual_builder", "updated_at"])
+            # Atualiza flow (row já está locked, save é seguro)
+            flow_locked.current_published_version = published
+            flow_locked.use_visual_builder = True
+            flow_locked.save(update_fields=["current_published_version", "use_visual_builder", "updated_at"])
+            self.flow = flow_locked
 
         return JsonResponse({
             "published_version_id": published.id,
@@ -209,6 +219,11 @@ class GraphPublishView(BuilderAPIView):
 # ---------------------------------------------------------------------------
 
 
+@method_decorator(
+    # Conversão pode ser cara para flows legados grandes — limita 10/min/user
+    rate_limit_per_user(max_calls=10, window=60),
+    name="dispatch",
+)
 class BuilderInitView(BuilderAPIView):
     """Inicializa o builder: converte legacy → graph_json se draft não existe."""
 
@@ -247,7 +262,88 @@ class BuilderInitView(BuilderAPIView):
 from django.contrib.auth.decorators import login_required
 
 
+@method_decorator(
+    rate_limit_per_user(max_calls=120, window=60),
+    name="dispatch",
+)
+class SimulatorStartView(BuilderAPIView):
+    """V2B — Inicia simulação usando o DRAFT graph (não a versão publicada)."""
+
+    def post(self, request: HttpRequest, pk: int):
+        from apps.chatbot.builder.services.simulator import start_simulation
+
+        draft = _get_or_create_draft(self.flow, request.user)
+        result = start_simulation(self.flow, draft.graph_json or _EMPTY_GRAPH)
+        return JsonResponse(result)
+
+
+@method_decorator(
+    rate_limit_per_user(max_calls=120, window=60),
+    name="dispatch",
+)
+class SimulatorStepView(BuilderAPIView):
+    """V2B — Processa um turno da simulação (stateless: state vai/volta no body)."""
+
+    def post(self, request: HttpRequest, pk: int):
+        from apps.chatbot.builder.services.simulator import process_simulation
+
+        body = self.json_body(request)
+        if isinstance(body, JsonResponse):
+            return body
+        state = body.get("state") or {}
+        user_response = body.get("response") or ""
+
+        draft = _get_or_create_draft(self.flow, request.user)
+        result = process_simulation(draft.graph_json or _EMPTY_GRAPH, state, user_response)
+        return JsonResponse(result)
+
+
 @login_required
+@rate_limit_per_user(max_calls=120, window=60)
+def flow_templates_view(request: HttpRequest):
+    """V2C — Lista templates pré-prontos de fluxo."""
+    if request.method != "GET":
+        return JsonResponse({"error": "method_not_allowed"}, status=405)
+    return JsonResponse(load_flow_templates())
+
+
+@method_decorator(
+    rate_limit_per_user(max_calls=10, window=60),
+    name="dispatch",
+)
+class ApplyTemplateView(BuilderAPIView):
+    """V2C — Aplica um template ao draft do flow (substitui graph atual).
+
+    POST body: {"template_id": "captacao_basica"}
+    """
+
+    def post(self, request: HttpRequest, pk: int):
+        body = self.json_body(request)
+        if isinstance(body, JsonResponse):
+            return body
+        template_id = (body.get("template_id") or "").strip()
+        if not template_id:
+            return JsonResponse({"error": "missing_template_id"}, status=400)
+
+        template = get_flow_template(template_id)
+        if template is None:
+            return JsonResponse({"error": "template_not_found"}, status=404)
+
+        # Aplica ao draft (sobrescreve graph atual)
+        draft = _get_or_create_draft(self.flow, request.user)
+        draft.graph_json = template["graph"]
+        draft.validated_at = None
+        draft.validation_errors = []
+        draft.save(update_fields=["graph_json", "validated_at", "validation_errors", "updated_at"])
+        return JsonResponse({
+            "ok": True,
+            "version_id": draft.id,
+            "template_name": template["name"],
+        })
+
+
+@login_required
+@rate_limit_per_user(max_calls=120, window=60)  # GET pequeno, 120/min é generoso
 def node_catalog_view(request: HttpRequest):
     """Retorna o catálogo de tipos de bloco (público para users logados).
 

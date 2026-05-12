@@ -201,4 +201,25 @@ urlpatterns = [
         views.AutomationRuleDeleteView.as_view(),
         name="automation_rule_delete",
     ),
+    # V2A — Segredos do Chatbot (Fernet vault)
+    path(
+        "chatbot-secrets/",
+        views.ChatbotSecretListView.as_view(),
+        name="chatbot_secret_list",
+    ),
+    path(
+        "chatbot-secrets/create/",
+        views.ChatbotSecretCreateView.as_view(),
+        name="chatbot_secret_create",
+    ),
+    path(
+        "chatbot-secrets/<int:pk>/rotate/",
+        views.ChatbotSecretRotateView.as_view(),
+        name="chatbot_secret_rotate",
+    ),
+    path(
+        "chatbot-secrets/<int:pk>/delete/",
+        views.ChatbotSecretDeleteView.as_view(),
+        name="chatbot_secret_delete",
+    ),
 ]
