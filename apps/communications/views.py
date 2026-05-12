@@ -185,20 +185,43 @@ class SendMessageView(EmpresaMixin, View):
         else:
             django_messages.success(request, "Mensagem enviada.")
 
-        # Re-renderiza thread completo
+        # Re-renderiza só as mensagens (mantém composer focado, sem refresh)
         if request.htmx:
             conv.refresh_from_db()
             html = render_to_string(
-                "communications/partials/_thread.html",
+                "communications/partials/_thread_messages.html",
                 {
                     "active_conversation": conv,
                     "thread_messages": conv.messages.select_related("sender_user").order_by("created_at"),
-                    "send_form": SendMessageForm(),
                 },
                 request=request,
             )
             return HttpResponse(html)
         return redirect("communications:detail", pk=conv.pk)
+
+
+class ThreadPartialView(EmpresaMixin, View):
+    """Retorna apenas o partial de mensagens da thread.
+
+    Usado pelo polling HTMX a cada 15s e por eventos WS para refresh
+    sem recarregar o composer (assim o usuário não perde texto digitado).
+    """
+
+    http_method_names = ["get"]
+
+    def get(self, request, pk):
+        conv = get_object_or_404(
+            Conversation, pk=pk, empresa=request.empresa,
+        )
+        html = render_to_string(
+            "communications/partials/_thread_messages.html",
+            {
+                "active_conversation": conv,
+                "thread_messages": conv.messages.select_related("sender_user").order_by("created_at"),
+            },
+            request=request,
+        )
+        return HttpResponse(html)
 
 
 class ChangeStatusView(EmpresaMixin, View):

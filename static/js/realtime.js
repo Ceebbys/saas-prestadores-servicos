@@ -28,8 +28,15 @@
     return `${proto}//${window.location.host}${path}`;
   }
 
+  // Detecção global: se o primeiro WS falhar rápido (servidor é Gunicorn/WSGI
+  // sem suporte), todos os clientes param de tentar. Polling HTMX (15-30s)
+  // continua como fallback automático nos templates.
+  let _wsDisabled = false;
+  const MAX_RETRIES = 4;  // ~1+2+4+8 = 15s total antes de desistir
+
   /**
-   * Cliente WS resiliente com reconnect exponencial (max 30s).
+   * Cliente WS resiliente — reconnect exponencial até MAX_RETRIES, depois
+   * desiste silencioso (sem spam 404 nos logs do servidor).
    * @param {string} path - ex.: '/ws/inbox/'
    * @param {object} handlers - { onMessage, onOpen, onClose }
    */
@@ -38,9 +45,10 @@
     let retries = 0;
     let closedExplicitly = false;
     let pingTimer = null;
+    let everConnected = false;
 
     function connect() {
-      if (closedExplicitly) return;
+      if (closedExplicitly || _wsDisabled) return;
       try {
         ws = new WebSocket(makeWsUrl(path));
       } catch (err) {
@@ -49,8 +57,8 @@
       }
       ws.addEventListener("open", () => {
         retries = 0;
+        everConnected = true;
         if (handlers.onOpen) handlers.onOpen(ws);
-        // Ping a cada 25s para manter conexão (alguns proxies fecham 30s idle)
         clearInterval(pingTimer);
         pingTimer = setInterval(() => {
           if (ws && ws.readyState === WebSocket.OPEN) {
@@ -67,19 +75,31 @@
         }
         if (handlers.onMessage) handlers.onMessage(payload, ws);
       });
-      ws.addEventListener("close", () => {
+      ws.addEventListener("close", (ev) => {
         clearInterval(pingTimer);
         if (handlers.onClose) handlers.onClose();
+        // Se nunca conseguiu conectar E código indica que servidor não suporta WS
+        // (1006 abnormal closure / sem upgrade), para de tentar.
+        if (!everConnected && retries >= MAX_RETRIES) {
+          _wsDisabled = true;
+          if (window.console) console.info("[realtime] WS indisponível, usando fallback HTMX polling.");
+          return;
+        }
         scheduleRetry();
       });
       ws.addEventListener("error", () => {
-        // close será disparado em sequência; deixa o backoff lá
+        // close será disparado em sequência
       });
     }
 
     function scheduleRetry() {
-      if (closedExplicitly) return;
+      if (closedExplicitly || _wsDisabled) return;
       retries += 1;
+      if (retries > MAX_RETRIES && !everConnected) {
+        _wsDisabled = true;
+        if (window.console) console.info("[realtime] WS indisponível após " + MAX_RETRIES + " tentativas, fallback HTMX ativo.");
+        return;
+      }
       const delay = Math.min(30000, 1000 * 2 ** Math.min(retries, 5));
       setTimeout(connect, delay);
     }

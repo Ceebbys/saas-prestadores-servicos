@@ -1,0 +1,41 @@
+{% load humanize ui_tags %}
+{# Partial com só o conteúdo das mensagens — usado por:
+   1. _thread.html (include inicial)
+   2. ThreadPartialView (polling + WS refresh)
+   3. SendMessageView (após envio, recarrega só as mensagens — composer permanece) #}
+{% if thread_messages %}
+{% for msg in thread_messages %}
+<div class="bubble
+    {% if msg.channel == 'internal_note' %}bubble--note
+    {% elif msg.direction == 'inbound' %}bubble--inbound
+    {% elif msg.direction == 'system' %}bubble--system
+    {% elif msg.payload.sent_by_bot %}bubble--bot
+    {% else %}bubble--outbound{% endif %}">
+    {% if msg.channel != 'internal_note' and msg.direction != 'system' %}
+    <div class="bubble-meta">
+        <span class="channel-pill channel-pill--{{ msg.channel }}">{{ msg.get_channel_display }}</span>
+        <span>
+        {% if msg.direction == 'inbound' %}
+            {{ msg.sender_name|default:msg.sender_external_id|default:"cliente" }}
+        {% elif msg.payload.sent_by_bot %}
+            🤖 Bot
+        {% elif msg.sender_user %}
+            {{ msg.sender_user.full_name|default:msg.sender_user.email|truncatechars:24 }}
+        {% else %}
+            Sistema
+        {% endif %}
+        · {{ msg.created_at|date:"H:i" }}
+        </span>
+        {% if msg.delivery_status == 'failed' %}<span class="text-red-300">⚠ {{ msg.error_message|truncatechars:40 }}</span>{% endif %}
+    </div>
+    {% elif msg.channel == 'internal_note' %}
+    <div class="bubble-meta">
+        <span>📝 Nota · {{ msg.sender_user.full_name|default:msg.sender_user.email|default:"Sistema"|truncatechars:24 }} · {{ msg.created_at|date:"H:i" }}</span>
+    </div>
+    {% endif %}
+    {{ msg.content|linebreaksbr }}
+</div>
+{% endfor %}
+{% else %}
+<p class="text-center text-xs text-slate-400 mt-8">Sem mensagens ainda. Use o composer abaixo para iniciar.</p>
+{% endif %}

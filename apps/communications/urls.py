@@ -9,6 +9,7 @@ app_name = "communications"
 urlpatterns = [
     path("", views.InboxView.as_view(), name="inbox"),
     path("<int:pk>/", views.ConversationDetailView.as_view(), name="detail"),
+    path("<int:pk>/thread/", views.ThreadPartialView.as_view(), name="thread_partial"),
     path("<int:pk>/send/", views.SendMessageView.as_view(), name="send"),
     path("<int:pk>/status/", views.ChangeStatusView.as_view(), name="status"),
     path("<int:pk>/assign/", views.AssignView.as_view(), name="assign"),

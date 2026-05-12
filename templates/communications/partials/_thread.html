@@ -1,8 +1,8 @@
 {% load humanize ui_tags static %}
 {# Header da conversa #}
-<div class="px-4 py-3 border-b border-slate-200 bg-white flex items-center justify-between">
+<div class="px-4 py-3 border-b border-slate-200 bg-white flex items-center justify-between flex-shrink-0">
     <div class="flex items-center gap-3 min-w-0">
-        <div class="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-sm font-bold text-slate-600 uppercase">
+        <div class="w-9 h-9 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600 uppercase flex-shrink-0">
             {{ active_conversation.lead.name|slice:":2"|default:"?" }}
         </div>
         <div class="min-w-0">
@@ -14,7 +14,7 @@
             </p>
         </div>
     </div>
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-2 flex-shrink-0">
         <form method="post" action="{% url 'communications:status' active_conversation.pk %}" class="inline">
             {% csrf_token %}
             <select name="status" onchange="this.form.submit()"
@@ -27,57 +27,22 @@
     </div>
 </div>
 
-{# Mensagens #}
-<div class="inbox-thread-scroll flex flex-col"
+{# Mensagens — refresh por polling + WS event filtrado pela conversa atual #}
+<div class="inbox-thread-scroll"
      id="thread-{{ active_conversation.pk }}"
-     hx-get="{% url 'communications:detail' active_conversation.pk %}"
-     hx-trigger="every 30s, v2b:inbox:message-new from:body throttle:1s [event.detail.conversation_id == {{ active_conversation.pk }}]"
-     hx-target="closest section"
-     hx-select="#thread-{{ active_conversation.pk }}"
-     hx-swap="outerHTML"
-     data-preserve-scroll="true"
-     data-preserve-key="thread-{{ active_conversation.pk }}">
-    {% if thread_messages %}
-    {% for msg in thread_messages %}
-    <div class="bubble
-        {% if msg.channel == 'internal_note' %}bubble--note
-        {% elif msg.direction == 'inbound' %}bubble--inbound
-        {% elif msg.direction == 'system' %}bubble--system
-        {% elif msg.payload.sent_by_bot %}bubble--bot
-        {% else %}bubble--outbound{% endif %}">
-        {% if msg.channel != 'internal_note' and msg.direction != 'system' %}
-        <div class="flex items-center gap-2 text-[10px] mb-1 opacity-70">
-            <span class="channel-pill channel-pill--{{ msg.channel }}">{{ msg.get_channel_display }}</span>
-            {% if msg.direction == 'inbound' %}
-                {{ msg.sender_name|default:msg.sender_external_id|default:"cliente" }}
-            {% elif msg.payload.sent_by_bot %}
-                🤖 Bot
-            {% elif msg.sender_user %}
-                {{ msg.sender_user.full_name|default:msg.sender_user.email|truncatechars:24 }}
-            {% else %}
-                Sistema
-            {% endif %}
-            · {{ msg.created_at|date:"H:i" }}
-            {% if msg.delivery_status == 'failed' %}<span class="text-red-300">⚠ {{ msg.error_message|truncatechars:40 }}</span>{% endif %}
-        </div>
-        {% elif msg.channel == 'internal_note' %}
-        <div class="flex items-center gap-1 text-[10px] mb-1 opacity-70">
-            📝 Nota interna · {{ msg.sender_user.full_name|default:msg.sender_user.email|default:"Sistema"|truncatechars:24 }} · {{ msg.created_at|date:"H:i" }}
-        </div>
-        {% endif %}
-        {{ msg.content|linebreaksbr }}
-    </div>
-    {% endfor %}
-    {% else %}
-    <p class="text-center text-xs text-slate-400 mt-8">Sem mensagens ainda. Use o composer abaixo para iniciar.</p>
-    {% endif %}
+     hx-get="{% url 'communications:thread_partial' active_conversation.pk %}"
+     hx-trigger="every 15s, v2b:inbox:message-new from:body throttle:1s"
+     hx-target="this"
+     hx-swap="innerHTML">
+    {% include "communications/partials/_thread_messages.html" %}
 </div>
 
-{# Composer #}
+{# Composer — form HTMX-only (sem method/action fallback que causava reload) #}
 <div class="composer">
-    <form method="post" action="{% url 'communications:send' active_conversation.pk %}"
-          hx-post="{% url 'communications:send' active_conversation.pk %}"
-          hx-target="closest section" hx-swap="innerHTML"
+    <form hx-post="{% url 'communications:send' active_conversation.pk %}"
+          hx-target="#thread-{{ active_conversation.pk }}"
+          hx-swap="innerHTML"
+          hx-on::after-request="if(event.detail.successful){this.querySelector('textarea').value='';setTimeout(scrollThreadBottom,30);}"
           id="composer-form-{{ active_conversation.pk }}">
         {% csrf_token %}
         <input type="hidden" name="channel" id="channel-{{ active_conversation.pk }}" value="whatsapp">
@@ -86,11 +51,12 @@
                    class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
         </div>
         <div class="relative">
-            <textarea name="content" rows="2" required placeholder="Escreva sua mensagem… (digite / para inserir template)"
-                      class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500 resize-none mb-2"
+            <textarea name="content" rows="2" required
+                      placeholder="Escreva sua mensagem… (Enter envia, Shift+Enter quebra linha, / abre templates)"
+                      class="w-full rounded-lg border-slate-300 focus:border-indigo-500 focus:ring-indigo-500 resize-none mb-2"
                       data-composer-textarea
-                      data-conversation-id="{{ active_conversation.pk }}"></textarea>
-            {# Dropdown de templates — controlado por composer-templates.js #}
+                      data-conversation-id="{{ active_conversation.pk }}"
+                      onkeydown="composerKeydown(event, '{{ active_conversation.pk }}')"></textarea>
             <div data-template-dropdown
                  class="absolute bottom-full left-0 right-0 mb-1 bg-white rounded-lg shadow-lg ring-1 ring-slate-200 max-h-64 overflow-y-auto z-30"
                  style="display: none;">
@@ -98,28 +64,28 @@
         </div>
         <div class="flex items-center gap-1.5 flex-wrap">
             <button type="button" onclick="setChannel('{{ active_conversation.pk }}', 'whatsapp')"
-                    class="composer-channel-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
+                    class="composer-channel-btn px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
                     data-channel="whatsapp">
                 {% icon "chat-bubble-left-right" "w-3.5 h-3.5 inline" %} WhatsApp
             </button>
             <button type="button" onclick="setChannel('{{ active_conversation.pk }}', 'email')"
-                    class="composer-channel-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors"
+                    class="composer-channel-btn px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors"
                     data-channel="email">
                 {% icon "envelope" "w-3.5 h-3.5 inline" %} E-mail
             </button>
             <button type="button" onclick="setChannel('{{ active_conversation.pk }}', 'internal_note')"
-                    class="composer-channel-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
+                    class="composer-channel-btn px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
                     data-channel="internal_note">
                 {% icon "pencil" "w-3.5 h-3.5 inline" %} Nota
             </button>
             <button type="button" data-templates-toggle
-                    title="Templates de resposta rápida (atalho: digite /)"
-                    class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors">
+                    title="Templates (atalho: digite /)"
+                    class="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors">
                 {% icon "bookmark" "w-3.5 h-3.5 inline" %} Templates
             </button>
             <button type="submit" id="send-btn-{{ active_conversation.pk }}"
-                    class="ml-auto px-4 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700">
-                Enviar via WhatsApp
+                    class="ml-auto px-4 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">
+                Enviar
             </button>
         </div>
     </form>
@@ -138,13 +104,41 @@ function setChannel(convId, channel) {
     };
     sendBtn.textContent = labels[channel] || 'Enviar';
     subjectDiv.style.display = (channel === 'email') ? 'block' : 'none';
-    // Destacar botão ativo
     document.querySelectorAll('.composer-channel-btn').forEach(b => {
-        b.style.opacity = (b.dataset.channel === channel) ? '1' : '0.5';
+        b.style.opacity = (b.dataset.channel === channel) ? '1' : '0.55';
         b.style.fontWeight = (b.dataset.channel === channel) ? '600' : '500';
     });
 }
-// Init
-document.addEventListener('DOMContentLoaded', () => setChannel('{{ active_conversation.pk }}', 'whatsapp'));
+
+// Enter envia, Shift+Enter quebra linha
+function composerKeydown(ev, convId) {
+    if (ev.key === 'Enter' && !ev.shiftKey) {
+        // Se template dropdown está aberto, deixa o template-handler controlar
+        const composer = ev.target.closest('form');
+        const dropdown = composer ? composer.querySelector('[data-template-dropdown]') : null;
+        if (dropdown && dropdown.style.display !== 'none') {
+            return;  // composer-templates.js trata
+        }
+        ev.preventDefault();
+        if (ev.target.value.trim()) {
+            const form = document.getElementById('composer-form-' + convId);
+            if (form && window.htmx) htmx.trigger(form, 'submit');
+            else if (form) form.requestSubmit();
+        }
+    }
+}
+
+// Scroll para final do thread
+function scrollThreadBottom() {
+    const t = document.querySelector('.inbox-thread-scroll');
+    if (t) t.scrollTop = t.scrollHeight;
+}
+
+// Init: seta canal default + scroll bottom
+document.addEventListener('DOMContentLoaded', () => {
+    setChannel('{{ active_conversation.pk }}', 'whatsapp');
+    setTimeout(scrollThreadBottom, 50);
+});
 setTimeout(() => setChannel('{{ active_conversation.pk }}', 'whatsapp'), 50);
+setTimeout(scrollThreadBottom, 100);
 </script>

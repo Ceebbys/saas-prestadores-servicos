@@ -38,6 +38,7 @@
                 {% icon "bell" "w-5 h-5" %}
                 <span x-show="unread > 0"
                       x-cloak
+                      data-notif-badge
                       class="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
                     <span x-text="unread > 99 ? '99+' : unread"></span>
                 </span>
@@ -53,6 +54,10 @@
                  hx-get="{% url 'communications:notification_dropdown' %}"
                  hx-trigger="refresh from:closest div, v2b:notification:new from:body throttle:1s"
                  hx-swap="innerHTML"
+                 @htmx:after-swap.window="
+                    var content = document.getElementById('notif-dropdown-content');
+                    if (content) unread = parseInt(content.dataset.unreadCount || '0', 10);
+                 "
                  class="absolute right-0 mt-2 w-80 rounded-xl bg-white shadow-lg ring-1 ring-slate-200 z-50 overflow-hidden"
                  style="display: none;">
                 <div class="px-4 py-10 text-center text-sm text-slate-400">

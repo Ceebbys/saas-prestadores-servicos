@@ -101,13 +101,30 @@ class NotificationMarkReadView(View):
 
 @_login_required
 class NotificationMarkAllReadView(View):
-    """POST — marca todas como lidas."""
+    """POST — marca todas como lidas.
+
+    Se HTMX: retorna o dropdown atualizado (zerado).
+    Senão: retorna JSON {"ok": True, "updated": N}.
+    """
 
     def post(self, request):
         from django.utils import timezone
         updated = Notification.objects.filter(
             user=request.user, read_at__isnull=True,
         ).update(read_at=timezone.now())
+
+        if request.htmx:
+            # Retorna o dropdown atualizado (badge=0, todas lidas)
+            notifications = list(
+                Notification.objects
+                .filter(user=request.user)
+                .order_by("-created_at")[: NotificationDropdownView.LIMIT]
+            )
+            return render(
+                request,
+                "communications/partials/_notification_dropdown.html",
+                {"notifications": notifications, "unread_count": 0},
+            )
         return JsonResponse({"ok": True, "updated": updated})
 
 

@@ -1,28 +1,28 @@
 {% load ui_tags humanize %}
 {# Partial HTMX: bell dropdown (últimas 10 notificações). #}
+{# IMPORTANTE: wrapper inteiro tem id para hx-swap=outerHTML em "Marcar todas". #}
+<div id="notif-dropdown-content" class="flex flex-col"
+     data-unread-count="{{ unread_count }}">
 <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
     <p class="text-sm font-semibold text-slate-900">Notificações</p>
     {% if unread_count %}
-    <form method="post"
-          hx-post="{% url 'communications:notification_mark_all_read' %}"
-          hx-target="#notif-dropdown-body"
-          hx-swap="outerHTML"
-          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
-        {% csrf_token %}
-        <button type="submit"
-                class="text-xs text-indigo-600 hover:text-indigo-700">
-            Marcar todas
-        </button>
-    </form>
+    <button type="button"
+            hx-post="{% url 'communications:notification_mark_all_read' %}"
+            hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+            hx-target="#notif-dropdown-content"
+            hx-swap="outerHTML"
+            class="text-xs text-indigo-600 hover:text-indigo-700 cursor-pointer">
+        Marcar todas
+    </button>
     {% endif %}
 </div>
-<div id="notif-dropdown-body" class="max-h-96 overflow-y-auto">
+<div class="max-h-96 overflow-y-auto">
 {% if notifications %}
     {% for n in notifications %}
     <a href="{{ n.url|default:'#' }}"
-       hx-post="{% url 'communications:notification_mark_read' n.pk %}"
-       hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-       hx-swap="none"
+       data-notif-link
+       data-notif-id="{{ n.pk }}"
+       data-read="{% if n.read_at %}1{% else %}0{% endif %}"
        class="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 border-b border-slate-100 transition-colors {% if not n.read_at %}bg-indigo-50/40{% endif %}">
         <div class="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center">
             {% if n.icon %}
@@ -55,3 +55,40 @@
         Ver todas
     </a>
 </div>
+</div>
+
+<script>
+// Bind click em notificações (mark-read + nav)
+(function() {
+  function bind(root) {
+    root.querySelectorAll('[data-notif-link]').forEach(function(a) {
+      if (a.dataset.bound === '1') return;
+      a.dataset.bound = '1';
+      a.addEventListener('click', function(ev) {
+        var id = a.dataset.notifId;
+        var read = a.dataset.read === '1';
+        var href = a.getAttribute('href') || '#';
+        if (id && !read) {
+          // POST mark-read em background — não bloqueia nav
+          var meta = document.querySelector('meta[name="csrf-token"]');
+          fetch('/inbox/notifications/' + id + '/read/', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'X-CSRFToken': meta ? meta.getAttribute('content') : ''},
+          }).catch(function(){});
+          // Decrementa badge no bell
+          var bell = document.querySelector('[data-notif-badge]');
+          if (bell) {
+            var n = parseInt(bell.textContent || '0', 10) || 0;
+            if (n > 1) bell.textContent = n - 1;
+            else bell.style.display = 'none';
+          }
+        }
+        if (href === '#' || href === '') ev.preventDefault();
+      });
+    });
+  }
+  var el = document.getElementById('notif-dropdown-content');
+  if (el) bind(el);
+})();
+</script>

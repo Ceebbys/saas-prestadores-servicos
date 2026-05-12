@@ -21,68 +21,124 @@
     /* Mobile (<768px): stack vertical. Lista esconde quando conversa aberta. */
     @media (max-width: 767px) {
         .inbox-shell { grid-template-columns: 1fr; grid-template-rows: 1fr; }
-        /* Quando há conversa ativa, esconde a lista; mostra só thread/side. */
         .inbox-shell--with-side .inbox-col:first-child { display: none; }
         .inbox-shell--with-side { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
         .inbox-shell--with-side .inbox-col:last-child {
             position: fixed; inset: 4rem 0 0 0; z-index: 30; background: white;
-            display: none;  /* painel lateral fica em modal overlay no mobile */
+            display: none;
         }
         .inbox-shell--with-side .inbox-col:last-child.is-open { display: flex; }
     }
-    /* Tablet (768-1023px): 2 colunas sem painel lateral */
     @media (min-width: 768px) and (max-width: 1023px) {
         .inbox-shell--with-side { grid-template-columns: 280px 1fr; }
         .inbox-shell--with-side .inbox-col:last-child { display: none; }
     }
-    /* Desktop ≥1024px: 3 colunas com painel */
     @media (min-width: 1024px) {
-        .inbox-shell { left: 16rem; }     /* sidebar */
-        .inbox-shell--with-side { grid-template-columns: 320px 1fr 320px; }
+        .inbox-shell { left: 16rem; }
+        .inbox-shell--with-side { grid-template-columns: 300px 1fr 300px; }
     }
     @media (min-width: 1280px) {
-        .inbox-shell { grid-template-columns: 360px 1fr; }
-        .inbox-shell--with-side { grid-template-columns: 360px 1fr 340px; }
+        .inbox-shell { grid-template-columns: 340px 1fr; }
+        .inbox-shell--with-side { grid-template-columns: 340px 1fr 320px; }
     }
     .inbox-col {
         display: flex;
         flex-direction: column;
         overflow: hidden;
         background: white;
+        min-width: 0;  /* permite truncar conteúdo */
     }
     .inbox-col + .inbox-col { border-left: 1px solid #e2e8f0; }
-    .inbox-list-scroll { flex: 1; overflow-y: auto; }
-    .inbox-thread-scroll { flex: 1; overflow-y: auto; padding: 16px; background: #f8fafc; }
+    .inbox-list-scroll { flex: 1; overflow-y: auto; min-height: 0; }
+    .inbox-thread-scroll {
+        flex: 1; overflow-y: auto;
+        padding: 14px 16px; background: #f8fafc;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
     .conv-row { transition: background 0.12s; }
     .conv-row:hover { background: #f1f5f9; }
     .conv-row--active { background: #eef2ff; border-left: 3px solid #4f46e5; }
     .conv-row--unread { background: #fffbeb; }
+
+    /* === BOLHAS DE MENSAGEM — compactas e proporcionais === */
     .bubble {
-        max-width: 75%;
-        padding: 8px 12px;
-        border-radius: 12px;
-        margin-bottom: 8px;
+        max-width: 65%;
+        width: fit-content;
+        padding: 7px 11px;
+        border-radius: 14px;
+        margin-bottom: 4px;
         font-size: 13px;
-        line-height: 1.45;
+        line-height: 1.4;
         word-wrap: break-word;
         white-space: pre-wrap;
+        box-shadow: 0 1px 1px rgba(0,0,0,0.04);
     }
-    .bubble--inbound  { background: white; border: 1px solid #e2e8f0; border-bottom-left-radius: 4px; color: #0f172a; align-self: flex-start; }
-    .bubble--outbound { background: #4f46e5; color: white; border-bottom-right-radius: 4px; align-self: flex-end; }
-    .bubble--bot      { background: #ddd6fe; color: #4c1d95; border-bottom-right-radius: 4px; align-self: flex-end; }
-    .bubble--note     { background: #fef3c7; color: #78350f; align-self: center; max-width: 90%; }
-    .bubble--system   { background: #f1f5f9; color: #475569; align-self: center; font-size: 11px; font-style: italic; }
-    .thread-day-sep   { text-align: center; font-size: 11px; color: #94a3b8; margin: 12px 0; }
+    .bubble--inbound  {
+        background: white; border: 1px solid #e2e8f0;
+        border-bottom-left-radius: 4px;
+        color: #0f172a; align-self: flex-start;
+        margin-right: auto;
+    }
+    .bubble--outbound {
+        background: #4f46e5; color: white;
+        border-bottom-right-radius: 4px;
+        align-self: flex-end;
+        margin-left: auto;
+    }
+    .bubble--bot {
+        background: #e0e7ff; color: #3730a3;
+        border-bottom-right-radius: 4px;
+        align-self: flex-end;
+        margin-left: auto;
+    }
+    .bubble--note {
+        background: #fef3c7; color: #78350f;
+        align-self: center; max-width: 75%;
+        font-size: 12px;
+    }
+    .bubble--system {
+        background: transparent; color: #64748b;
+        align-self: center; font-size: 11px; font-style: italic;
+        padding: 4px 8px;
+    }
+    .bubble-meta {
+        font-size: 10px;
+        opacity: 0.65;
+        margin-bottom: 3px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .bubble--outbound .bubble-meta,
+    .bubble--bot .bubble-meta { justify-content: flex-end; }
+
+    .thread-day-sep {
+        text-align: center; font-size: 10px; color: #94a3b8;
+        margin: 12px 0 8px; text-transform: uppercase;
+        letter-spacing: 0.5px; font-weight: 600;
+    }
     .channel-pill {
         font-size: 9px; font-weight: 600; text-transform: uppercase;
         padding: 1px 5px; border-radius: 4px;
-        background: rgba(0, 0, 0, 0.08); margin-right: 4px;
+        background: rgba(0, 0, 0, 0.08);
     }
     .channel-pill--whatsapp { background: #dcfce7; color: #14532d; }
     .channel-pill--email    { background: #dbeafe; color: #1e3a8a; }
     .channel-pill--webchat  { background: #ede9fe; color: #5b21b6; }
     .channel-pill--internal_note { background: #fef3c7; color: #92400e; }
-    .composer { border-top: 1px solid #e2e8f0; background: white; padding: 12px; }
+
+    .composer {
+        border-top: 1px solid #e2e8f0;
+        background: white;
+        padding: 10px 12px;
+        flex-shrink: 0;
+    }
+    .composer textarea {
+        font-size: 13px;
+        line-height: 1.4;
+    }
 </style>
 {% endblock %}
 
@@ -91,7 +147,7 @@
 
     {# --------- Coluna 1: Lista de conversas --------- #}
     <aside class="inbox-col">
-        <div class="px-4 pt-4 pb-2 border-b border-slate-200 bg-white">
+        <div class="px-4 pt-4 pb-2 border-b border-slate-200 bg-white flex-shrink-0">
             <div class="flex items-center justify-between mb-2">
                 <h2 class="text-base font-semibold text-slate-900">Comunicações</h2>
                 <div class="flex items-center gap-2 text-xs">
@@ -139,11 +195,12 @@
             </div>
         </div>
 
+        {# IMPORTANTE: sem hx-select. O partial _conversation_list.html já é só o conteúdo.
+           InboxView (HtmxResponseMixin) retorna o partial direto quando request.htmx. #}
         <div class="inbox-list-scroll" id="inbox-list-scroll"
-             hx-get="{% url 'communications:inbox' %}?status={{ status_filter }}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}{% if mine_filter %}&mine=1{% endif %}"
-             hx-trigger="every 30s, v2b:inbox:message-new from:body throttle:1s, v2b:inbox:conv-updated from:body throttle:1s"
+             hx-get="{% url 'communications:inbox' %}?status={{ status_filter|default:'all' }}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}{% if mine_filter %}&mine=1{% endif %}"
+             hx-trigger="every 20s, v2b:inbox:message-new from:body throttle:2s, v2b:inbox:conv-updated from:body throttle:2s"
              hx-target="this"
-             hx-select="#inbox-list-scroll > *"
              hx-swap="innerHTML"
              data-preserve-scroll="true">
             {% include "communications/partials/_conversation_list.html" %}
@@ -152,7 +209,8 @@
 
     {# --------- Coluna 2: Thread + composer (ou estado vazio) --------- #}
     {% if active_conversation %}
-    <section class="inbox-col" data-current-conversation-id="{{ active_conversation.pk }}">
+    <section class="inbox-col" id="thread-section"
+             data-current-conversation-id="{{ active_conversation.pk }}">
         {% include "communications/partials/_thread.html" %}
     </section>
 
@@ -173,8 +231,7 @@
 </div>
 
 <script>
-// RV06-fix — preserva scrollTop dos containers marcados com data-preserve-scroll
-// durante swaps HTMX (auto-refresh da lista + thread).
+// === Scroll preservation + auto-scroll bottom no thread ===
 (function() {
     const scrollState = new Map();
     function snapshot(el) {
@@ -191,8 +248,21 @@
             }
         }
     }
+    function scrollThreadBottom() {
+        const t = document.querySelector(".inbox-thread-scroll");
+        if (t) t.scrollTop = t.scrollHeight;
+    }
     document.body.addEventListener("htmx:beforeSwap", e => snapshot(e.target));
-    document.body.addEventListener("htmx:afterSwap", e => restore(e.target));
+    document.body.addEventListener("htmx:afterSwap", function(e) {
+        restore(e.target);
+        // Se o swap incluiu thread → rola para mensagem mais recente
+        if (e.target.querySelector && e.target.querySelector(".inbox-thread-scroll")) {
+            setTimeout(scrollThreadBottom, 30);
+        }
+    });
+    // Scroll inicial para o final do thread quando a página carrega
+    document.addEventListener("DOMContentLoaded", scrollThreadBottom);
+    window.addEventListener("load", scrollThreadBottom);
 })();
 </script>
 {% endblock %}
