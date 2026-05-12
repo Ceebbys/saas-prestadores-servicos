@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.db import models
 from django.urls import reverse
 
-from apps.core.models import SoftDeletableModel, TenantOwnedModel
+from apps.core.models import SoftDeletableModel, TenantOwnedModel, TimestampedModel
 from apps.core.utils import generate_number
 
 
@@ -172,3 +172,53 @@ class Contract(SoftDeletableModel, TenantOwnedModel):
 
     def get_absolute_url(self):
         return reverse("contracts:detail", kwargs={"pk": self.pk})
+
+
+class ContractStatusHistory(TimestampedModel):
+    """Registro auditável de cada alteração de status de um contrato.
+
+    Análogo a `ProposalStatusHistory`. Reforça a justificativa LGPD/fiscal
+    da PROTECT em `Contract.lead`: cada mudança de status fica registrada
+    com autor e momento, garantindo trilha completa.
+    """
+
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name="status_history",
+        verbose_name="Contrato",
+    )
+    from_status = models.CharField(
+        "De",
+        max_length=20,
+        choices=Contract.Status.choices,
+        blank=True,
+    )
+    to_status = models.CharField(
+        "Para",
+        max_length=20,
+        choices=Contract.Status.choices,
+    )
+    changed_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contract_status_changes",
+        verbose_name="Alterado por",
+    )
+    note = models.TextField("Observação", blank=True)
+
+    class Meta:
+        verbose_name = "Histórico de Status do Contrato"
+        verbose_name_plural = "Históricos de Status dos Contratos"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["contract", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.contract.number}: "
+            f"{self.from_status or '∅'} → {self.to_status}"
+        )

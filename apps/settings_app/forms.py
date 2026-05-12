@@ -41,19 +41,47 @@ class ProposalTemplateForm(TailwindFormMixin, forms.ModelForm):
             "introduction",
             "terms",
             "content",
+            # RV05-F — paridade total com Proposal (header + footer image)
+            "header_image",
             "header_content",
+            "footer_image",
             "footer_content",
             "default_payment_method",
             "default_is_installment",
             "default_installment_count",
         ]
         widgets = {
-            "introduction": forms.Textarea(attrs={"rows": 4}),
-            "terms": forms.Textarea(attrs={"rows": 5}),
+            "introduction": forms.Textarea(attrs={"rows": 4, "data-rich-text": "true"}),
+            "terms": forms.Textarea(attrs={"rows": 5, "data-rich-text": "true"}),
             "content": forms.Textarea(attrs={"rows": 6}),
-            "header_content": forms.Textarea(attrs={"rows": 3}),
-            "footer_content": forms.Textarea(attrs={"rows": 3}),
+            "header_content": forms.Textarea(attrs={"rows": 3, "data-rich-text": "true"}),
+            "footer_content": forms.Textarea(attrs={"rows": 3, "data-rich-text": "true"}),
         }
+
+    # RV05-F — Validação e sanitização via core (mesmo padrão de ContractTemplateForm)
+    def clean_header_image(self):
+        from apps.core.document_render.image_validation import validate_document_image
+        return validate_document_image(self.cleaned_data.get("header_image"))
+
+    def clean_footer_image(self):
+        from apps.core.document_render.image_validation import validate_document_image
+        return validate_document_image(self.cleaned_data.get("footer_image"))
+
+    def _sanitize(self, field):
+        from apps.core.document_render.sanitizer import sanitize_rich_html
+        return sanitize_rich_html(self.cleaned_data.get(field, "") or "")
+
+    def clean_introduction(self):
+        return self._sanitize("introduction")
+
+    def clean_terms(self):
+        return self._sanitize("terms")
+
+    def clean_header_content(self):
+        return self._sanitize("header_content")
+
+    def clean_footer_content(self):
+        return self._sanitize("footer_content")
 
 
 class ContractTemplateForm(TailwindFormMixin, forms.ModelForm):

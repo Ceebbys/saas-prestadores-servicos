@@ -137,6 +137,7 @@ class ProposalTemplateForm(
             "is_default",
             "header_image",
             "header_content",
+            "footer_image",  # RV05-F — simetria com header
             "footer_content",
             "introduction",
             "terms",
@@ -153,6 +154,10 @@ class ProposalTemplateForm(
 
     def clean_header_image(self):
         return _validate_header_image(self.cleaned_data.get("header_image"))
+
+    def clean_footer_image(self):
+        # RV05-F — mesma validação do header
+        return _validate_header_image(self.cleaned_data.get("footer_image"))
 
     def clean_introduction(self):
         return self._sanitize_rich("introduction")

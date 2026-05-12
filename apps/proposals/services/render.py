@@ -33,8 +33,12 @@ def build_proposal_context(proposal: Proposal, request=None) -> dict:
     elif getattr(proposal.empresa, "logo", None):
         header_image = proposal.empresa.logo
 
-    # RV05 #6 — rodapé: imagem da proposta diretamente (sem cascata por enquanto)
-    footer_image = proposal.footer_image if proposal.footer_image else None
+    # RV05 #6/-F — rodapé: cascata proposta → template (footer_image agora existe no template)
+    footer_image = None
+    if proposal.footer_image:
+        footer_image = proposal.footer_image
+    elif proposal.template_id and proposal.template.footer_image:
+        footer_image = proposal.template.footer_image
 
     items = list(proposal.items.all().order_by("order", "id"))
     # RV05 #5 — Múltiplas formas de pagamento. Mantém compat com payment_method legado.

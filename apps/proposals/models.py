@@ -58,6 +58,14 @@ class ProposalTemplate(TenantOwnedModel):
         help_text="PNG, JPG ou WEBP. Máx. 2MB.",
     )
     header_content = models.TextField("Conteúdo do Cabeçalho", blank=True)
+    # RV05-F — Simetria com header. Permite cascata template→proposta.
+    footer_image = models.ImageField(
+        "Imagem do rodapé (logo/identidade)",
+        upload_to=_proposal_footer_image_path,
+        blank=True,
+        null=True,
+        help_text="PNG, JPG ou WEBP. Máx. 2MB.",
+    )
     footer_content = models.TextField("Conteúdo do Rodapé", blank=True)
     introduction = models.TextField("Introdução padrão", blank=True)
     terms = models.TextField("Termos padrão", blank=True)

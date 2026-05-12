@@ -188,6 +188,9 @@ class ContractStatusView(EmpresaMixin, View):
             contract.status = new_status
             if new_status == Contract.Status.SIGNED:
                 contract.signed_at = now
+            # RV05-F — flags lidas pelo signal post_save para atribuir autor.
+            contract._status_changed_by = request.user
+            contract._status_change_note = request.POST.get("note", "") or ""
             contract.save()
 
         if request.htmx:
