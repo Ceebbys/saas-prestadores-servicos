@@ -117,6 +117,12 @@ STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STORAGES = {
+    # Django 5+: "default" é obrigatório para FileField/ImageField salvar.
+    # Sem ele, qualquer upload (ex.: Proposal.header_image) dispara
+    # `InvalidStorageError: Could not find config for 'default'` → 500.
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },

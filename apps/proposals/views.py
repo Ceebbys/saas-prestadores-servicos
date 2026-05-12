@@ -631,10 +631,23 @@ class ProposalPDFView(EmpresaMixin, View):
         )
         try:
             pdf_bytes = render_proposal_pdf(proposal, request=request)
+        except ValueError as exc:
+            # Erros conhecidos/esperados (imagem inválida, schema bloqueado).
+            # Mensagem amigável + 4xx semântico.
+            messages.error(request, f"Não foi possível gerar PDF: {exc}")
+            return redirect(proposal.get_absolute_url())
         except Exception as exc:  # noqa: BLE001
+            # Erro inesperado — log para diagnóstico, mensagem genérica para o user.
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.exception(
+                "Falha inesperada ao gerar PDF da proposta %s (%s)",
+                proposal.pk, proposal.number,
+            )
             messages.error(
                 request,
-                f"Não foi possível gerar PDF: {exc}. Verifique se WeasyPrint está instalado.",
+                "Não foi possível gerar o PDF agora. Tente novamente em instantes — "
+                "se persistir, entre em contato com o suporte.",
             )
             return redirect(proposal.get_absolute_url())
         response = HttpResponse(pdf_bytes, content_type="application/pdf")

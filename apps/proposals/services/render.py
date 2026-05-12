@@ -58,16 +58,17 @@ def render_proposal_html(proposal: Proposal, request=None) -> str:
 def render_proposal_pdf(proposal: Proposal, request=None) -> bytes:
     """Gera bytes de PDF a partir do template print.
 
-    Resolve recursos relativos (imagens em /media/) usando o base_url do request
-    quando disponível; caso contrário, usa o caminho local da imagem.
+    Usa `apps.core.document_render.pdf.render_html_to_pdf` que aplica
+    `media_url_fetcher` — resolve imagens `/media/*` direto do storage
+    (não depende de HTTP roundtrip ou Caddy configurado).
     """
-    import weasyprint
+    from apps.core.document_render.pdf import render_html_to_pdf
 
     html = render_proposal_html(proposal, request=request)
     base_url = None
     if request is not None:
         base_url = request.build_absolute_uri("/")
-    return weasyprint.HTML(string=html, base_url=base_url).write_pdf()
+    return render_html_to_pdf(html, base_url=base_url)
 
 
 def _strip_html(text: Optional[str]) -> str:
