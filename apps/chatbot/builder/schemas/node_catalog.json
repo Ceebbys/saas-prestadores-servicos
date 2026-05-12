@@ -143,6 +143,35 @@
       ]
     },
     {
+      "type": "action",
+      "label": "Ação automática",
+      "description": "Executa uma ação interna (criar lead, atualizar pipeline, etc.) ao chegar neste ponto do fluxo.",
+      "category": "support",
+      "icon": "bolt",
+      "color": "#d97706",
+      "status": "active",
+      "handles": {"in": true, "out": ["next"]},
+      "data_fields": [
+        {"name": "label", "type": "string", "required": false, "default": "Ação", "max_length": 80},
+        {"name": "action_type", "type": "enum", "required": true, "default": "create_lead",
+         "options": [
+           "create_lead",
+           "update_pipeline",
+           "apply_tag",
+           "link_servico",
+           "register_event",
+           "send_email",
+           "send_whatsapp",
+           "create_task"
+         ],
+         "help": "Tipo de ação executada quando o fluxo chega neste bloco."},
+        {"name": "order", "type": "integer", "required": false, "default": 0, "min": 0, "max": 999,
+         "help": "Ordem de execução (útil quando há múltiplas ações encadeadas)."},
+        {"name": "is_active", "type": "boolean", "required": false, "default": true,
+         "help": "Desligue para pular esta ação sem removê-la do fluxo."}
+      ]
+    },
+    {
       "type": "handoff",
       "label": "Transferir para atendente",
       "description": "Encerra o bot e transfere para atendimento humano.",

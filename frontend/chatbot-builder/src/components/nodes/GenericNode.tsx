@@ -6,6 +6,21 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useBuilderStore } from "../../store/builderStore";
 
+const ACTION_TYPE_LABELS: Record<string, string> = {
+  create_lead: "Criar lead",
+  update_pipeline: "Atualizar pipeline",
+  apply_tag: "Aplicar tag",
+  link_servico: "Vincular serviço",
+  register_event: "Registrar evento",
+  send_email: "Enviar e-mail",
+  send_whatsapp: "Enviar WhatsApp",
+  create_task: "Criar tarefa",
+};
+
+function humanizeActionType(t: string): string {
+  return ACTION_TYPE_LABELS[t] ?? t;
+}
+
 export function GenericNode({ id, data, type, selected }: NodeProps) {
   const entry = useBuilderStore((s) => s.getCatalogEntry(type as string));
   if (!entry) {
@@ -14,13 +29,16 @@ export function GenericNode({ id, data, type, selected }: NodeProps) {
   const color = entry.color;
   const isComingSoon = entry.status === "coming_soon";
 
-  // Preview do conteúdo principal (texto/prompt/welcome_message)
+  // Preview do conteúdo principal (texto/prompt/welcome_message ou tipo da ação)
   const previewText =
     (data as any).text ||
     (data as any).prompt ||
     (data as any).welcome_message ||
     (data as any).completion_message ||
     (data as any).message_to_user ||
+    (type === "action" && (data as any).action_type
+      ? `→ ${humanizeActionType((data as any).action_type)}`
+      : "") ||
     "";
 
   return (

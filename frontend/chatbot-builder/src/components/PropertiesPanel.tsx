@@ -128,7 +128,7 @@ function FieldEditor({
         >
           {(field.options ?? []).map((opt) => (
             <option key={opt} value={opt}>
-              {opt || "(vazio)"}
+              {humanizeEnumOption(field.name, opt) || "(vazio)"}
             </option>
           ))}
         </select>
@@ -217,6 +217,56 @@ function labelize(field: NodeCatalogField): string {
     path_template: "URL",
     payload_template: "Body",
     response_var: "Variável de resposta",
+    action_type: "Tipo de ação",
+    order: "Ordem de execução",
+    is_active: "Ativa",
   };
   return map[field.name] ?? field.name;
+}
+
+
+// Rótulos amigáveis para valores de enum específicos.
+const ENUM_LABELS: Record<string, Record<string, string>> = {
+  action_type: {
+    create_lead: "Criar lead",
+    update_pipeline: "Atualizar pipeline",
+    apply_tag: "Aplicar tag",
+    link_servico: "Vincular serviço",
+    register_event: "Registrar evento",
+    send_email: "Enviar e-mail",
+    send_whatsapp: "Enviar WhatsApp",
+    create_task: "Criar tarefa",
+  },
+  operator: {
+    eq: "= (igual a)",
+    neq: "≠ (diferente de)",
+    contains: "contém",
+    starts_with: "começa com",
+    in: "está em (lista CSV)",
+    regex: "regex",
+    exists: "existe (campo preenchido)",
+    not_exists: "não existe",
+  },
+  method: {
+    GET: "GET", POST: "POST", PUT: "PUT", PATCH: "PATCH", DELETE: "DELETE",
+  },
+  validator: {
+    free_text: "Texto livre",
+    name: "Nome (mín. 2 chars)",
+    company: "Empresa",
+  },
+  lead_field: {
+    "": "— (não gravar)",
+    name: "Nome",
+    email: "E-mail",
+    phone: "Telefone",
+    company: "Empresa",
+    cpf_cnpj: "CPF/CNPJ",
+    notes: "Observações",
+  },
+};
+
+function humanizeEnumOption(fieldName: string, value: string): string {
+  const inner = ENUM_LABELS[fieldName];
+  return inner?.[value] ?? value;
 }

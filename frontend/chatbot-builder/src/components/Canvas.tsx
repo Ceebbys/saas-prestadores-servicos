@@ -38,6 +38,7 @@ const nodeTypes = {
   condition: ConditionNode,
   collect_data: GenericNode,
   api_call: GenericNode,
+  action: GenericNode,
   handoff: GenericNode,
   end: GenericNode,
 };

@@ -17,6 +17,7 @@ export const KNOWN_NODE_TYPES = [
   "condition",
   "collect_data",
   "api_call",
+  "action",
   "handoff",
   "end",
 ] as const;

@@ -196,7 +196,7 @@ def _advance_from(graph: dict, node: dict, session: ChatbotSession, validation: 
 # (validator já bloqueia status=coming_soon, mas defesa em profundidade).
 _KNOWN_NODE_TYPES = {
     "start", "message", "question", "menu", "condition",
-    "collect_data", "api_call", "handoff", "end",
+    "collect_data", "api_call", "action", "handoff", "end",
 }
 
 
@@ -268,6 +268,16 @@ def _enter_node(graph: dict, node: dict, session: ChatbotSession) -> dict:
         # Marca como completed (transferência humana — bot sai do controle)
         return _complete(session, graph, reason="handoff", node_id=node["id"])
 
+    if ntype == "action":
+        # Ação automática interna (CREATE_LEAD, UPDATE_PIPELINE, etc.)
+        session.current_node_id = node["id"]
+        session.save(update_fields=["current_node_id", "updated_at"])
+        _execute_action_node(node, session)
+        nxt = _advance_from(graph, node, session)
+        if nxt is None:
+            return _complete(session, graph, reason="action_no_next", node_id=node["id"])
+        return _enter_node(graph, nxt, session)
+
     if ntype == "api_call":
         # V2A — chamada HTTP externa com credencial do cofre
         session.current_node_id = node["id"]
@@ -309,6 +319,62 @@ def _advance_from_handle(graph: dict, node: dict, session: ChatbotSession, handl
                 continue
             return target
     return None
+
+
+def _execute_action_node(node: dict, session: ChatbotSession) -> None:
+    """Executa o nó visual `action` despachando por `action_type`.
+
+    Reusa a implementação legada de `_create_lead_action` (apps.chatbot.services)
+    para CREATE_LEAD — única ação totalmente implementada. Demais tipos viram
+    log estruturado em `ChatbotExecutionLog` (placeholder, igual ao motor v1).
+    Erros NÃO derrubam o fluxo: apenas log e segue para o próximo nó.
+    """
+    data = node.get("data") or {}
+    action_type = (data.get("action_type") or "").strip()
+    is_active = data.get("is_active", True)
+
+    if not is_active:
+        _log(session, node["id"], "action_executed", "info", {
+            "action_type": action_type,
+            "skipped_inactive": True,
+        })
+        return
+
+    _log(session, node["id"], "action_executed", "info", {
+        "action_type": action_type,
+        "order": data.get("order", 0),
+    })
+
+    try:
+        if action_type == "create_lead":
+            from apps.chatbot.services import _create_lead_action
+            lead = _create_lead_action(session)
+            if lead:
+                session.lead = lead
+                session.save(update_fields=["lead", "updated_at"])
+                _log(session, node["id"], "action_executed", "info", {
+                    "action_type": "create_lead",
+                    "lead_id": lead.pk,
+                })
+        else:
+            # Placeholders — log "not yet implemented" (consistente com v1)
+            logger.info(
+                "Action node %s tipo '%s' ainda não implementado (flow=%s, session=%s)",
+                node["id"], action_type, session.flow_id, session.session_key,
+            )
+            _log(session, node["id"], "action_executed", "warning", {
+                "action_type": action_type,
+                "not_implemented": True,
+            })
+    except Exception:
+        logger.exception(
+            "Erro ao executar action node %s (tipo=%s, session=%s) — continuando",
+            node["id"], action_type, session.session_key,
+        )
+        _log(session, node["id"], "error", "error", {
+            "action_type": action_type,
+            "reason": "action_execution_failed",
+        })
 
 
 def _execute_api_call(node: dict, session: ChatbotSession) -> bool:

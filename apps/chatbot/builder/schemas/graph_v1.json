@@ -49,6 +49,7 @@
               "condition",
               "collect_data",
               "api_call",
+              "action",
               "handoff",
               "end"
             ]
