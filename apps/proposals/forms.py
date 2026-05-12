@@ -1,6 +1,11 @@
 from django import forms
-from django.core.exceptions import ValidationError
 
+from apps.core.document_render.image_validation import (
+    ALLOWED_DOCUMENT_IMAGE_EXTS as ALLOWED_HEADER_IMAGE_EXTS,  # noqa: F401
+    MAX_DOCUMENT_IMAGE_BYTES as MAX_HEADER_IMAGE_BYTES,  # noqa: F401
+    validate_document_image as _validate_header_image,
+)
+from apps.core.document_render.sanitizer import sanitize_rich_html as sanitize_proposal_html
 from apps.core.forms import TailwindFormMixin
 from apps.proposals.models import (
     Proposal,
@@ -8,27 +13,6 @@ from apps.proposals.models import (
     ProposalTemplate,
     ProposalTemplateItem,
 )
-from apps.proposals.sanitizer import sanitize_proposal_html
-
-# Limites de upload de imagem do cabeçalho da proposta.
-MAX_HEADER_IMAGE_BYTES = 2 * 1024 * 1024  # 2MB
-ALLOWED_HEADER_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
-
-
-def _validate_header_image(image):
-    """Validações: extensão e tamanho. Aplica em ProposalForm e ProposalTemplateForm."""
-    if not image:
-        return image
-    name = (getattr(image, "name", "") or "").lower()
-    ext = "." + name.rsplit(".", 1)[-1] if "." in name else ""
-    if ext not in ALLOWED_HEADER_IMAGE_EXTS:
-        raise ValidationError(
-            "Formato não suportado. Use PNG, JPG, JPEG ou WEBP."
-        )
-    size = getattr(image, "size", 0) or 0
-    if size > MAX_HEADER_IMAGE_BYTES:
-        raise ValidationError("Imagem muito grande (máximo 2MB).")
-    return image
 
 
 class _RichTextSanitizingMixin:

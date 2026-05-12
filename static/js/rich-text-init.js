@@ -21,15 +21,35 @@
     }
     document.addEventListener("DOMContentLoaded", initAll);
 
+    // Listas usadas em toolbar e na whitelist do attributor.
+    const FONT_WHITELIST = [
+        "arial", "times-new-roman", "georgia",
+        "verdana", "tahoma", "courier-new",
+    ];
+    const SIZE_WHITELIST = [
+        // false = "normal" (sem font-size explícito), garante que o dropdown
+        // tenha o estado inicial reconhecível.
+        false,
+        "10px", "12px", "14px", "16px", "18px", "20px", "24px", "32px",
+    ];
+
     function initAll() {
         if (typeof window.Quill === "undefined") {
             console.warn("Quill não está disponível — campos rich-text seguirão como textareas comuns.");
             return;
         }
 
+        // Size attributor — gera style="font-size: 18px" no HTML salvo.
+        // Sanitizer (nh3 filter_style_properties) preserva.
         const SizeStyle = Quill.import("attributors/style/size");
-        SizeStyle.whitelist = ["12px", "14px", "16px", "18px", "20px", "24px", "32px"];
+        SizeStyle.whitelist = SIZE_WHITELIST;
         Quill.register(SizeStyle, true);
+
+        // Font attributor (style version) — gera style="font-family: Arial".
+        // Sem isso, o dropdown de fonte do Quill não persiste valores.
+        const FontStyle = Quill.import("attributors/style/font");
+        FontStyle.whitelist = FONT_WHITELIST;
+        Quill.register(FontStyle, true);
 
         const textareas = document.querySelectorAll(
             'textarea[data-rich-text="true"]'
@@ -56,7 +76,8 @@
 
         const toolbar = [
             [{ header: [1, 2, 3, false] }],
-            [{ size: ["12px", "14px", "16px", "18px", "20px", "24px", "32px"] }],
+            [{ font: FONT_WHITELIST }],
+            [{ size: SIZE_WHITELIST }],
             ["bold", "italic", "underline", "strike"],
             [{ align: [] }],
             [{ list: "ordered" }, { list: "bullet" }],

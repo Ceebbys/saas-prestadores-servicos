@@ -2,9 +2,12 @@
 import io
 from unittest.mock import MagicMock, patch
 
+from django.core.exceptions import ValidationError
 from django.test import TestCase, override_settings
 
 from apps.core.document_render.pdf import media_url_fetcher
+from apps.core.document_render.sanitizer import sanitize_rich_html, SAFE_STYLE_PROPS
+from apps.core.document_render.image_validation import validate_document_image
 
 
 class MediaUrlFetcherTests(TestCase):
@@ -113,3 +116,92 @@ class RenderHtmlToPdfTests(TestCase):
             self.skipTest(f"WeasyPrint libs nativas indisponíveis: {exc}")
         self.assertTrue(pdf.startswith(b"%PDF-"))
         self.assertIn(b"%%EOF", pdf[-512:])
+
+
+class SanitizerRichHtmlTests(TestCase):
+    """sanitize_rich_html preserva formatação Quill segura, bloqueia CSS perigoso."""
+
+    def test_preserves_font_family(self):
+        html = '<p><span style="font-family: Arial;">Arial text</span></p>'
+        clean = sanitize_rich_html(html)
+        self.assertIn("font-family", clean)
+        self.assertIn("Arial", clean)
+
+    def test_preserves_font_size(self):
+        html = '<p><span style="font-size: 18px;">Grande</span></p>'
+        clean = sanitize_rich_html(html)
+        self.assertIn("font-size", clean)
+        self.assertIn("18px", clean)
+
+    def test_blocks_background_url_javascript(self):
+        # CSS injection clássico — antes do RV05, style era preservado cru.
+        # Agora `filter_style_properties` remove background-image.
+        html = '<p style="background:url(javascript:alert(1))">Texto</p>'
+        clean = sanitize_rich_html(html)
+        self.assertNotIn("javascript:", clean)
+        self.assertNotIn("background:", clean)
+        # Texto preservado
+        self.assertIn("Texto", clean)
+
+    def test_blocks_position_absolute(self):
+        # Defesa: posicionamento absoluto pode quebrar UI
+        html = '<p style="position: absolute; top: 0;">Hijack</p>'
+        clean = sanitize_rich_html(html)
+        self.assertNotIn("position", clean)
+        self.assertNotIn("absolute", clean)
+
+    def test_preserves_text_align_center(self):
+        html = '<p style="text-align: center;">Centro</p>'
+        clean = sanitize_rich_html(html)
+        self.assertIn("text-align", clean)
+        self.assertIn("center", clean)
+
+    def test_strips_script_tags(self):
+        html = '<p>OK</p><script>alert(1)</script>'
+        clean = sanitize_rich_html(html)
+        self.assertNotIn("script", clean)
+        self.assertNotIn("alert", clean)
+
+    def test_empty_returns_empty(self):
+        self.assertEqual(sanitize_rich_html(""), "")
+        self.assertEqual(sanitize_rich_html(None), "")
+
+    def test_legacy_proposal_alias_works(self):
+        """O alias antigo sanitize_proposal_html ainda funciona (compat)."""
+        from apps.proposals.sanitizer import sanitize_proposal_html
+        self.assertEqual(sanitize_proposal_html(""), "")
+        html = '<p><strong>oi</strong></p>'
+        self.assertIn("<strong>", sanitize_proposal_html(html))
+
+
+class ImageValidationTests(TestCase):
+    """validate_document_image: extensão + tamanho."""
+
+    def test_accepts_png(self):
+        f = MagicMock(name="logo.png", size=100_000)
+        f.name = "logo.png"
+        validate_document_image(f)  # não levanta
+
+    def test_accepts_webp(self):
+        f = MagicMock()
+        f.name = "logo.webp"
+        f.size = 100_000
+        validate_document_image(f)
+
+    def test_rejects_exe(self):
+        f = MagicMock()
+        f.name = "evil.exe"
+        f.size = 100
+        with self.assertRaises(ValidationError):
+            validate_document_image(f)
+
+    def test_rejects_oversized(self):
+        f = MagicMock()
+        f.name = "huge.png"
+        f.size = 5 * 1024 * 1024  # 5MB
+        with self.assertRaises(ValidationError):
+            validate_document_image(f)
+
+    def test_none_passes_through(self):
+        # Campo opcional sem imagem
+        self.assertIsNone(validate_document_image(None))

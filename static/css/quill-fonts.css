@@ -1,0 +1,79 @@
+/* Quill 2.x — labels amigáveis no dropdown de fontes e tamanhos.
+ *
+ * O Quill `attributors/style/font` usa o atributo `data-value` para
+ * controlar o select. Sem CSS, o dropdown mostra os slugs ("arial",
+ * "times-new-roman"). Esse CSS mapeia para nomes legíveis e aplica a
+ * família correta dentro do dropdown.
+ *
+ * Mantém em sync com rich-text-init.js (FONT_WHITELIST + SIZE_WHITELIST).
+ */
+
+/* === FONTES === */
+
+.ql-snow .ql-picker.ql-font .ql-picker-label::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item::before {
+    content: "Normal";
+}
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="arial"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="arial"]::before {
+    content: "Arial";
+    font-family: Arial, sans-serif;
+}
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="times-new-roman"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="times-new-roman"]::before {
+    content: "Times New Roman";
+    font-family: "Times New Roman", Times, serif;
+}
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="georgia"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="georgia"]::before {
+    content: "Georgia";
+    font-family: Georgia, serif;
+}
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="verdana"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="verdana"]::before {
+    content: "Verdana";
+    font-family: Verdana, sans-serif;
+}
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="tahoma"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="tahoma"]::before {
+    content: "Tahoma";
+    font-family: Tahoma, sans-serif;
+}
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="courier-new"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="courier-new"]::before {
+    content: "Courier New";
+    font-family: "Courier New", monospace;
+}
+
+/* Aplica as fontes no editor — Quill por padrão precisa que a classe ql-font-X
+ * exista, mas como usamos style-attributor (font-family inline), o browser já
+ * resolve. Mantemos apenas como fallback explícito. */
+.ql-editor [style*="font-family: arial"] { font-family: Arial, sans-serif; }
+.ql-editor [style*="font-family: times-new-roman"] { font-family: "Times New Roman", Times, serif; }
+.ql-editor [style*="font-family: georgia"] { font-family: Georgia, serif; }
+.ql-editor [style*="font-family: verdana"] { font-family: Verdana, sans-serif; }
+.ql-editor [style*="font-family: tahoma"] { font-family: Tahoma, sans-serif; }
+.ql-editor [style*="font-family: courier-new"] { font-family: "Courier New", monospace; }
+
+/* === TAMANHOS === */
+
+.ql-snow .ql-picker.ql-size .ql-picker-label::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item::before {
+    content: "Normal";
+}
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="10px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="10px"]::before { content: "10"; }
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="12px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="12px"]::before { content: "12"; }
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="14px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="14px"]::before { content: "14"; }
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="16px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="16px"]::before { content: "16"; }
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="18px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="18px"]::before { content: "18"; }
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="20px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="20px"]::before { content: "20"; }
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="24px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="24px"]::before { content: "24"; }
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="32px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="32px"]::before { content: "32"; }
