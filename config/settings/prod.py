@@ -58,5 +58,17 @@ LOGGING = {
             "level": "WARNING",
             "propagate": False,
         },
+        # Apps do projeto em INFO para diagnosticar fluxos críticos
+        # (webhooks WhatsApp, mirror inbox, notificações, IMAP).
+        "apps.chatbot": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "apps.communications": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
     },
 }
