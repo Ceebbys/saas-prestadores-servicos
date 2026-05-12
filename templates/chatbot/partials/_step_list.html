@@ -84,7 +84,7 @@
                                 <div class="flex items-center justify-between gap-2 text-xs bg-amber-50 rounded-lg px-2.5 py-1.5 ring-1 ring-amber-200">
                                     <div class="flex items-center gap-2">
                                         {% icon "bolt" "w-3.5 h-3.5 text-amber-700" %}
-                                        <span class="font-medium text-amber-900">
+                                        <span class="font-medium text-amber-700">
                                             {{ action.get_action_type_display }}
                                         </span>
                                         <span class="text-amber-700">· ordem {{ action.order }}</span>
@@ -218,7 +218,7 @@
                         </label>
                         <label class="flex items-center gap-2 text-sm text-slate-600">
                             <input type="checkbox" name="is_final" {% if step.is_final %}checked{% endif %}
-                                   class="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-600">
+                                   class="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-indigo-500">
                             <span class="font-medium">Encerrar conversa neste passo</span>
                         </label>
                     </div>
@@ -341,7 +341,7 @@
                     {# RV05-G — checkbox is_final disponível já na criação #}
                     <label class="flex items-center gap-2 text-sm text-slate-600">
                         <input type="checkbox" name="is_final"
-                               class="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-600">
+                               class="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-indigo-500">
                         <span class="font-medium">Encerrar conversa neste passo</span>
                     </label>
                 </div>
