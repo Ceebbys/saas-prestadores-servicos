@@ -1,4 +1,4 @@
-{% load humanize ui_tags %}
+{% load humanize ui_tags static %}
 {# Header da conversa #}
 <div class="px-4 py-3 border-b border-slate-200 bg-white flex items-center justify-between">
     <div class="flex items-center gap-3 min-w-0">
@@ -31,10 +31,12 @@
 <div class="inbox-thread-scroll flex flex-col"
      id="thread-{{ active_conversation.pk }}"
      hx-get="{% url 'communications:detail' active_conversation.pk %}"
-     hx-trigger="every 10s"
+     hx-trigger="every 30s, v2b:inbox:message-new from:body throttle:1s [event.detail.conversation_id == {{ active_conversation.pk }}]"
      hx-target="closest section"
      hx-select="#thread-{{ active_conversation.pk }}"
-     hx-swap="outerHTML">
+     hx-swap="outerHTML"
+     data-preserve-scroll="true"
+     data-preserve-key="thread-{{ active_conversation.pk }}">
     {% if thread_messages %}
     {% for msg in thread_messages %}
     <div class="bubble
@@ -83,9 +85,18 @@
             <input type="text" name="subject" placeholder="Assunto do e-mail"
                    class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
         </div>
-        <textarea name="content" rows="2" required placeholder="Escreva sua mensagem…"
-                  class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500 resize-none mb-2"></textarea>
-        <div class="flex items-center gap-1.5">
+        <div class="relative">
+            <textarea name="content" rows="2" required placeholder="Escreva sua mensagem… (digite / para inserir template)"
+                      class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500 resize-none mb-2"
+                      data-composer-textarea
+                      data-conversation-id="{{ active_conversation.pk }}"></textarea>
+            {# Dropdown de templates — controlado por composer-templates.js #}
+            <div data-template-dropdown
+                 class="absolute bottom-full left-0 right-0 mb-1 bg-white rounded-lg shadow-lg ring-1 ring-slate-200 max-h-64 overflow-y-auto z-30"
+                 style="display: none;">
+            </div>
+        </div>
+        <div class="flex items-center gap-1.5 flex-wrap">
             <button type="button" onclick="setChannel('{{ active_conversation.pk }}', 'whatsapp')"
                     class="composer-channel-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
                     data-channel="whatsapp">
@@ -101,6 +112,11 @@
                     data-channel="internal_note">
                 {% icon "pencil" "w-3.5 h-3.5 inline" %} Nota
             </button>
+            <button type="button" data-templates-toggle
+                    title="Templates de resposta rápida (atalho: digite /)"
+                    class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors">
+                {% icon "bookmark" "w-3.5 h-3.5 inline" %} Templates
+            </button>
             <button type="submit" id="send-btn-{{ active_conversation.pk }}"
                     class="ml-auto px-4 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700">
                 Enviar via WhatsApp
@@ -108,6 +124,7 @@
         </div>
     </form>
 </div>
+<script src="{% static 'js/composer-templates.js' %}" defer></script>
 
 <script>
 function setChannel(convId, channel) {

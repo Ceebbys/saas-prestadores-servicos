@@ -5,7 +5,7 @@
  * Usa endpoints /simulator/start/ e /simulator/step/ que executam o DRAFT
  * graph (não a versão publicada) sem persistir nada.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useBuilderStore } from "../store/builderStore";
 
 interface Message {
@@ -43,10 +43,19 @@ export function Simulator({ open, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [allMessages, setAllMessages] = useState<Message[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Guarda contra dupla execução em StrictMode dev (e em re-render acidental)
+  const startedRef = useRef(false);
 
-  // Auto-start ao abrir
+  // Auto-start ao abrir (uma vez por ciclo open=true)
   useEffect(() => {
-    if (!open || !config) return;
+    if (!open || !config) {
+      // Reset guard quando drawer fecha — assim próximo open re-inicia
+      startedRef.current = false;
+      return;
+    }
+    if (startedRef.current) return;
+    startedRef.current = true;
+
     setLoading(true);
     setAllMessages([]);
     fetch(config.endpoints.simulatorStart, {

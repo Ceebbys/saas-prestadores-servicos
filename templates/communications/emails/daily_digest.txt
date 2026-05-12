@@ -1,0 +1,20 @@
+Olá, {{ user.first_name_display|default:user.email }}.
+
+Você tem {{ count }} notificação(ões) não lida(s) das últimas 24h no ServiçoPro:
+
+{% for item in items %}
+─────────────────────────────────────────────
+{{ forloop.counter }}. {{ item.notif.title }}
+{% if item.notif.body %}{{ item.notif.body|truncatechars:200 }}{% endif %}
+{% if item.url %}Acessar: {{ item.url }}{% endif %}
+Tipo: {{ item.notif.get_type_display }} · {{ item.notif.created_at|date:"d/m/Y H:i" }}
+{% endfor %}
+
+─────────────────────────────────────────────
+
+Acesse seu painel para responder e gerenciar:
+{{ site_url|default:"https://servicopro.app" }}/inbox/notifications/
+
+— ServiçoPro
+Você está recebendo este e-mail porque há notificações não respondidas.
+Para desabilitar este resumo diário, vá em Configurações → Notificações.

@@ -2,7 +2,7 @@
 {% if conversations %}
 <ul class="divide-y divide-slate-100">
     {% for conv in conversations %}
-    <li>
+    <li {% if forloop.last and page_obj.has_next %}hx-get="?status={{ status_filter|default:'all' }}&page={{ page_obj.next_page_number }}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}{% if mine_filter %}&mine=1{% endif %}" hx-trigger="revealed once" hx-swap="afterend" hx-select="ul.divide-y > li" hx-target="this"{% endif %}>
         <a href="{% url 'communications:detail' conv.pk %}"
            class="conv-row {% if active_conversation and active_conversation.pk == conv.pk %}conv-row--active{% endif %} {% if conv.unread_count %}conv-row--unread{% endif %} block px-4 py-3 cursor-pointer">
             <div class="flex items-start gap-3">

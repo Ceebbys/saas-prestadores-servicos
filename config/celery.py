@@ -25,6 +25,17 @@ app.conf.beat_schedule = {
         "task": "apps.chatbot.tasks.run_triggers",
         "schedule": crontab(minute="*/5"),
     },
+    # Recepção de e-mails por tenant (apps/communications/services_imap.py).
+    # Lock per-tenant + dedupe DB por Message-ID protegem contra duplicação.
+    "poll-email-inboxes-every-5-min": {
+        "task": "apps.communications.tasks.poll_email_inboxes",
+        "schedule": crontab(minute="*/5"),
+    },
+    # Digest diário por e-mail para usuários com notificações não lidas (8h da manhã).
+    "send-daily-digest-8am": {
+        "task": "apps.communications.tasks.send_daily_digest",
+        "schedule": crontab(hour=8, minute=0),
+    },
 }
 
 

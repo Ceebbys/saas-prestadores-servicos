@@ -180,6 +180,10 @@ urlpatterns = [
         "email/test/", views.EmailConfigTestView.as_view(),
         name="email_config_test",
     ),
+    path(
+        "email/imap-test/", views.ImapConnectionTestView.as_view(),
+        name="email_imap_test",
+    ),
     # Pipeline Automation Rules (gatilhos proposta → pipeline)
     path(
         "automation-rules/",

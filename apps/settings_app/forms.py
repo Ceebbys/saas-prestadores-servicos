@@ -108,6 +108,9 @@ class EmpresaEmailConfigForm(TailwindFormMixin, forms.ModelForm):
         fields = [
             "host", "port", "username", "use_tls", "use_ssl",
             "timeout_seconds", "from_email", "from_name", "is_active",
+            # IMAP (recepção) — reusa username + password do SMTP.
+            "imap_host", "imap_port", "imap_use_ssl", "imap_folder",
+            "imap_active",
         ]
         widgets = {
             "host": forms.TextInput(attrs={"placeholder": "smtp.gmail.com"}),
@@ -115,7 +118,25 @@ class EmpresaEmailConfigForm(TailwindFormMixin, forms.ModelForm):
             "username": forms.TextInput(attrs={"placeholder": "exemplo@suaempresa.com.br"}),
             "from_email": forms.EmailInput(attrs={"placeholder": "exemplo@suaempresa.com.br"}),
             "from_name": forms.TextInput(attrs={"placeholder": "Sua Empresa"}),
+            "imap_host": forms.TextInput(attrs={"placeholder": "imap.gmail.com"}),
+            "imap_port": forms.NumberInput(attrs={"placeholder": "993"}),
+            "imap_folder": forms.TextInput(attrs={"placeholder": "INBOX"}),
         }
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("imap_active"):
+            if not (cleaned.get("imap_host") or "").strip():
+                self.add_error(
+                    "imap_host",
+                    "Servidor IMAP obrigatório quando recepção está ativa.",
+                )
+            if not cleaned.get("imap_port"):
+                self.add_error(
+                    "imap_port",
+                    "Porta IMAP obrigatória quando recepção está ativa.",
+                )
+        return cleaned
 
     def save(self, commit=True):
         instance = super().save(commit=False)

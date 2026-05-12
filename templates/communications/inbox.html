@@ -18,6 +18,24 @@
         background: #f8fafc;
         overflow: hidden;
     }
+    /* Mobile (<768px): stack vertical. Lista esconde quando conversa aberta. */
+    @media (max-width: 767px) {
+        .inbox-shell { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+        /* Quando há conversa ativa, esconde a lista; mostra só thread/side. */
+        .inbox-shell--with-side .inbox-col:first-child { display: none; }
+        .inbox-shell--with-side { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+        .inbox-shell--with-side .inbox-col:last-child {
+            position: fixed; inset: 4rem 0 0 0; z-index: 30; background: white;
+            display: none;  /* painel lateral fica em modal overlay no mobile */
+        }
+        .inbox-shell--with-side .inbox-col:last-child.is-open { display: flex; }
+    }
+    /* Tablet (768-1023px): 2 colunas sem painel lateral */
+    @media (min-width: 768px) and (max-width: 1023px) {
+        .inbox-shell--with-side { grid-template-columns: 280px 1fr; }
+        .inbox-shell--with-side .inbox-col:last-child { display: none; }
+    }
+    /* Desktop ≥1024px: 3 colunas com painel */
     @media (min-width: 1024px) {
         .inbox-shell { left: 16rem; }     /* sidebar */
         .inbox-shell--with-side { grid-template-columns: 320px 1fr 320px; }
@@ -121,18 +139,20 @@
             </div>
         </div>
 
-        <div class="inbox-list-scroll"
+        <div class="inbox-list-scroll" id="inbox-list-scroll"
              hx-get="{% url 'communications:inbox' %}?status={{ status_filter }}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}{% if mine_filter %}&mine=1{% endif %}"
-             hx-trigger="every 15s"
+             hx-trigger="every 30s, v2b:inbox:message-new from:body throttle:1s, v2b:inbox:conv-updated from:body throttle:1s"
              hx-target="this"
-             hx-swap="innerHTML">
+             hx-select="#inbox-list-scroll > *"
+             hx-swap="innerHTML"
+             data-preserve-scroll="true">
             {% include "communications/partials/_conversation_list.html" %}
         </div>
     </aside>
 
     {# --------- Coluna 2: Thread + composer (ou estado vazio) --------- #}
     {% if active_conversation %}
-    <section class="inbox-col">
+    <section class="inbox-col" data-current-conversation-id="{{ active_conversation.pk }}">
         {% include "communications/partials/_thread.html" %}
     </section>
 
@@ -151,4 +171,28 @@
     {% endif %}
 
 </div>
+
+<script>
+// RV06-fix — preserva scrollTop dos containers marcados com data-preserve-scroll
+// durante swaps HTMX (auto-refresh da lista + thread).
+(function() {
+    const scrollState = new Map();
+    function snapshot(el) {
+        if (el && el.dataset && el.dataset.preserveScroll === "true") {
+            scrollState.set(el.id || el.dataset.preserveKey || "default", el.scrollTop);
+        }
+    }
+    function restore(el) {
+        if (el && el.dataset && el.dataset.preserveScroll === "true") {
+            const key = el.id || el.dataset.preserveKey || "default";
+            const value = scrollState.get(key);
+            if (value !== undefined) {
+                el.scrollTop = value;
+            }
+        }
+    }
+    document.body.addEventListener("htmx:beforeSwap", e => snapshot(e.target));
+    document.body.addEventListener("htmx:afterSwap", e => restore(e.target));
+})();
+</script>
 {% endblock %}

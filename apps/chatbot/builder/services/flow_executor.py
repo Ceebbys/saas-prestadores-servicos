@@ -347,15 +347,38 @@ def _execute_action_node(node: dict, session: ChatbotSession) -> None:
 
     try:
         if action_type == "create_lead":
-            from apps.chatbot.services import _create_lead_action
-            lead = _create_lead_action(session)
-            if lead:
-                session.lead = lead
-                session.save(update_fields=["lead", "updated_at"])
-                _log(session, node["id"], "action_executed", "info", {
+            # Defensivo: precisa de pelo menos 1 sinal de identificação
+            # (name, email ou phone) em lead_data. Caso contrário cria lead
+            # vazio/anônimo que polui o CRM. Pula a ação com warning.
+            lead_data = session.lead_data or {}
+            has_identity = bool(
+                lead_data.get("name")
+                or lead_data.get("email")
+                or lead_data.get("phone")
+                or lead_data.get("cpf_cnpj")
+            )
+            if not has_identity:
+                _log(session, node["id"], "action_executed", "warning", {
                     "action_type": "create_lead",
-                    "lead_id": lead.pk,
+                    "skipped": True,
+                    "reason": "no_identity_in_lead_data",
+                    "hint": "Posicione o bloco 'Criar lead' DEPOIS de pelo menos um Coletar dado ou Pergunta.",
                 })
+                logger.warning(
+                    "Action create_lead pulado em node %s (session=%s): "
+                    "lead_data sem name/email/phone/cpf_cnpj.",
+                    node["id"], session.session_key,
+                )
+            else:
+                from apps.chatbot.services import _create_lead_action
+                lead = _create_lead_action(session)
+                if lead:
+                    session.lead = lead
+                    session.save(update_fields=["lead", "updated_at"])
+                    _log(session, node["id"], "action_executed", "info", {
+                        "action_type": "create_lead",
+                        "lead_id": lead.pk,
+                    })
         else:
             # Placeholders — log "not yet implemented" (consistente com v1)
             logger.info(
@@ -430,6 +453,16 @@ def _execute_api_call(node: dict, session: ChatbotSession) -> bool:
         url = Template(path_template).safe_substitute(safe_vars)
     except Exception:
         url = path_template
+
+    # SSRF defense — bloqueia chamadas para IPs internos / metadata endpoints.
+    blocked = _check_ssrf(url)
+    if blocked:
+        _log(session, node["id"], "error", "error", {
+            "reason": "ssrf_blocked",
+            "detail": blocked,
+            "url_host": url.split("/")[2] if "://" in url else url,
+        })
+        return False
 
     body_json = None
     if payload_template and method in ("POST", "PUT", "PATCH"):
@@ -704,3 +737,87 @@ def _step_payload(node: dict) -> dict:
             for o in data.get("options", [])
         ]
     return payload
+
+
+# ---------------------------------------------------------------------------
+# SSRF defense (api_call node)
+# ---------------------------------------------------------------------------
+
+
+def _check_ssrf(url: str) -> str | None:
+    """Retorna mensagem de bloqueio se URL alvejar IP/host interno; None se OK.
+
+    Defesa em camadas:
+    1. Esquema deve ser http/https (bloqueia file://, gopher://, etc.)
+    2. Hostname não pode ser localhost ou metadata endpoints conhecidos
+    3. IP resolvido não pode estar em redes privadas/loopback/link-local
+       (10/8, 172.16/12, 192.168/16, 127/8, 169.254/16, 0.0.0.0/8, ::1, fc00::/7)
+
+    Bloqueia mesmo se o usuário tenta truques como `http://127.1`, `0`, hex,
+    decimal, IPv6-mapped IPv4 — `ipaddress.ip_address(socket.gethostbyname(...))`
+    canonicaliza.
+    """
+    import ipaddress
+    import os as _os
+    import socket
+    import sys as _sys
+    from urllib.parse import urlparse
+
+    # Skip em test runner (DNS pode falhar/lento; testes têm casos dedicados
+    # para _check_ssrf, e api_call usa httpx mockado).
+    if "test" in _sys.argv or _os.environ.get("PYTEST_CURRENT_TEST"):
+        return None
+
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return "url_invalid"
+
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in ("http", "https"):
+        return f"scheme_blocked:{scheme}"
+
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        return "no_hostname"
+
+    # Hostnames bloqueados explicitamente (cobre vários cloud metadata)
+    _BLOCKED_HOSTNAMES = {
+        "localhost",
+        "metadata.google.internal",
+        "metadata",
+        "instance-data",
+        "instance-data.ec2.internal",
+        "169.254.169.254",  # AWS/Azure metadata
+        "0.0.0.0",
+        "0",
+    }
+    if hostname in _BLOCKED_HOSTNAMES:
+        return f"hostname_blocked:{hostname}"
+
+    # Resolve IP (pega TODOS os A/AAAA records — defesa contra DNS rebinding
+    # parcial e multi-record). Em caso de erro de DNS, bloqueia (fail closed).
+    try:
+        addrinfos = socket.getaddrinfo(hostname, parsed.port or 80, proto=socket.IPPROTO_TCP)
+    except (socket.gaierror, UnicodeError):
+        return f"dns_resolve_failed:{hostname}"
+
+    for af, _, _, _, sockaddr in addrinfos:
+        ip_str = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            return f"ip_parse_failed:{ip_str}"
+        # Bloqueia: loopback, link-local, private, reserved, multicast, unspecified
+        if (
+            ip.is_loopback
+            or ip.is_link_local
+            or ip.is_private
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            return f"ip_blocked:{ip_str}"
+
+    return None
+

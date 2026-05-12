@@ -22,3 +22,11 @@ cryptography>=42
 
 # JSON Schema validation (graph_json do builder visual — RV06)
 jsonschema>=4.0
+
+# Realtime via Django Channels (inbox ao vivo + notificações in-app)
+channels>=4.0,<5
+channels-redis>=4.2
+daphne>=4.1
+
+# Web Push (notificações dispatch para browser fora da página)
+pywebpush>=2.0

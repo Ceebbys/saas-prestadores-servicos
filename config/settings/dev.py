@@ -27,8 +27,13 @@ if os.getenv("USE_SQLITE", "false").lower() == "true":
         }
     }
 
-# Disable whitenoise in development
+# Disable whitenoise CompressedManifest em dev (recarrega arquivos sem
+# precisar de collectstatic toda hora). `default` é OBRIGATÓRIO em
+# Django 5+ para qualquer FileField/ImageField funcionar.
 STORAGES = {  # noqa: F405
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
     "staticfiles": {
         "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
     },

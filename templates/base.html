@@ -12,7 +12,9 @@
 
     {% block extra_css %}{% endblock %}
 </head>
-<body class="h-full bg-slate-50 text-slate-900 antialiased" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+<body class="h-full bg-slate-50 text-slate-900 antialiased"
+      hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+      {% if user.is_authenticated %}data-realtime-enabled="true"{% endif %}>
     {% block body %}{% endblock %}
 
     <!-- Toast Messages -->
@@ -27,6 +29,10 @@
     <script src="{% static 'js/htmx.min.js' %}"></script>
     <script src="{% static 'js/alpine.min.js' %}" defer></script>
     <script src="{% static 'js/app.js' %}"></script>
+    {% if user.is_authenticated %}
+    <script src="{% static 'js/realtime.js' %}" defer></script>
+    <script src="{% static 'js/push.js' %}" defer></script>
+    {% endif %}
     {% block extra_js %}{% endblock %}
 </body>
 </html>

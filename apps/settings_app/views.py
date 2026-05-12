@@ -1364,6 +1364,72 @@ class EmailConfigTestView(EmpresaMixin, View):
         return redirect("settings_app:email_config")
 
 
+class ImapConnectionTestView(EmpresaMixin, View):
+    """Testa a conexão IMAP sem marcar mensagens como Seen.
+
+    Faz LOGIN + SELECT + UID SEARCH UNSEEN (count-only) e retorna parcial HTML
+    para hx-target="#imap-test-result". Atualiza `imap_last_poll_*` para que
+    o status mostrado na UI seja consistente com a varredura agendada.
+    """
+
+    def post(self, request):
+        from django.http import HttpResponse
+        from django.utils import timezone
+
+        cfg = EmpresaEmailConfig.objects.filter(empresa=request.empresa).first()
+        if not cfg or not cfg.imap_host:
+            return HttpResponse(
+                '<p class="text-xs text-rose-600 mt-2">'
+                'Configure o servidor IMAP antes de testar.</p>',
+                status=400,
+            )
+
+        from apps.communications import services_imap
+
+        start_ts = timezone.now()
+        conn = None
+        try:
+            conn = services_imap._open_connection(cfg)
+            uids = services_imap._search_unseen_uids(
+                conn, cfg.imap_folder, limit=0,
+            )
+            unseen_count = len(uids)
+            duration_ms = int(
+                (timezone.now() - start_ts).total_seconds() * 1000
+            )
+            services_imap._save_status(cfg, ok=True, error="")
+            html = (
+                f'<div class="mt-2 p-2 rounded bg-emerald-50 border '
+                f'border-emerald-200 text-xs text-emerald-800">'
+                f'<strong>Conectado.</strong> {unseen_count} mensagem(ns) '
+                f'não-lida(s) em <code>{cfg.imap_folder or "INBOX"}</code> '
+                f'· {duration_ms} ms'
+                f'</div>'
+            )
+            return HttpResponse(html)
+        except Exception as exc:  # noqa: BLE001
+            duration_ms = int(
+                (timezone.now() - start_ts).total_seconds() * 1000
+            )
+            services_imap._save_status(
+                cfg, ok=False, error=services_imap._sanitize_error(exc),
+            )
+            from django.utils.html import escape
+            html = (
+                f'<div class="mt-2 p-2 rounded bg-rose-50 border '
+                f'border-rose-200 text-xs text-rose-800">'
+                f'<strong>Falhou:</strong> {escape(str(exc)[:300])}'
+                f' · {duration_ms} ms</div>'
+            )
+            return HttpResponse(html, status=200)
+        finally:
+            if conn is not None:
+                try:
+                    conn.logout()
+                except Exception:  # noqa: BLE001
+                    pass
+
+
 # ---------------------------------------------------------------------------
 # Pipeline Automation Rules — gatilhos proposta → pipeline (Etapa 7)
 # ---------------------------------------------------------------------------

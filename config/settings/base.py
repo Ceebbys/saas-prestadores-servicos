@@ -13,6 +13,9 @@ ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
 # Application definition
 INSTALLED_APPS = [
+    # Daphne — DEVE vir antes de staticfiles para o runserver usar o
+    # ASGI runserver com WebSocket support (django-channels docs).
+    "daphne",
     # Django
     "django.contrib.admin",
     "django.contrib.auth",
@@ -22,6 +25,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.humanize",
     # Third party
+    "channels",
     "django_htmx",
     # Project apps
     "apps.core",
@@ -66,12 +70,47 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "apps.core.context_processors.empresa_context",
+                "apps.core.context_processors.notifications_context",
             ],
         },
     },
 ]
 
 WSGI_APPLICATION = "config.wsgi.application"
+ASGI_APPLICATION = "config.asgi.application"
+
+# Channels — realtime (Inbox ao vivo + notificações).
+# Em testes/dev sem Redis, usa InMemoryChannelLayer; em produção, Redis.
+CHANNELS_REDIS_URL = os.getenv("CHANNELS_REDIS_URL", os.getenv("REDIS_URL", ""))
+if CHANNELS_REDIS_URL:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [CHANNELS_REDIS_URL]},
+        },
+    }
+else:
+    CHANNEL_LAYERS = {
+        "default": {"BACKEND": "channels.layers.InMemoryChannelLayer"},
+    }
+
+# Cache padrão — usado pelo lock per-tenant do IMAP poller e por throttling
+# do builder. Em dev/test sem Redis, usa LocMemCache; em produção, Redis.
+CACHE_REDIS_URL = os.getenv("CACHE_REDIS_URL", os.getenv("REDIS_URL", ""))
+if CACHE_REDIS_URL:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": CACHE_REDIS_URL,
+        },
+    }
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "default-cache",
+        },
+    }
 
 # Database
 import dj_database_url
@@ -194,6 +233,18 @@ PASSWORD_RESET_TIMEOUT = int(os.getenv("PASSWORD_RESET_TIMEOUT_DAYS", "1")) * 24
 
 # Public site URL used in transactional emails (full domain incl. scheme).
 SITE_URL = os.getenv("SITE_URL", "http://localhost:8000")
+
+# ---------------------------------------------------------------------------
+# Web Push (VAPID) — gerar par com:
+#   python -m apps.communications.management.commands.generate_vapid
+# Em dev/test, ausência das chaves desabilita push (notificações in-app
+# continuam funcionando via WebSocket).
+# ---------------------------------------------------------------------------
+VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
+VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")
+VAPID_CONTACT_EMAIL = os.getenv(
+    "VAPID_CONTACT_EMAIL", "admin@servicopro.app",
+)
 
 # ---------------------------------------------------------------------------
 # RV06 — Limites do construtor visual de fluxos (chatbot builder)

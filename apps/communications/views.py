@@ -36,7 +36,7 @@ class InboxView(EmpresaMixin, HtmxResponseMixin, ListView):
     template_name = "communications/inbox.html"
     partial_template_name = "communications/partials/_conversation_list.html"
     context_object_name = "conversations"
-    paginate_by = 50
+    paginate_by = 30  # infinite scroll via HTMX usa páginas pequenas
 
     def get_queryset(self):
         qs = (
@@ -243,6 +243,16 @@ class AssignView(EmpresaMixin, View):
         if conv.assigned_to and conv.status == Conversation.Status.OPEN:
             conv.status = Conversation.Status.IN_PROGRESS
         conv.save(update_fields=["assigned_to", "status", "updated_at"])
+
+        # Notifica o destinatário (Fase 4 — bell + WS + push)
+        if conv.assigned_to is not None and conv.assigned_to != request.user:
+            try:
+                from apps.communications.notifications import notify_conversation_assigned
+                notify_conversation_assigned(conv, conv.assigned_to, request.user)
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "assignment_notify_failed conv=%s", conv.pk,
+                )
         django_messages.success(request, msg)
         return redirect("communications:detail", pk=conv.pk)
 

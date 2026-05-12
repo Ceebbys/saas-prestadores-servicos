@@ -120,19 +120,39 @@ class Conversation(TenantOwnedModel):
     ) -> None:
         """Atualiza última-mensagem snapshot quando uma ConversationMessage
         é adicionada. `direction` inbound também incrementa unread_count.
+
+        Race-safe: usa F('unread_count') + 1 via .update() para que dois
+        inbounds concorrentes (ex.: webhook + IMAP poll) não percam
+        incrementos (ambos lendo count=0 e ambos salvando count=1).
         """
-        self.last_message_at = timezone.now()
-        self.last_message_preview = (content or "")[:200]
-        self.last_message_direction = direction
-        self.last_message_channel = channel
-        if direction == ConversationMessage.Direction.INBOUND:
-            self.unread_count = (self.unread_count or 0) + 1
+        from django.db.models import F
+
+        now = timezone.now()
+        preview = (content or "")[:200]
         if save:
-            self.save(update_fields=[
+            update_kwargs = {
+                "last_message_at": now,
+                "last_message_preview": preview,
+                "last_message_direction": direction,
+                "last_message_channel": channel,
+                "updated_at": now,
+            }
+            if direction == ConversationMessage.Direction.INBOUND:
+                update_kwargs["unread_count"] = F("unread_count") + 1
+            type(self).objects.filter(pk=self.pk).update(**update_kwargs)
+            # Refresh para resolver F() em memória + manter consistência
+            self.refresh_from_db(fields=[
                 "last_message_at", "last_message_preview",
                 "last_message_direction", "last_message_channel",
                 "unread_count", "updated_at",
             ])
+        else:
+            self.last_message_at = now
+            self.last_message_preview = preview
+            self.last_message_direction = direction
+            self.last_message_channel = channel
+            if direction == ConversationMessage.Direction.INBOUND:
+                self.unread_count = (self.unread_count or 0) + 1
 
     def mark_read(self) -> None:
         """Zera contagem de não-lidas."""
@@ -247,3 +267,190 @@ def get_or_create_conversation(empresa, lead, contato=None) -> Conversation:
         conv.contato = contato
         conv.save(update_fields=["contato", "updated_at"])
     return conv
+
+
+# ============================================================================
+# Notifications (Fase 4)
+# ============================================================================
+
+
+class Notification(TimestampedModel):
+    """Notificação in-app, dirigida a um usuário específico.
+
+    Pode estar atrelada a uma empresa (multi-tenant) e a uma URL de ação
+    (para o usuário clicar e ir direto ao recurso). O cliente conecta via
+    `/ws/notifications/` para receber em realtime, e a sininha no topbar
+    consulta `/notifications/` para listar.
+    """
+
+    class Type(models.TextChoices):
+        MESSAGE_INBOUND = "message_inbound", "Nova mensagem recebida"
+        CONVERSATION_ASSIGNED = "conversation_assigned", "Conversa atribuída a você"
+        LEAD_NEW = "lead_new", "Novo lead"
+        PROPOSAL_ACCEPTED = "proposal_accepted", "Proposta aceita"
+        CONTRACT_SIGNED = "contract_signed", "Contrato assinado"
+        SYSTEM = "system", "Sistema"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        verbose_name="Destinatário",
+    )
+    empresa = models.ForeignKey(
+        "accounts.Empresa",
+        on_delete=models.CASCADE,
+        null=True, blank=True,
+        related_name="notifications",
+        help_text="Tenant; null para notificações pessoais (sistema).",
+    )
+    type = models.CharField(
+        "Tipo", max_length=40, choices=Type.choices, default=Type.SYSTEM,
+    )
+    title = models.CharField("Título", max_length=200)
+    body = models.TextField("Corpo", blank=True)
+    url = models.CharField(
+        "URL de ação", max_length=500, blank=True,
+        help_text="Caminho relativo (ex.: /communications/inbox/42/).",
+    )
+    icon = models.CharField(
+        "Ícone", max_length=40, blank=True,
+        help_text="Nome do heroicon (ex.: 'envelope', 'user-plus').",
+    )
+    payload = models.JSONField(
+        "Payload", default=dict, blank=True,
+        help_text="Dados adicionais para deep-link, contadores, etc.",
+    )
+    read_at = models.DateTimeField("Lida em", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Notificação"
+        verbose_name_plural = "Notificações"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["user", "read_at", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"[{self.type}] {self.title} → {self.user_id}"
+
+    def mark_read(self):
+        if self.read_at is None:
+            self.read_at = timezone.now()
+            self.save(update_fields=["read_at", "updated_at"])
+
+
+class MessageTemplate(TenantOwnedModel):
+    """Template de mensagem reutilizável (resposta rápida) por tenant.
+
+    O atendente digita `/` no composer e abre dropdown com seus templates.
+    Conteúdo passa por Jinja2 sandboxed antes de inserir — variáveis
+    suportadas:
+        {{ lead.name }}, {{ lead.email }}, {{ lead.phone }},
+        {{ contato.name }}, {{ empresa.name }},
+        {{ user.first_name }}, {{ user.email }},
+        {{ now.date }}, {{ now.time }}
+    """
+
+    class Channel(models.TextChoices):
+        ANY = "any", "Qualquer canal"
+        WHATSAPP = "whatsapp", "WhatsApp"
+        EMAIL = "email", "E-mail"
+        INTERNAL_NOTE = "internal_note", "Nota interna"
+
+    class Category(models.TextChoices):
+        GREETING = "greeting", "Saudação"
+        FOLLOWUP = "followup", "Follow-up"
+        PROPOSAL = "proposal", "Proposta"
+        CLOSING = "closing", "Encerramento"
+        OBJECTION = "objection", "Objeção"
+        OTHER = "other", "Outro"
+
+    name = models.CharField("Nome", max_length=120)
+    shortcut = models.CharField(
+        "Atalho", max_length=40, blank=True,
+        help_text="Atalho digitável (ex.: 'ola', 'preco'). Sem espaços.",
+    )
+    category = models.CharField(
+        "Categoria", max_length=20,
+        choices=Category.choices, default=Category.OTHER,
+    )
+    channel = models.CharField(
+        "Canal", max_length=20,
+        choices=Channel.choices, default=Channel.ANY,
+    )
+    content = models.TextField(
+        "Conteúdo",
+        help_text="Suporta {{ lead.name }}, {{ contato.name }}, "
+                  "{{ empresa.name }}, {{ user.first_name }}, {{ now.date }}.",
+    )
+    is_active = models.BooleanField("Ativo", default=True)
+    usage_count = models.PositiveIntegerField(
+        "Uso", default=0, editable=False,
+        help_text="Contador de quantas vezes foi inserido em conversas.",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="message_templates_created",
+    )
+
+    class Meta:
+        verbose_name = "Template de mensagem"
+        verbose_name_plural = "Templates de mensagem"
+        ordering = ["category", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["empresa", "shortcut"],
+                condition=~models.Q(shortcut=""),
+                name="msg_template_unique_shortcut_per_empresa",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["empresa", "is_active", "category"]),
+            models.Index(fields=["empresa", "shortcut"]),
+        ]
+
+    def __str__(self):
+        return f"{self.name} [{self.category}]"
+
+    def save(self, *args, **kwargs):
+        # Normaliza shortcut: lowercase, sem espaços, sem '/' inicial
+        if self.shortcut:
+            self.shortcut = (
+                self.shortcut.strip().lower()
+                .lstrip("/").replace(" ", "_")
+            )
+        super().save(*args, **kwargs)
+
+
+class PushSubscription(TimestampedModel):
+    """Subscription Web Push (VAPID) — usado para enviar notificações
+    push mesmo quando o navegador está fechado.
+
+    Criada pelo browser ao chamar `PushManager.subscribe()` no service worker.
+    Cada usuário pode ter múltiplas (laptop, mobile, etc.).
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="push_subscriptions",
+    )
+    endpoint = models.URLField("Endpoint", max_length=500, unique=True)
+    p256dh = models.CharField("Chave P256DH", max_length=200)
+    auth = models.CharField("Auth", max_length=80)
+    user_agent = models.CharField("User-Agent", max_length=300, blank=True)
+    last_used_at = models.DateTimeField("Último uso", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Subscription Push"
+        verbose_name_plural = "Subscriptions Push"
+        indexes = [
+            models.Index(fields=["user", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"Push subscription #{self.pk} → user {self.user_id}"

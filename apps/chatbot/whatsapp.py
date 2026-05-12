@@ -277,7 +277,12 @@ def _process_evolution_message(flow, sender_id, message_text):
         if result.get("step"):
             reply += "\n\n" + result["step"]["question"]
             choices = result["step"].get("choices", [])
-        _mirror_to_inbox(flow, sender_id, message_text, reply)
+        # Busca a sessão recém-criada para passar ao mirror (permite criar
+        # Lead lazy vinculado à session — primeira msg do cliente NÃO some).
+        new_session = ChatbotSession.objects.filter(
+            flow=flow, sender_id=sender_id, status=ChatbotSession.Status.ACTIVE,
+        ).order_by("-created_at").first()
+        _mirror_to_inbox(flow, sender_id, message_text, reply, session=new_session)
         return reply, choices, False, None
 
     # Processar resposta na sessão existente
@@ -307,33 +312,139 @@ def _process_evolution_message(flow, sender_id, message_text):
     return "", [], False, None
 
 
+def _resolve_or_create_lead_lazy(flow, sender_id, session=None, lead_id=None):
+    """Resolve o Lead da conversa WhatsApp, criando lazily se necessário.
+
+    Ordem de resolução:
+        1. `session.lead` se já existe
+        2. `lead_id` explícito (vem ao final do fluxo)
+        3. Lead existente com `phone=sender_id` no mesmo tenant (re-engajamento)
+        4. Cria novo Lead "shell" com phone + source=WHATSAPP
+           - `external_ref=session.session_key` para idempotência com
+             `_create_lead_action` quando o fluxo terminar
+           - `name="WhatsApp <phone>"` placeholder (atualizado quando bot
+             coletar o nome via `create_lead_from_chatbot`)
+
+    Retorna o `Lead` (nunca None) ou None se algum guard falhar (cross-tenant,
+    flow sem empresa, etc.).
+    """
+    from apps.crm.models import Lead
+
+    # (1) Lead vinculado à session
+    if session is not None and session.lead_id:
+        lead = session.lead
+        if lead.empresa_id != flow.empresa_id:
+            logger.error(
+                "_mirror_to_inbox: cross-tenant block (lead.empresa=%s, flow.empresa=%s)",
+                lead.empresa_id, flow.empresa_id,
+            )
+            return None
+        return lead
+
+    # (2) Lead explícito (ao final do fluxo)
+    if lead_id:
+        try:
+            lead = Lead.objects.get(pk=lead_id, empresa=flow.empresa)
+            return lead
+        except Lead.DoesNotExist:
+            logger.warning(
+                "_mirror_to_inbox: lead_id=%s não encontrado em empresa=%s",
+                lead_id, flow.empresa_id,
+            )
+
+    # (3) Lead pré-existente pelo telefone (mesmo cliente voltando)
+    phone_digits = "".join(c for c in (sender_id or "") if c.isdigit())
+    if phone_digits:
+        existing = (
+            Lead.objects
+            .filter(empresa=flow.empresa, phone__contains=phone_digits)
+            .order_by("-created_at")
+            .first()
+        )
+        if existing is not None:
+            # Vincula à session (próximo turno reusa)
+            if session is not None and not session.lead_id:
+                session.lead = existing
+                try:
+                    session.save(update_fields=["lead", "updated_at"])
+                except Exception:  # noqa: BLE001
+                    logger.exception("falha ao vincular session.lead reused")
+            return existing
+
+    # (4) Cria Lead lazy — placeholder até o bot coletar nome/email
+    if not phone_digits:
+        logger.warning(
+            "_mirror_to_inbox: sender_id sem dígitos — não cria lead "
+            "(sender=%r flow=%s)",
+            sender_id, flow.pk,
+        )
+        return None
+
+    try:
+        # IMPORTANTE: external_ref deve casar com o que _create_lead_action
+        # usará no FIM do fluxo (apps/chatbot/services.py::_create_lead_action
+        # passa session_data["session_id"] = str(session.session_key) e
+        # create_lead_from_chatbot usa esse session_id como external_ref).
+        # Assim o lead criado aqui é o MESMO que será hidratado depois.
+        external_ref = (
+            str(session.session_key)
+            if session is not None and session.session_key
+            else f"whatsapp:{flow.pk}:{phone_digits}"
+        )
+        # Idempotência se já existe via session
+        existing_by_ref = Lead.objects.filter(
+            empresa=flow.empresa, external_ref=external_ref,
+        ).first()
+        if existing_by_ref:
+            new_lead = existing_by_ref
+        else:
+            new_lead = Lead.objects.create(
+                empresa=flow.empresa,
+                name=f"WhatsApp {phone_digits}",
+                phone=phone_digits,
+                source=Lead.Source.WHATSAPP,
+                external_ref=external_ref,
+                notes="Lead criado automaticamente ao receber primeira mensagem.",
+            )
+            logger.info(
+                "_mirror_to_inbox: lead lazy criado pk=%s sender=%s",
+                new_lead.pk, phone_digits,
+            )
+        # Vincula à session
+        if session is not None and not session.lead_id:
+            session.lead = new_lead
+            try:
+                session.save(update_fields=["lead", "updated_at"])
+            except Exception:  # noqa: BLE001
+                logger.exception("falha ao vincular session.lead após criar lazy")
+        return new_lead
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "_mirror_to_inbox: falha criando lead lazy (sender=%s, flow=%s)",
+            sender_id, flow.pk,
+        )
+        return None
+
+
 def _mirror_to_inbox(flow, sender_id, inbound_text, outbound_text, *, session=None, lead_id=None):
     """Replica inbound + outbound do bot na inbox unificada de Communications.
 
+    Cria Lead lazily se necessário — assim mensagens NÃO são perdidas nos
+    primeiros turnos antes do bot coletar nome/email. O `_create_lead_action`
+    no fim do fluxo reusa o Lead lazy via `external_ref` e hidrata os campos.
+
     Best-effort: erros aqui NÃO derrubam o fluxo principal (apenas log).
-    Só grava quando há um Lead — sem lead vinculado, mensagens ficam só
-    no ChatbotMessage do RV06.
     """
+    from apps.communications.services import record_bot_outbound, record_inbound
+
+    lead = _resolve_or_create_lead_lazy(
+        flow, sender_id, session=session, lead_id=lead_id,
+    )
+    if lead is None:
+        # Já foi logado em _resolve_or_create_lead_lazy
+        return
+
     try:
-        from apps.communications.services import record_bot_outbound, record_inbound
-        from apps.crm.models import Lead
-
-        # Resolve lead: prioriza session.lead, depois lead_id, depois busca
-        # por phone (sender_id é E.164 sem +).
-        lead = None
-        if session and session.lead_id:
-            lead = session.lead
-        elif lead_id:
-            try:
-                lead = Lead.objects.get(pk=lead_id, empresa=flow.empresa)
-            except Lead.DoesNotExist:
-                lead = None
-
-        if lead is None:
-            # Sem lead, sem inbox (não criamos lead síntese aqui — esse é
-            # papel do _create_lead_action do bot)
-            return
-
         # Inbound do cliente
         record_inbound(
             empresa=flow.empresa,

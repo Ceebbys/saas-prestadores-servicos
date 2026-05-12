@@ -184,6 +184,40 @@ CHANNEL_SOURCE_MAP = {
 }
 
 
+def _hydrate_lazy_lead(lead, session_data: dict):
+    """Atualiza campos vazios de um Lead existente com dados da sessão.
+
+    Usado quando o `_mirror_to_inbox` criou um Lead "lazy" no início do fluxo
+    (name="WhatsApp <phone>") e o `create_lead_from_chatbot` precisa hidratar
+    os dados reais coletados pelo bot (nome, email, etc.).
+
+    Não sobrescreve campos já preenchidos pelo usuário/admin.
+    """
+    updates = {}
+    name = (session_data.get("name") or "").strip()
+    if name and (not lead.name or lead.name.startswith("WhatsApp ")):
+        updates["name"] = name
+    email = (session_data.get("email") or "").strip()
+    if email and not lead.email:
+        updates["email"] = email
+    phone = (session_data.get("phone") or "").strip()
+    if phone and (not lead.phone or lead.phone == phone):
+        # Phone provavelmente já está setado pelo lazy; só sobrescreve se vazio.
+        if not lead.phone:
+            updates["phone"] = phone
+    company = (session_data.get("company") or "").strip()
+    if company and not lead.company:
+        updates["company"] = company
+    notes = (session_data.get("notes") or "").strip()
+    if notes and (not lead.notes or "automaticamente" in (lead.notes or "")):
+        updates["notes"] = notes
+    if updates:
+        for k, v in updates.items():
+            setattr(lead, k, v)
+        lead.save(update_fields=list(updates.keys()) + ["updated_at"])
+    return lead
+
+
 @transaction.atomic
 def create_lead_from_chatbot(empresa, flow, session_data):
     """Cria um Lead a partir dos dados coletados pelo chatbot.
@@ -202,12 +236,15 @@ def create_lead_from_chatbot(empresa, flow, session_data):
     if not session_id:
         session_id = f"chatbot:{flow.pk if flow else 0}:{uuid4().hex[:8]}"
 
-    # Idempotência: se já existe lead com este external_ref, retorna
+    # Idempotência: se já existe lead com external_ref, HIDRATA campos vazios
+    # (ex.: Lead lazy criado pelo _mirror_to_inbox da inbox WhatsApp tem
+    # name="WhatsApp <phone>" placeholder — agora atualizamos com nome real).
+    # Também busca por `chatbot:<flow>:<session>` E variante curta legado.
     existing = Lead.objects.filter(
         empresa=empresa, external_ref=session_id,
     ).first()
     if existing:
-        return existing
+        return _hydrate_lazy_lead(existing, session_data)
 
     channel = flow.channel if flow else "whatsapp"
     source = CHANNEL_SOURCE_MAP.get(channel, "outro")

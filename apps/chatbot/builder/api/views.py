@@ -329,8 +329,25 @@ class ApplyTemplateView(BuilderAPIView):
         if template is None:
             return JsonResponse({"error": "template_not_found"}, status=404)
 
-        # Aplica ao draft (sobrescreve graph atual)
+        # Backup do graph anterior em ChatbotFlowVersion ARCHIVED antes de
+        # sobrescrever (usuário pode "desfazer" via histórico de versões).
         draft = _get_or_create_draft(self.flow, request.user)
+        previous_graph = draft.graph_json or {}
+        previous_has_content = bool(
+            previous_graph.get("nodes")
+            and len(previous_graph.get("nodes", [])) > 1
+        )
+        if previous_has_content:
+            ChatbotFlowVersion.objects.create(
+                flow=self.flow,
+                status=ChatbotFlowVersion.Status.ARCHIVED,
+                graph_json=previous_graph,
+                schema_version=draft.schema_version,
+                notes=f"Backup automático antes de aplicar template '{template['name']}'.",
+                created_by=request.user if request.user.is_authenticated else None,
+            )
+
+        # Aplica template ao draft
         draft.graph_json = template["graph"]
         draft.validated_at = None
         draft.validation_errors = []
@@ -339,6 +356,7 @@ class ApplyTemplateView(BuilderAPIView):
             "ok": True,
             "version_id": draft.id,
             "template_name": template["name"],
+            "backup_created": previous_has_content,
         })
 
 

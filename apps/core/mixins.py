@@ -22,8 +22,11 @@ class EmpresaMixin(LoginRequiredMixin):
         return context
 
     def form_valid(self, form):
-        if hasattr(form.instance, "empresa_id") and not form.instance.empresa_id:
-            form.instance.empresa = self.request.empresa
+        # `form.instance` só existe em ModelForm; DeleteView (Django 5+) usa
+        # `forms.Form` para confirmação, sem `.instance` — usa getattr defensivo.
+        instance = getattr(form, "instance", None)
+        if instance is not None and hasattr(instance, "empresa_id") and not instance.empresa_id:
+            instance.empresa = self.request.empresa
         return super().form_valid(form)
 
 

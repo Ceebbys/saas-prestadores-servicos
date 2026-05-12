@@ -50,21 +50,24 @@ def send_whatsapp(
     from apps.chatbot.models import WhatsAppConfig
     from apps.chatbot.whatsapp import EvolutionAPIClient
 
+    # ATENÇÃO: criamos a mensagem DEFAULT FAILED (não PENDING). Se a request
+    # crashar entre create e save de SENT, fica como FAILED — atendente sabe
+    # que precisa reenviar. Evita "msg PENDING órfã" silenciosa.
     msg = ConversationMessage.objects.create(
         conversation=conversation,
         direction=ConversationMessage.Direction.OUTBOUND,
         channel=ConversationMessage.Channel.WHATSAPP,
         content=content,
         sender_user=sender_user,
-        delivery_status=ConversationMessage.DeliveryStatus.PENDING,
+        delivery_status=ConversationMessage.DeliveryStatus.FAILED,
+        error_message="Envio interrompido — verifique o status do canal.",
     )
 
     # Resolve número de telefone
     phone = phone or _resolve_phone(conversation)
     if not phone:
-        msg.delivery_status = ConversationMessage.DeliveryStatus.FAILED
         msg.error_message = "Lead sem telefone cadastrado."
-        msg.save(update_fields=["delivery_status", "error_message", "updated_at"])
+        msg.save(update_fields=["error_message", "updated_at"])
         return msg
 
     # Resolve config WhatsApp do tenant
@@ -79,20 +82,28 @@ def send_whatsapp(
         client = EvolutionAPIClient()  # fallback settings globais
 
     if not client.configured:
-        msg.delivery_status = ConversationMessage.DeliveryStatus.FAILED
         msg.error_message = "Evolution API não configurada para esta empresa."
-        msg.save(update_fields=["delivery_status", "error_message", "updated_at"])
+        msg.save(update_fields=["error_message", "updated_at"])
         return msg
 
-    ok = client.send_text(phone, content)
+    try:
+        ok = client.send_text(phone, content)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Exceção ao enviar WhatsApp para %s", phone)
+        msg.error_message = f"Exceção: {str(exc)[:400]}"
+        msg.save(update_fields=["error_message", "updated_at"])
+        return msg
+
     if ok:
         msg.delivery_status = ConversationMessage.DeliveryStatus.SENT
         msg.delivered_at = timezone.now()
-        msg.save(update_fields=["delivery_status", "delivered_at", "updated_at"])
+        msg.error_message = ""
+        msg.save(update_fields=[
+            "delivery_status", "delivered_at", "error_message", "updated_at",
+        ])
     else:
-        msg.delivery_status = ConversationMessage.DeliveryStatus.FAILED
         msg.error_message = "Falha ao enviar via Evolution API."
-        msg.save(update_fields=["delivery_status", "error_message", "updated_at"])
+        msg.save(update_fields=["error_message", "updated_at"])
 
     conversation.touch(
         direction=ConversationMessage.Direction.OUTBOUND,
@@ -114,6 +125,7 @@ def send_email(
     from django.core.mail import EmailMessage
     from apps.proposals.services.email import _resolve_smtp_for
 
+    # Default FAILED — atualiza para SENT só após confirm de envio
     msg = ConversationMessage.objects.create(
         conversation=conversation,
         direction=ConversationMessage.Direction.OUTBOUND,
@@ -121,15 +133,33 @@ def send_email(
         content=content,
         payload={"subject": subject},
         sender_user=sender_user,
-        delivery_status=ConversationMessage.DeliveryStatus.PENDING,
+        delivery_status=ConversationMessage.DeliveryStatus.FAILED,
+        error_message="Envio interrompido — verifique o status SMTP.",
     )
 
     to_email = to_email or _resolve_email(conversation)
     if not to_email:
-        msg.delivery_status = ConversationMessage.DeliveryStatus.FAILED
         msg.error_message = "Lead sem e-mail cadastrado."
-        msg.save(update_fields=["delivery_status", "error_message", "updated_at"])
+        msg.save(update_fields=["error_message", "updated_at"])
         return msg
+
+    # Email threading: cria Message-Id próprio + In-Reply-To se houver
+    # mensagem anterior nessa conversa (Gmail/Outlook agrupam thread).
+    import uuid as _uuid
+    site_domain = "servicopro.app"
+    message_id = f"<conv-{conversation.pk}-msg-{_uuid.uuid4()}@{site_domain}>"
+    last_email = (
+        conversation.messages
+        .filter(channel=ConversationMessage.Channel.EMAIL)
+        .exclude(pk=msg.pk)
+        .order_by("-created_at")
+        .first()
+    )
+    in_reply_to = (last_email.payload or {}).get("message_id") if last_email else None
+    extra_headers = {"Message-ID": message_id}
+    if in_reply_to:
+        extra_headers["In-Reply-To"] = in_reply_to
+        extra_headers["References"] = in_reply_to
 
     try:
         connection, from_address = _resolve_smtp_for(conversation.empresa)
@@ -139,19 +169,23 @@ def send_email(
             from_email=from_address,
             to=[to_email],
             connection=connection,
+            headers=extra_headers,
         )
         email.send(fail_silently=False)
+        msg.payload = {**(msg.payload or {}), "message_id": message_id, "in_reply_to": in_reply_to}
         msg.delivery_status = ConversationMessage.DeliveryStatus.SENT
         msg.delivered_at = timezone.now()
-        msg.save(update_fields=["delivery_status", "delivered_at", "updated_at"])
+        msg.error_message = ""
+        msg.save(update_fields=[
+            "delivery_status", "delivered_at", "error_message", "payload", "updated_at",
+        ])
     except Exception as exc:  # noqa: BLE001
         logger.exception(
             "Falha ao enviar e-mail conv=%s (empresa=%s)",
             conversation.pk, conversation.empresa_id,
         )
-        msg.delivery_status = ConversationMessage.DeliveryStatus.FAILED
         msg.error_message = str(exc)[:500]
-        msg.save(update_fields=["delivery_status", "error_message", "updated_at"])
+        msg.save(update_fields=["error_message", "updated_at"])
 
     conversation.touch(
         direction=ConversationMessage.Direction.OUTBOUND,
@@ -229,10 +263,19 @@ def record_inbound(
         channel=channel,
         content=content,
     )
-    # Se a conversa estava encerrada, reabre automaticamente
+    # Se a conversa estava encerrada, reabre + registra nota interna
+    # explícita (atendente vê na thread que cliente voltou).
     if conversation.status == Conversation.Status.CLOSED:
         conversation.status = Conversation.Status.OPEN
         conversation.save(update_fields=["status", "updated_at"])
+        ConversationMessage.objects.create(
+            conversation=conversation,
+            direction=ConversationMessage.Direction.SYSTEM,
+            channel=ConversationMessage.Channel.INTERNAL_NOTE,
+            content="🔔 Conversa reaberta automaticamente — cliente enviou nova mensagem.",
+            delivery_status=ConversationMessage.DeliveryStatus.NA,
+            payload={"auto_reopen": True},
+        )
     return conversation, msg
 
 

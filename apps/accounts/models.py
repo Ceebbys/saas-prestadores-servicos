@@ -163,6 +163,38 @@ class EmpresaEmailConfig(TimestampedModel):
         "Erro no último teste", blank=True, editable=False,
     )
 
+    # IMAP — recepção de e-mails (puxa caixa de entrada para Conversations).
+    # Usa a mesma senha do SMTP (Fernet) — Gmail/Outlook/etc usam mesma credencial.
+    imap_host = models.CharField(
+        "Servidor IMAP", max_length=200, blank=True,
+        help_text="Deixe vazio para desabilitar recepção (apenas envio).",
+    )
+    imap_port = models.PositiveIntegerField(
+        "Porta IMAP", default=993,
+        help_text="993 (SSL/IMAPS) ou 143 (STARTTLS).",
+    )
+    imap_use_ssl = models.BooleanField(
+        "IMAP SSL", default=True,
+        help_text="True para porta 993 (IMAPS). False para 143 com STARTTLS.",
+    )
+    imap_folder = models.CharField(
+        "Pasta IMAP", max_length=80, default="INBOX",
+        help_text="Geralmente 'INBOX'.",
+    )
+    imap_active = models.BooleanField(
+        "Recepção IMAP ativa", default=False,
+        help_text="Liga o poller que puxa novos e-mails para a inbox.",
+    )
+    imap_last_poll_at = models.DateTimeField(
+        "Última varredura IMAP", null=True, blank=True, editable=False,
+    )
+    imap_last_poll_ok = models.BooleanField(
+        "Última varredura OK", default=False, editable=False,
+    )
+    imap_last_poll_error = models.TextField(
+        "Erro na última varredura", blank=True, editable=False,
+    )
+
     class Meta:
         verbose_name = "Configuração de E-mail"
         verbose_name_plural = "Configurações de E-mail"
