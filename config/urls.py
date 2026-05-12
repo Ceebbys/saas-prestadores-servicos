@@ -28,6 +28,7 @@ urlpatterns = [
     path("chatbot/", include("apps.chatbot.urls")),
     path("automation/", include("apps.automation.urls")),
     path("settings/", include("apps.settings_app.urls")),
+    path("inbox/", include("apps.communications.urls")),
 ]
 
 if settings.DEBUG:

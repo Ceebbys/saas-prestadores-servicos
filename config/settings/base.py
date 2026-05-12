@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     "apps.chatbot",
     "apps.automation",
     "apps.settings_app",
+    "apps.communications",
 ]
 
 MIDDLEWARE = [

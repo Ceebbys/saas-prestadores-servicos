@@ -1,0 +1,60 @@
+{% load humanize ui_tags %}
+{% if conversations %}
+<ul class="divide-y divide-slate-100">
+    {% for conv in conversations %}
+    <li>
+        <a href="{% url 'communications:detail' conv.pk %}"
+           class="conv-row {% if active_conversation and active_conversation.pk == conv.pk %}conv-row--active{% endif %} {% if conv.unread_count %}conv-row--unread{% endif %} block px-4 py-3 cursor-pointer">
+            <div class="flex items-start gap-3">
+                <div class="flex-shrink-0 w-9 h-9 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600 uppercase">
+                    {{ conv.lead.name|slice:":2"|default:"?" }}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-baseline justify-between gap-2">
+                        <p class="text-sm font-semibold text-slate-900 truncate">
+                            {{ conv.lead.name }}
+                        </p>
+                        {% if conv.last_message_at %}
+                        <span class="text-[10px] text-slate-400 whitespace-nowrap">
+                            {{ conv.last_message_at|naturaltime }}
+                        </span>
+                        {% endif %}
+                    </div>
+                    <p class="text-xs text-slate-500 truncate mt-0.5">
+                        {% if conv.last_message_direction == "outbound" %}<span class="text-slate-400">Você:</span> {% endif %}
+                        {% if conv.last_message_channel %}
+                        <span class="channel-pill channel-pill--{{ conv.last_message_channel }}">{{ conv.last_message_channel|slice:":3"|upper }}</span>
+                        {% endif %}
+                        {{ conv.last_message_preview|default:"(sem mensagens ainda)" }}
+                    </p>
+                    <div class="flex items-center gap-1.5 mt-1.5">
+                        <span class="text-[10px] inline-flex items-center px-1.5 py-0.5 rounded-full
+                            {% if conv.status == 'open' %}bg-emerald-100 text-emerald-700
+                            {% elif conv.status == 'in_progress' %}bg-indigo-100 text-indigo-700
+                            {% elif conv.status == 'waiting' %}bg-amber-100 text-amber-700
+                            {% else %}bg-slate-100 text-slate-500{% endif %}">
+                            {{ conv.get_status_display }}
+                        </span>
+                        {% if conv.assigned_to %}
+                        <span class="text-[10px] text-slate-400 truncate">
+                            👤 {{ conv.assigned_to.full_name|default:conv.assigned_to.email|truncatechars:18 }}
+                        </span>
+                        {% endif %}
+                        {% if conv.unread_count %}
+                        <span class="ml-auto text-[10px] inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-white font-bold">
+                            {{ conv.unread_count }}
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </a>
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<div class="px-4 py-12 text-center">
+    <p class="text-sm text-slate-400">Nenhuma conversa</p>
+    <p class="text-xs text-slate-300 mt-1">Conversas aparecem aqui quando um cliente envia mensagem.</p>
+</div>
+{% endif %}

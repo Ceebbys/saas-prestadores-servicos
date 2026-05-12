@@ -58,6 +58,13 @@
         <span>Chatbot</span>
     </a>
 
+    <a href="{% url 'communications:inbox' %}"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+              {% if request.resolver_match.app_name == 'communications' %}bg-slate-800 text-white{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+        {% icon "inbox" "w-5 h-5" %}
+        <span>Inbox</span>
+    </a>
+
     <a href="{% url 'proposals:list' %}"
        class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
               {% if request.resolver_match.app_name == 'proposals' %}bg-slate-800 text-white{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">

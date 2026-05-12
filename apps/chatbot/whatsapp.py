@@ -259,7 +259,11 @@ class EvolutionAPIClient:
 # ---------------------------------------------------------------------------
 
 def _process_evolution_message(flow, sender_id, message_text):
-    """Lógica compartilhada: processa mensagem e retorna (reply_text, choices, is_complete, lead_id)."""
+    """Lógica compartilhada: processa mensagem e retorna (reply_text, choices, is_complete, lead_id).
+
+    Side-effect: registra inbound + outbound em `apps.communications`
+    quando há lead associado (humano vê na inbox unificada).
+    """
     # Buscar sessão ativa para este sender
     session = ChatbotSession.objects.filter(
         flow=flow, sender_id=sender_id, status=ChatbotSession.Status.ACTIVE,
@@ -273,6 +277,7 @@ def _process_evolution_message(flow, sender_id, message_text):
         if result.get("step"):
             reply += "\n\n" + result["step"]["question"]
             choices = result["step"].get("choices", [])
+        _mirror_to_inbox(flow, sender_id, message_text, reply)
         return reply, choices, False, None
 
     # Processar resposta na sessão existente
@@ -284,15 +289,71 @@ def _process_evolution_message(flow, sender_id, message_text):
 
     if result.get("error"):
         choices = result["step"]["choices"] if result.get("step") else []
+        _mirror_to_inbox(flow, sender_id, message_text, result["message"], session=session)
         return result["message"], choices, False, None
 
     if result.get("is_complete"):
+        _mirror_to_inbox(
+            flow, sender_id, message_text, result["message"], session=session,
+            lead_id=result.get("lead_id"),
+        )
         return result["message"], [], True, result.get("lead_id")
 
     if result.get("step"):
-        return result["step"]["question"], result["step"].get("choices", []), False, None
+        reply = result["step"]["question"]
+        _mirror_to_inbox(flow, sender_id, message_text, reply, session=session)
+        return reply, result["step"].get("choices", []), False, None
 
     return "", [], False, None
+
+
+def _mirror_to_inbox(flow, sender_id, inbound_text, outbound_text, *, session=None, lead_id=None):
+    """Replica inbound + outbound do bot na inbox unificada de Communications.
+
+    Best-effort: erros aqui NÃO derrubam o fluxo principal (apenas log).
+    Só grava quando há um Lead — sem lead vinculado, mensagens ficam só
+    no ChatbotMessage do RV06.
+    """
+    try:
+        from apps.communications.services import record_bot_outbound, record_inbound
+        from apps.crm.models import Lead
+
+        # Resolve lead: prioriza session.lead, depois lead_id, depois busca
+        # por phone (sender_id é E.164 sem +).
+        lead = None
+        if session and session.lead_id:
+            lead = session.lead
+        elif lead_id:
+            try:
+                lead = Lead.objects.get(pk=lead_id, empresa=flow.empresa)
+            except Lead.DoesNotExist:
+                lead = None
+
+        if lead is None:
+            # Sem lead, sem inbox (não criamos lead síntese aqui — esse é
+            # papel do _create_lead_action do bot)
+            return
+
+        # Inbound do cliente
+        record_inbound(
+            empresa=flow.empresa,
+            lead=lead,
+            channel="whatsapp",
+            content=inbound_text,
+            sender_external_id=sender_id,
+            chatbot_session=session,
+        )
+        # Outbound do bot
+        if outbound_text:
+            record_bot_outbound(
+                empresa=flow.empresa,
+                lead=lead,
+                channel="whatsapp",
+                content=outbound_text,
+                chatbot_session=session,
+            )
+    except Exception:
+        logger.exception("Erro ao replicar mensagem WhatsApp na inbox de comunicações")
 
 
 def _send_reply(client, phone, reply_text, choices):

@@ -1,0 +1,154 @@
+{% extends "layouts/authenticated.html" %}
+{% load static ui_tags %}
+
+{% block title %}Comunicações — ServiçoPro{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Layout fullscreen sem padding do main */
+    main.flex-1.p-6 { padding: 0 !important; }
+    .inbox-shell {
+        position: fixed;
+        top: 4rem;       /* topbar */
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        background: #f8fafc;
+        overflow: hidden;
+    }
+    @media (min-width: 1024px) {
+        .inbox-shell { left: 16rem; }     /* sidebar */
+        .inbox-shell--with-side { grid-template-columns: 320px 1fr 320px; }
+    }
+    @media (min-width: 1280px) {
+        .inbox-shell { grid-template-columns: 360px 1fr; }
+        .inbox-shell--with-side { grid-template-columns: 360px 1fr 340px; }
+    }
+    .inbox-col {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: white;
+    }
+    .inbox-col + .inbox-col { border-left: 1px solid #e2e8f0; }
+    .inbox-list-scroll { flex: 1; overflow-y: auto; }
+    .inbox-thread-scroll { flex: 1; overflow-y: auto; padding: 16px; background: #f8fafc; }
+    .conv-row { transition: background 0.12s; }
+    .conv-row:hover { background: #f1f5f9; }
+    .conv-row--active { background: #eef2ff; border-left: 3px solid #4f46e5; }
+    .conv-row--unread { background: #fffbeb; }
+    .bubble {
+        max-width: 75%;
+        padding: 8px 12px;
+        border-radius: 12px;
+        margin-bottom: 8px;
+        font-size: 13px;
+        line-height: 1.45;
+        word-wrap: break-word;
+        white-space: pre-wrap;
+    }
+    .bubble--inbound  { background: white; border: 1px solid #e2e8f0; border-bottom-left-radius: 4px; color: #0f172a; align-self: flex-start; }
+    .bubble--outbound { background: #4f46e5; color: white; border-bottom-right-radius: 4px; align-self: flex-end; }
+    .bubble--bot      { background: #ddd6fe; color: #4c1d95; border-bottom-right-radius: 4px; align-self: flex-end; }
+    .bubble--note     { background: #fef3c7; color: #78350f; align-self: center; max-width: 90%; }
+    .bubble--system   { background: #f1f5f9; color: #475569; align-self: center; font-size: 11px; font-style: italic; }
+    .thread-day-sep   { text-align: center; font-size: 11px; color: #94a3b8; margin: 12px 0; }
+    .channel-pill {
+        font-size: 9px; font-weight: 600; text-transform: uppercase;
+        padding: 1px 5px; border-radius: 4px;
+        background: rgba(0, 0, 0, 0.08); margin-right: 4px;
+    }
+    .channel-pill--whatsapp { background: #dcfce7; color: #14532d; }
+    .channel-pill--email    { background: #dbeafe; color: #1e3a8a; }
+    .channel-pill--webchat  { background: #ede9fe; color: #5b21b6; }
+    .channel-pill--internal_note { background: #fef3c7; color: #92400e; }
+    .composer { border-top: 1px solid #e2e8f0; background: white; padding: 12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="inbox-shell{% if active_conversation %} inbox-shell--with-side{% endif %}">
+
+    {# --------- Coluna 1: Lista de conversas --------- #}
+    <aside class="inbox-col">
+        <div class="px-4 pt-4 pb-2 border-b border-slate-200 bg-white">
+            <div class="flex items-center justify-between mb-2">
+                <h2 class="text-base font-semibold text-slate-900">Comunicações</h2>
+                <div class="flex items-center gap-2 text-xs">
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                        {{ count_open }} abertas
+                    </span>
+                    {% if count_unread %}
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                        {{ count_unread }} não lidas
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            <form method="get" action="{% url 'communications:inbox' %}"
+                  class="flex items-center gap-2 mb-2">
+                <input type="text" name="q" value="{{ search_q }}"
+                       placeholder="Buscar nome, telefone, mensagem…"
+                       class="flex-1 rounded-lg border-slate-300 text-xs focus:border-indigo-500 focus:ring-indigo-500">
+                <button type="submit"
+                        class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 text-xs">
+                    {% icon "magnifying-glass" "w-4 h-4" %}
+                </button>
+            </form>
+            <div class="flex items-center gap-1 flex-wrap text-xs">
+                <a href="?status=all"
+                   class="px-2 py-0.5 rounded-full {% if status_filter == 'all' %}bg-indigo-600 text-white{% else %}bg-slate-100 text-slate-600 hover:bg-slate-200{% endif %}">
+                    Todas
+                </a>
+                <a href="?status=open"
+                   class="px-2 py-0.5 rounded-full {% if status_filter == 'open' %}bg-indigo-600 text-white{% else %}bg-slate-100 text-slate-600 hover:bg-slate-200{% endif %}">
+                    Abertas
+                </a>
+                <a href="?status=in_progress"
+                   class="px-2 py-0.5 rounded-full {% if status_filter == 'in_progress' %}bg-indigo-600 text-white{% else %}bg-slate-100 text-slate-600 hover:bg-slate-200{% endif %}">
+                    Em atendimento
+                </a>
+                <a href="?status=closed"
+                   class="px-2 py-0.5 rounded-full {% if status_filter == 'closed' %}bg-indigo-600 text-white{% else %}bg-slate-100 text-slate-600 hover:bg-slate-200{% endif %}">
+                    Encerradas
+                </a>
+                <a href="?mine=1"
+                   class="ml-auto px-2 py-0.5 rounded-full {% if mine_filter %}bg-indigo-600 text-white{% else %}bg-slate-100 text-slate-600 hover:bg-slate-200{% endif %}">
+                    Minhas
+                </a>
+            </div>
+        </div>
+
+        <div class="inbox-list-scroll"
+             hx-get="{% url 'communications:inbox' %}?status={{ status_filter }}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}{% if mine_filter %}&mine=1{% endif %}"
+             hx-trigger="every 15s"
+             hx-target="this"
+             hx-swap="innerHTML">
+            {% include "communications/partials/_conversation_list.html" %}
+        </div>
+    </aside>
+
+    {# --------- Coluna 2: Thread + composer (ou estado vazio) --------- #}
+    {% if active_conversation %}
+    <section class="inbox-col">
+        {% include "communications/partials/_thread.html" %}
+    </section>
+
+    {# --------- Coluna 3: Painel lateral (info + ações) --------- #}
+    <aside class="inbox-col" style="background: #f8fafc;">
+        {% include "communications/partials/_side_panel.html" %}
+    </aside>
+    {% else %}
+    <section class="inbox-col flex items-center justify-center text-slate-400 text-sm">
+        <div class="text-center max-w-xs">
+            {% icon "chat-bubble-left-right" "w-12 h-12 mx-auto mb-3 text-slate-300" %}
+            <p class="font-medium text-slate-600">Selecione uma conversa</p>
+            <p class="text-xs mt-1">Mensagens recebidas via WhatsApp, e-mail ou webchat aparecem aqui em tempo real.</p>
+        </div>
+    </section>
+    {% endif %}
+
+</div>
+{% endblock %}
