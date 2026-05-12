@@ -311,7 +311,7 @@ class Notification(TimestampedModel):
     body = models.TextField("Corpo", blank=True)
     url = models.CharField(
         "URL de ação", max_length=500, blank=True,
-        help_text="Caminho relativo (ex.: /communications/inbox/42/).",
+        help_text="Caminho relativo (ex.: /inbox/42/).",
     )
     icon = models.CharField(
         "Ícone", max_length=40, blank=True,

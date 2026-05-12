@@ -62,63 +62,118 @@
     .conv-row--active { background: #eef2ff; border-left: 3px solid #4f46e5; }
     .conv-row--unread { background: #fffbeb; }
 
-    /* === BOLHAS DE MENSAGEM — compactas e proporcionais === */
-    .bubble {
-        max-width: 65%;
-        width: fit-content;
-        padding: 7px 11px;
-        border-radius: 14px;
-        margin-bottom: 4px;
-        font-size: 13px;
-        line-height: 1.4;
+    /* ============================================================
+       MENSAGENS — design moderno estilo iMessage/Slack
+       ============================================================ */
+    .inbox-thread-scroll {
+        gap: 2px;  /* mínimo entre bolhas — meta cuida do resto */
+    }
+    .msg-row {
+        display: flex;
+        flex-direction: column;
+        max-width: 70%;
+        margin-bottom: 8px;
+    }
+    .msg-row--in  { align-self: flex-start; align-items: flex-start; }
+    .msg-row--out { align-self: flex-end;   align-items: flex-end;   margin-left: 30%; }
+    .msg-row--note { align-self: stretch; align-items: stretch; max-width: 100%; }
+    .msg-row--sys  { align-self: center;  align-items: center;  }
+
+    .msg-bubble {
+        padding: 8px 12px;
+        border-radius: 16px;
+        font-size: 14px;
+        line-height: 1.42;
         word-wrap: break-word;
         white-space: pre-wrap;
-        box-shadow: 0 1px 1px rgba(0,0,0,0.04);
+        max-width: 100%;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
     }
-    .bubble--inbound  {
-        background: white; border: 1px solid #e2e8f0;
-        border-bottom-left-radius: 4px;
-        color: #0f172a; align-self: flex-start;
-        margin-right: auto;
+    .msg-row--in .msg-bubble {
+        background: white;
+        color: #0f172a;
+        border: 1px solid #e2e8f0;
+        border-bottom-left-radius: 5px;
     }
-    .bubble--outbound {
-        background: #4f46e5; color: white;
-        border-bottom-right-radius: 4px;
-        align-self: flex-end;
-        margin-left: auto;
+    .msg-row--out .msg-bubble {
+        background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+        color: white;
+        border-bottom-right-radius: 5px;
     }
-    .bubble--bot {
-        background: #e0e7ff; color: #3730a3;
-        border-bottom-right-radius: 4px;
-        align-self: flex-end;
-        margin-left: auto;
+    /* Bolha de mensagem do bot — tom mais suave que do humano */
+    .msg-row--out .msg-bubble.msg-bubble--bot,
+    .msg-bubble[data-bot="1"] {
+        background: #ede9fe;
+        color: #4c1d95;
     }
-    .bubble--note {
-        background: #fef3c7; color: #78350f;
-        align-self: center; max-width: 75%;
-        font-size: 12px;
-    }
-    .bubble--system {
-        background: transparent; color: #64748b;
-        align-self: center; font-size: 11px; font-style: italic;
-        padding: 4px 8px;
-    }
-    .bubble-meta {
-        font-size: 10px;
-        opacity: 0.65;
-        margin-bottom: 3px;
-        display: flex;
-        align-items: center;
-        gap: 4px;
-    }
-    .bubble--outbound .bubble-meta,
-    .bubble--bot .bubble-meta { justify-content: flex-end; }
 
-    .thread-day-sep {
-        text-align: center; font-size: 10px; color: #94a3b8;
-        margin: 12px 0 8px; text-transform: uppercase;
-        letter-spacing: 0.5px; font-weight: 600;
+    /* Meta (autor + horário) — fonte mínima, opacidade reduzida, fora da bolha */
+    .msg-meta {
+        font-size: 10.5px;
+        color: #94a3b8;
+        margin-top: 2px;
+        padding: 0 4px;
+        line-height: 1.2;
     }
+    .msg-meta__sep { margin: 0 4px; opacity: 0.6; }
+    .msg-meta__fail { color: #ef4444; }
+
+    /* Separador de dia */
+    .thread-day-sep {
+        align-self: center;
+        font-size: 10px;
+        color: #94a3b8;
+        background: white;
+        padding: 3px 10px;
+        border-radius: 999px;
+        border: 1px solid #e2e8f0;
+        margin: 12px 0 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        font-weight: 600;
+    }
+
+    /* Nota interna — destaque amarelo, full width */
+    .msg-note {
+        background: #fffbeb;
+        border: 1px solid #fde68a;
+        border-radius: 8px;
+        padding: 8px 12px;
+        margin: 4px 0;
+    }
+    .msg-note__head {
+        font-size: 11px;
+        color: #92400e;
+        font-weight: 600;
+        margin-bottom: 4px;
+    }
+    .msg-note__body {
+        font-size: 13px;
+        color: #78350f;
+        line-height: 1.45;
+        white-space: pre-wrap;
+    }
+
+    /* Mensagem de sistema — italic discreta, centralizada */
+    .msg-system {
+        font-size: 11px;
+        color: #64748b;
+        font-style: italic;
+        background: transparent;
+        padding: 4px 12px;
+        text-align: center;
+    }
+
+    /* Empty state */
+    .msg-empty {
+        text-align: center;
+        margin: auto;
+        color: #94a3b8;
+    }
+    .msg-empty p { font-size: 13px; margin: 0; }
+    .msg-empty__hint { font-size: 11px; margin-top: 4px !important; opacity: 0.7; }
+
+    /* Channel pills — mantido para lista de conversas (não thread) */
     .channel-pill {
         font-size: 9px; font-weight: 600; text-transform: uppercase;
         padding: 1px 5px; border-radius: 4px;
@@ -136,8 +191,9 @@
         flex-shrink: 0;
     }
     .composer textarea {
-        font-size: 13px;
-        line-height: 1.4;
+        font-size: 13.5px;
+        line-height: 1.45;
+        padding: 8px 12px;
     }
 </style>
 {% endblock %}
@@ -195,8 +251,10 @@
             </div>
         </div>
 
-        {# IMPORTANTE: sem hx-select. O partial _conversation_list.html já é só o conteúdo.
-           InboxView (HtmxResponseMixin) retorna o partial direto quando request.htmx. #}
+        {% comment %}
+        Sem hx-select. O partial _conversation_list.html já é só o conteúdo.
+        InboxView (HtmxResponseMixin) retorna o partial direto quando request.htmx.
+        {% endcomment %}
         <div class="inbox-list-scroll" id="inbox-list-scroll"
              hx-get="{% url 'communications:inbox' %}?status={{ status_filter|default:'all' }}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}{% if mine_filter %}&mine=1{% endif %}"
              hx-trigger="every 20s, v2b:inbox:message-new from:body throttle:2s, v2b:inbox:conv-updated from:body throttle:2s"

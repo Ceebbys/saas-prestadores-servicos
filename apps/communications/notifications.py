@@ -43,7 +43,7 @@ def notify(
         type: valor da enum `Notification.Type`
         title: título curto (<=200 chars)
         body: corpo opcional (texto)
-        url: deep-link relativo (ex.: '/communications/inbox/42/')
+        url: deep-link relativo (ex.: '/inbox/42/')
         icon: nome do heroicon
         empresa: Empresa (opcional, default = active_empresa do user)
         payload: dados extras (JSONField)
@@ -196,7 +196,7 @@ def notify_new_message(conversation, message) -> list:
         "type": Notification.Type.MESSAGE_INBOUND,
         "title": f"Nova mensagem de {lead_name}",
         "body": (message.content or "")[:200],
-        "url": f"/communications/inbox/{conversation.pk}/",
+        "url": f"/inbox/{conversation.pk}/",
         "icon": "chat-bubble-left-right",
         "empresa": conversation.empresa,
         "payload": {
@@ -258,7 +258,7 @@ def notify_conversation_assigned(conversation, assigned_user, assigned_by) -> No
         type=Notification.Type.CONVERSATION_ASSIGNED,
         title=f"Conversa com {lead_name} atribuída a você",
         body=f"Atribuída por {by_name}." if assigned_by else "",
-        url=f"/communications/inbox/{conversation.pk}/",
+        url=f"/inbox/{conversation.pk}/",
         icon="user-plus",
         empresa=conversation.empresa,
         payload={"conversation_id": conversation.pk},
