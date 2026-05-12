@@ -132,6 +132,44 @@ ChatbotChoiceFormSet = forms.inlineformset_factory(
 
 
 class ChatbotActionForm(TailwindFormMixin, forms.ModelForm):
+    """Form de ação. Suporta dois modos:
+    - Per-step: step != None, trigger=ON_STEP. UI de step_list controla.
+    - Global (legado): step=None, trigger=ON_COMPLETE.
+    """
+
     class Meta:
         model = ChatbotAction
-        fields = ["trigger", "action_type"]
+        fields = ["step", "trigger", "action_type", "order", "is_active"]
+
+    def __init__(self, *args, flow=None, default_step=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Limita step ao flow corrente; default_step pré-seleciona quando
+        # o form é renderizado dentro do editor de step.
+        qs = ChatbotStep.objects.none()
+        if flow is not None:
+            qs = ChatbotStep.objects.filter(flow=flow).order_by(
+                "codigo_hierarquico", "order"
+            )
+        self.fields["step"].queryset = qs
+        self.fields["step"].required = False
+        self.fields["step"].empty_label = "(global — ao completar o fluxo)"
+        if default_step is not None and not self.instance.pk:
+            self.fields["step"].initial = default_step.pk
+            self.fields["trigger"].initial = ChatbotAction.Trigger.ON_STEP
+
+    def clean(self):
+        cleaned = super().clean()
+        step = cleaned.get("step")
+        trigger = cleaned.get("trigger")
+        # Espelha o CheckConstraint para feedback amigável no form
+        if step and trigger != ChatbotAction.Trigger.ON_STEP:
+            self.add_error(
+                "trigger",
+                "Ações vinculadas a um passo precisam usar 'Ao executar este passo'.",
+            )
+        elif not step and trigger == ChatbotAction.Trigger.ON_STEP:
+            self.add_error(
+                "step",
+                "Selecione o passo onde esta ação deve rodar.",
+            )
+        return cleaned

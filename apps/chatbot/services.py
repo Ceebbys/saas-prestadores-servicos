@@ -264,6 +264,19 @@ def process_response(session_key: str, user_response: str) -> dict:
     if step.step_type == ChatbotStep.StepType.DOCUMENT:
         _handle_document_step(session, text)
 
+    # Persiste lead_data antes de rodar as ações por etapa — para que cada
+    # ação leia o estado consistente do que foi coletado até aqui.
+    session.save(update_fields=["lead_data", "updated_at"])
+
+    # Ações automáticas vinculadas a este passo (RV05 FASE 3B)
+    _execute_step_actions(session, step)
+
+    # Step marcado como encerramento (`is_final`/"Encerrar conversa neste passo"):
+    # NÃO avança para próximo passo. Marca sessão como COMPLETED, registra no
+    # histórico de dispatches, executa ações globais on_complete e retorna.
+    if step.is_final:
+        return _complete_session(session, reason="step_marked_final")
+
     # Encontrar próximo passo
     next_step = _find_next_step(step, text)
 
@@ -278,12 +291,33 @@ def process_response(session_key: str, user_response: str) -> dict:
             "lead_id": None,
         }
 
-    # Fluxo completo
+    # Fluxo completo naturalmente (sem próximo step)
+    return _complete_session(session, reason="flow_end_reached")
+
+
+def _complete_session(session: ChatbotSession, reason: str) -> dict:
+    """Encerra a sessão: status=COMPLETED, executa ações on_complete legadas,
+    envia mensagem de encerramento configurada. Retorna o response dict.
+
+    Compartilhado entre dois caminhos:
+    - Step is_final = True (encerramento explícito por etapa, RV05 #2)
+    - Sem next_step encontrado (fim natural do fluxo)
+    """
     session.status = ChatbotSession.Status.COMPLETED
     session.current_step = None
     session.save(update_fields=["status", "current_step", "lead_data", "updated_at"])
 
     lead_id = _execute_flow_actions(session)
+
+    # Audit log: marca por que a sessão encerrou
+    ChatbotFlowDispatch.objects.create(
+        empresa=session.flow.empresa,
+        flow=session.flow,
+        sender_id=session.sender_id or "",
+        reason=f"session_completed:{reason}",
+        blocked=False,
+        metadata={"session_key": str(session.session_key)},
+    )
 
     # Mensagem de encerramento — somente quando explicitamente configurada.
     # Toda comunicação enviada ao cliente precisa ser visível/configurável.
@@ -334,9 +368,57 @@ def _find_next_step(current_step: ChatbotStep, user_response: str) -> ChatbotSte
 # Execução de ações ao completar
 # ---------------------------------------------------------------------------
 
+def _execute_step_actions(session: ChatbotSession, step) -> None:
+    """Executa todas as ações ativas vinculadas a este step específico.
+
+    Roda APÓS armazenar o lead_data e ANTES de decidir o próximo passo.
+    Falha em uma ação NÃO derruba a conversa — log + segue para a próxima
+    e para o navigation flow.
+    """
+    actions = ChatbotAction.objects.filter(
+        flow=session.flow,
+        step=step,
+        trigger=ChatbotAction.Trigger.ON_STEP,
+        is_active=True,
+    ).order_by("order", "id")
+
+    for action in actions:
+        try:
+            _execute_action(action, session)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Action %s failed for session %s (flow=%s, step=%s); continuing",
+                action.pk, session.session_key, session.flow_id, step.pk,
+            )
+
+
+def _execute_action(action, session: ChatbotSession) -> None:
+    """Dispatcher central de tipos de ação.
+
+    A maioria dos tipos é placeholder hoje (logado como 'not yet implemented').
+    Foi expandido em RV05 para servir como ponto de extensão futuro.
+    Apenas CREATE_LEAD tem implementação real consolidada.
+    """
+    t = action.action_type
+    if t == ChatbotAction.ActionType.CREATE_LEAD:
+        lead = _create_lead_action(session)
+        if lead:
+            session.lead = lead
+            session.save(update_fields=["lead", "updated_at"])
+        return
+
+    # Placeholders documentados — registrar como log para futura implementação
+    logger.info(
+        "ChatbotAction tipo '%s' ainda não implementado (action=%s, flow=%s)",
+        t, action.pk, session.flow_id,
+    )
+
+
 @transaction.atomic
 def _execute_flow_actions(session: ChatbotSession) -> int | None:
-    """Executa as ações configuradas para on_complete.
+    """Executa ações globais do fluxo (sem step vinculado, legado).
+
+    Filtra `step__isnull=True` para não rodar per-step actions duas vezes.
 
     Returns:
         PK do lead criado, se houver
@@ -344,8 +426,10 @@ def _execute_flow_actions(session: ChatbotSession) -> int | None:
     lead_id = None
     actions = ChatbotAction.objects.filter(
         flow=session.flow,
+        step__isnull=True,
         trigger=ChatbotAction.Trigger.ON_COMPLETE,
-    )
+        is_active=True,
+    ).order_by("order", "id")
 
     for action in actions:
         if action.action_type == ChatbotAction.ActionType.CREATE_LEAD:

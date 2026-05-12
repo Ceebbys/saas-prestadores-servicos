@@ -13,12 +13,21 @@
         {% for action in actions %}
         <div class="flex items-center justify-between px-6 py-3">
             <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
+                <div class="w-8 h-8 rounded-full {% if action.step %}bg-indigo-100{% else %}bg-amber-100{% endif %} flex items-center justify-center">
                     {% icon "bell" "w-4 h-4 text-amber-700" %}
                 </div>
                 <div>
-                    <p class="text-sm font-medium text-slate-900">{{ action.get_action_type_display }}</p>
-                    <p class="text-xs text-slate-400">Gatilho: {{ action.get_trigger_display }}</p>
+                    <p class="text-sm font-medium text-slate-900">
+                        {{ action.get_action_type_display }}
+                        {% if not action.is_active %}<span class="ml-1 text-xs text-slate-400">(inativa)</span>{% endif %}
+                    </p>
+                    <p class="text-xs text-slate-400">
+                        {% if action.step %}
+                            Roda na etapa {{ action.step.codigo_hierarquico|default:action.step.order }} · ordem {{ action.order }}
+                        {% else %}
+                            Global · {{ action.get_trigger_display }}
+                        {% endif %}
+                    </p>
                 </div>
             </div>
             <form method="post" action="{% url 'chatbot:action_delete' form.instance.pk action.pk %}"
@@ -39,13 +48,28 @@
 
     <!-- Add action form -->
     <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-xl">
+        <p class="text-xs text-slate-500 mb-2">
+            <strong>Dica:</strong> selecione uma etapa para vincular a ação a ela (recomendado).
+            Deixe em branco para uma ação global executada ao fim do fluxo.
+        </p>
         <form method="post" action="{% url 'chatbot:action_add' form.instance.pk %}" class="flex items-end gap-3 flex-wrap">
             {% csrf_token %}
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Etapa</label>
+                <select name="step"
+                        class="rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    <option value="">— Global (ao completar fluxo) —</option>
+                    {% for s in steps %}
+                    <option value="{{ s.pk }}">{{ s.codigo_hierarquico|default:s.order }} — {{ s.question_text|truncatechars:40 }}</option>
+                    {% endfor %}
+                </select>
+            </div>
             <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1">Gatilho</label>
                 <select name="trigger"
                         class="rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-                    <option value="on_complete">Ao completar</option>
+                    <option value="on_step">Ao executar este passo</option>
+                    <option value="on_complete">Ao completar fluxo (sem etapa)</option>
                     <option value="on_timeout">Timeout</option>
                     <option value="on_keyword">Palavra-chave</option>
                 </select>
@@ -55,9 +79,26 @@
                 <select name="action_type"
                         class="rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
                     <option value="create_lead">Criar lead</option>
-                    <option value="notify_user">Notificar usuário</option>
-                    <option value="send_message">Enviar mensagem</option>
+                    <option value="update_pipeline">Atualizar pipeline</option>
+                    <option value="apply_tag">Aplicar tag</option>
+                    <option value="link_servico">Vincular serviço</option>
+                    <option value="send_email">Enviar e-mail</option>
+                    <option value="send_whatsapp">Enviar WhatsApp</option>
+                    <option value="create_task">Criar tarefa</option>
+                    <option value="register_event">Registrar evento</option>
                 </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Ordem</label>
+                <input type="number" name="order" value="0" min="0" style="width: 70px;"
+                       class="rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+            </div>
+            <div class="flex items-center pb-2">
+                <label class="flex items-center gap-1 text-xs">
+                    <input type="checkbox" name="is_active" checked
+                           class="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600">
+                    Ativa
+                </label>
             </div>
             <button type="submit"
                     class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm whitespace-nowrap">

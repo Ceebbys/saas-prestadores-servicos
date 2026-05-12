@@ -220,9 +220,39 @@ class ChatbotStep(TimestampedModel):
     )
     is_required = models.BooleanField("Obrigatório", default=True)
     is_final = models.BooleanField(
-        "Passo terminal",
+        "Encerrar conversa neste passo",
         default=False,
-        help_text="Se marcado, encerra o fluxo ao responder este passo (útil para branching).",
+        help_text=(
+            "Marque quando esta etapa representar o fim oficial do atendimento "
+            "automático. Ações automáticas configuradas para o passo ainda "
+            "rodam, mas nenhum próximo passo é disparado."
+        ),
+    )
+
+    # --- Preparação para fluxo visual (RV05 FASE 3C) ---
+    # Não há UI ainda — apenas backend pronto para futura biblioteca de
+    # drag-and-drop (React Flow / Drawflow). Não muda o motor atual de
+    # navegação (next_step + codigo_hierarquico).
+    class NodeType(models.TextChoices):
+        MESSAGE = "message", "Mensagem"
+        QUESTION = "question", "Pergunta"
+        CONDITION = "condition", "Condição"
+        ACTION = "action", "Ação automática"
+
+    node_type = models.CharField(
+        "Tipo de nó (visual)",
+        max_length=20,
+        choices=NodeType.choices,
+        default=NodeType.MESSAGE,
+        help_text="Categoria visual do nó para futura UI de fluxo. Sem efeito no motor atual.",
+    )
+    position_x = models.FloatField("Posição X (visual)", default=0.0)
+    position_y = models.FloatField("Posição Y (visual)", default=0.0)
+    visual_config = models.JSONField(
+        "Configuração visual",
+        default=dict,
+        blank=True,
+        help_text="Cor, ícone, etc. — usado por futuro builder visual.",
     )
 
     class Meta:
@@ -329,23 +359,55 @@ class ChatbotChoice(TimestampedModel):
 
 
 class ChatbotAction(TimestampedModel):
-    """Ação executada pelo chatbot em determinado gatilho."""
+    """Ação executada pelo chatbot em determinado gatilho.
+
+    Dois modos de associação (RV05 FASE 3B):
+    1. **Por etapa** (`step != None`, `trigger=ON_STEP`): roda ao executar
+       o passo específico. Múltiplas ações por passo, ordenáveis.
+    2. **Por fluxo** (`step == None`, `trigger=ON_COMPLETE/TIMEOUT/KEYWORD`):
+       comportamento legado — roda ao final do fluxo. Mantido por
+       compatibilidade retroativa.
+
+    Constraint impede ambiguidade (step=X com ON_COMPLETE não faz sentido).
+    """
 
     class Trigger(models.TextChoices):
-        ON_COMPLETE = "on_complete", "Ao completar"
+        ON_STEP = "on_step", "Ao executar este passo"
+        ON_COMPLETE = "on_complete", "Ao completar o fluxo"
         ON_TIMEOUT = "on_timeout", "Timeout"
         ON_KEYWORD = "on_keyword", "Palavra-chave"
 
     class ActionType(models.TextChoices):
         CREATE_LEAD = "create_lead", "Criar lead"
-        NOTIFY_USER = "notify_user", "Notificar usuário"
-        SEND_MESSAGE = "send_message", "Enviar mensagem"
+        UPDATE_PIPELINE = "update_pipeline", "Atualizar pipeline"
+        APPLY_TAG = "apply_tag", "Aplicar tag"
+        LINK_SERVICO = "link_servico", "Vincular serviço pré-fixado"
+        REGISTER_EVENT = "register_event", "Registrar evento"
+        SEND_EMAIL = "send_email", "Enviar e-mail"
+        SEND_WHATSAPP = "send_whatsapp", "Enviar WhatsApp"
+        CREATE_TASK = "create_task", "Criar tarefa"
+        # Tipos legados ainda suportados:
+        NOTIFY_USER = "notify_user", "Notificar usuário (legado)"
+        SEND_MESSAGE = "send_message", "Enviar mensagem (legado)"
 
     flow = models.ForeignKey(
         ChatbotFlow,
         on_delete=models.CASCADE,
         related_name="actions",
         verbose_name="Fluxo",
+    )
+    step = models.ForeignKey(
+        ChatbotStep,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="actions",
+        verbose_name="Etapa",
+        help_text=(
+            "Se preenchido, a ação roda DURANTE a execução desta etapa "
+            "(use trigger 'Ao executar este passo'). Se vazio, é uma ação "
+            "global do fluxo (legado)."
+        ),
     )
     trigger = models.CharField(
         "Gatilho",
@@ -359,20 +421,49 @@ class ChatbotAction(TimestampedModel):
         choices=ActionType.choices,
         default=ActionType.CREATE_LEAD,
     )
+    order = models.PositiveIntegerField(
+        "Ordem",
+        default=0,
+        help_text="Ordem de execução dentro do passo (menor primeiro).",
+    )
+    is_active = models.BooleanField(
+        "Ativa",
+        default=True,
+        help_text="Desative temporariamente sem perder a configuração.",
+    )
     config = models.JSONField(
         "Configuração",
         default=dict,
         blank=True,
-        help_text="Parâmetros da ação em JSON.",
+        help_text=(
+            "Parâmetros específicos do tipo (JSON). Ex.: para 'apply_tag', "
+            '{"tag": "qualificado"}; para "send_email", {"to": "...", "subject": "..."}.'
+        ),
     )
 
     class Meta:
         verbose_name = "Ação do Chatbot"
         verbose_name_plural = "Ações do Chatbot"
-        ordering = ["trigger"]
+        ordering = ["step_id", "order", "trigger"]
+        indexes = [
+            models.Index(fields=["flow", "step", "is_active", "order"]),
+            models.Index(fields=["flow", "trigger", "is_active"]),
+        ]
+        constraints = [
+            # Mutex: action com step DEVE ter trigger=on_step; sem step DEVE ter
+            # trigger no conjunto legado. Impede config ambígua.
+            models.CheckConstraint(
+                check=(
+                    models.Q(step__isnull=False, trigger="on_step")
+                    | models.Q(step__isnull=True) & ~models.Q(trigger="on_step")
+                ),
+                name="chatbot_action_step_trigger_consistency",
+            ),
+        ]
 
     def __str__(self):
-        return f"{self.get_trigger_display()} → {self.get_action_type_display()}"
+        scope = f"step #{self.step_id}" if self.step_id else "flow"
+        return f"[{scope}] {self.get_trigger_display()} → {self.get_action_type_display()}"
 
 
 class ChatbotSession(TimestampedModel):

@@ -270,12 +270,16 @@ class ActionAddView(EmpresaMixin, View):
 
     def post(self, request, pk):
         flow = get_object_or_404(ChatbotFlow, pk=pk, empresa=request.empresa)
-        form = ChatbotActionForm(request.POST)
+        form = ChatbotActionForm(request.POST, flow=flow)
         if form.is_valid():
             action = form.save(commit=False)
             action.flow = flow
             action.save()
             messages.success(request, "Ação adicionada com sucesso.")
+        else:
+            for field, errors in form.errors.items():
+                for e in errors:
+                    messages.error(request, f"{field}: {e}")
         return redirect("chatbot:flow_update", pk=flow.pk)
 
 
