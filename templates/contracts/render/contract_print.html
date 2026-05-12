@@ -32,8 +32,17 @@
         .footer-img { text-align: center; margin-bottom: 10px; }
         .footer-img img { max-height: 60px; max-width: 240px; object-fit: contain; }
         .footer-note { margin-top: 24px; padding-top: 10px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 9pt; text-align: center; }
-        .signature-area { margin-top: 50px; }
-        .signature-line { border-top: 1px solid #0f172a; width: 60%; margin: 30px auto 6px auto; }
+        .signature-area { margin-top: 50px; page-break-inside: avoid; }
+        .signature-area .place { text-align: center; font-size: 10pt; color: #64748b; margin-bottom: 30px; }
+        .signature-row { display: table; width: 100%; border-spacing: 12px 0; margin-top: 10px; }
+        .signature-block { display: table-cell; width: 50%; text-align: center; vertical-align: top; }
+        .signature-line { border-top: 1px solid #0f172a; margin: 40px 10px 6px 10px; }
+        .signature-label { font-size: 10pt; font-weight: bold; color: #1e293b; }
+        .signature-sub { font-size: 9pt; color: #64748b; }
+        .witness-row { display: table; width: 100%; border-spacing: 12px 0; margin-top: 30px; }
+        .witness-block { display: table-cell; width: 50%; text-align: center; vertical-align: top; }
+        .witness-block .signature-line { margin-top: 30px; }
+        .witness-title { font-size: 9pt; color: #475569; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; text-align: center; margin: 30px 0 4px 0; }
     </style>
 </head>
 <body>
@@ -93,15 +102,42 @@
 <div class="rich-content">{{ contract.terms|safe }}</div>
 {% endif %}
 
-{# Área de assinatura — opcional, simples #}
+{# RV05-G-FINAL — Área de assinatura completa: contratante + contratado + 2 testemunhas #}
 <div class="signature-area">
-    <p style="text-align:center;font-size:10pt;color:#64748b;">
-        Local e data: ____________________________________________________
+    <p class="place">
+        Local e data: ___________________________________, _____ de _________________ de _______
     </p>
-    <div class="signature-line"></div>
-    <p style="text-align:center;font-size:10pt;">
-        {{ contato.name|default:lead.name|default:"Cliente" }}
-    </p>
+
+    {# Linha principal: Contratado (empresa) + Contratante (cliente) #}
+    <div class="signature-row">
+        <div class="signature-block">
+            <div class="signature-line"></div>
+            <p class="signature-label">{{ empresa.name }}</p>
+            <p class="signature-sub">CONTRATADO(A)</p>
+            {% if empresa.cnpj %}<p class="signature-sub">CNPJ: {{ empresa.cnpj }}</p>{% endif %}
+        </div>
+        <div class="signature-block">
+            <div class="signature-line"></div>
+            <p class="signature-label">{{ contato.name|default:lead.name|default:"Cliente" }}</p>
+            <p class="signature-sub">CONTRATANTE</p>
+            {% if contato.cpf_cnpj %}<p class="signature-sub">CPF/CNPJ: {{ contato.cpf_cnpj }}</p>{% elif lead.contact_document %}<p class="signature-sub">CPF/CNPJ: {{ lead.contact_document }}</p>{% endif %}
+        </div>
+    </div>
+
+    {# Testemunhas — duas linhas em branco #}
+    <p class="witness-title">Testemunhas</p>
+    <div class="witness-row">
+        <div class="witness-block">
+            <div class="signature-line"></div>
+            <p class="signature-sub">Nome: ____________________________________</p>
+            <p class="signature-sub">CPF: ______________________________________</p>
+        </div>
+        <div class="witness-block">
+            <div class="signature-line"></div>
+            <p class="signature-sub">Nome: ____________________________________</p>
+            <p class="signature-sub">CPF: ______________________________________</p>
+        </div>
+    </div>
 </div>
 
 {% if contract.footer_content or footer_image_url %}
