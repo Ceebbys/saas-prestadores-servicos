@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "categories": [
+    {"slug": "basics", "label": "Básicos"},
+    {"slug": "input", "label": "Entrada de dados"},
+    {"slug": "logic", "label": "Lógica"},
+    {"slug": "integration", "label": "Integrações"},
+    {"slug": "support", "label": "Atendimento"}
+  ],
+  "nodes": [
+    {
+      "type": "start",
+      "label": "Início",
+      "description": "Ponto de entrada do fluxo. Exatamente um por grafo.",
+      "category": "basics",
+      "icon": "play-circle",
+      "color": "#10b981",
+      "status": "active",
+      "handles": {"in": false, "out": ["next"]},
+      "max_per_graph": 1,
+      "min_per_graph": 1,
+      "data_fields": [
+        {"name": "label", "type": "string", "required": false, "default": "Início", "max_length": 80},
+        {"name": "welcome_message", "type": "text", "required": false, "max_length": 5000,
+         "help": "Mensagem opcional disparada ao iniciar a sessão (substitui flow.welcome_message)."}
+      ]
+    },
+    {
+      "type": "message",
+      "label": "Mensagem",
+      "description": "Envia uma mensagem ao usuário e segue.",
+      "category": "basics",
+      "icon": "chat-bubble-left",
+      "color": "#4f46e5",
+      "status": "active",
+      "handles": {"in": true, "out": ["next"]},
+      "data_fields": [
+        {"name": "label", "type": "string", "required": false, "default": "Mensagem", "max_length": 80},
+        {"name": "text", "type": "text", "required": true, "max_length": 5000,
+         "help": "Texto enviado ao usuário."},
+        {"name": "delay_ms", "type": "integer", "required": false, "default": 0, "min": 0, "max": 10000,
+         "help": "Atraso opcional em milissegundos antes do envio."}
+      ]
+    },
+    {
+      "type": "question",
+      "label": "Pergunta aberta",
+      "description": "Pergunta e aguarda resposta livre.",
+      "category": "input",
+      "icon": "question-mark-circle",
+      "color": "#8b5cf6",
+      "status": "active",
+      "handles": {"in": true, "out": ["next"]},
+      "data_fields": [
+        {"name": "label", "type": "string", "required": false, "default": "Pergunta", "max_length": 80},
+        {"name": "prompt", "type": "text", "required": true, "max_length": 5000},
+        {"name": "lead_field", "type": "enum", "required": false,
+         "options": ["", "name", "email", "phone", "company", "cpf_cnpj", "notes"],
+         "help": "Campo do lead onde gravar a resposta (opcional)."},
+        {"name": "validator", "type": "enum", "required": false, "default": "free_text",
+         "options": ["free_text", "name", "company"]}
+      ]
+    },
+    {
+      "type": "menu",
+      "label": "Menu de opções",
+      "description": "Mostra opções e ramifica baseado na escolha.",
+      "category": "input",
+      "icon": "list-bullet",
+      "color": "#0ea5e9",
+      "status": "active",
+      "handles": {"in": true, "out_dynamic": "options"},
+      "data_fields": [
+        {"name": "label", "type": "string", "required": false, "default": "Menu", "max_length": 80},
+        {"name": "prompt", "type": "text", "required": true, "max_length": 5000},
+        {"name": "options", "type": "array", "required": true, "min_items": 2, "max_items": 20,
+         "item_schema": {
+           "label": {"type": "string", "required": true, "max_length": 200},
+           "value": {"type": "string", "required": false, "max_length": 80},
+           "handle_id": {"type": "string", "required": true, "max_length": 32}
+         },
+         "help": "Cada opção gera um handle de saída único (handle_id)."}
+      ]
+    },
+    {
+      "type": "condition",
+      "label": "Condição",
+      "description": "Avalia uma variável e ramifica em verdadeiro/falso.",
+      "category": "logic",
+      "icon": "git-branch",
+      "color": "#f59e0b",
+      "status": "active",
+      "handles": {"in": true, "out": ["true", "false"]},
+      "data_fields": [
+        {"name": "label", "type": "string", "required": false, "default": "Condição", "max_length": 80},
+        {"name": "field", "type": "string", "required": true, "max_length": 80,
+         "help": "Variável de lead_data a avaliar (ex.: 'email')."},
+        {"name": "operator", "type": "enum", "required": true,
+         "options": ["eq", "neq", "contains", "starts_with", "in", "regex", "exists", "not_exists"]},
+        {"name": "value", "type": "string", "required": false, "max_length": 500,
+         "help": "Valor de comparação (ignorado se operator for exists/not_exists)."}
+      ]
+    },
+    {
+      "type": "collect_data",
+      "label": "Coletar dado",
+      "description": "Coleta um dado tipado e valida formato.",
+      "category": "input",
+      "icon": "identification",
+      "color": "#f43f5e",
+      "status": "active",
+      "handles": {"in": true, "out": ["next"]},
+      "data_fields": [
+        {"name": "label", "type": "string", "required": false, "default": "Coletar", "max_length": 80},
+        {"name": "prompt", "type": "text", "required": true, "max_length": 5000},
+        {"name": "lead_field", "type": "enum", "required": true,
+         "options": ["email", "phone", "cpf_cnpj", "name"],
+         "help": "Tipo de dado a coletar (define o validador)."},
+        {"name": "validator_strict", "type": "boolean", "required": false, "default": true,
+         "help": "Rejeitar resposta se formato inválido (vs. aceitar e marcar warning)."}
+      ]
+    },
+    {
+      "type": "api_call",
+      "label": "Chamar API / Webhook",
+      "description": "Chamada HTTP externa com credenciais do cofre.",
+      "category": "integration",
+      "icon": "bolt",
+      "color": "#64748b",
+      "status": "coming_soon",
+      "handles": {"in": true, "out": ["success", "error"]},
+      "data_fields": [
+        {"name": "label", "type": "string", "required": false, "default": "API", "max_length": 80},
+        {"name": "secret_ref", "type": "string", "required": true, "max_length": 80,
+         "help": "Nome do segredo (ChatbotSecret) com credenciais."},
+        {"name": "method", "type": "enum", "required": true, "default": "POST",
+         "options": ["GET", "POST", "PUT", "PATCH", "DELETE"]},
+        {"name": "path_template", "type": "string", "required": true, "max_length": 500,
+         "help": "URL completa ou path relativo (com placeholders Jinja2 restritos)."},
+        {"name": "payload_template", "type": "text", "required": false, "max_length": 5000},
+        {"name": "response_var", "type": "string", "required": false, "max_length": 80,
+         "help": "Nome da variável em lead_data para armazenar resposta."}
+      ]
+    },
+    {
+      "type": "handoff",
+      "label": "Transferir para atendente",
+      "description": "Encerra o bot e transfere para atendimento humano.",
+      "category": "support",
+      "icon": "user-group",
+      "color": "#f97316",
+      "status": "active",
+      "handles": {"in": true, "out": ["next"]},
+      "data_fields": [
+        {"name": "label", "type": "string", "required": false, "default": "Transferir", "max_length": 80},
+        {"name": "message_to_user", "type": "text", "required": true, "max_length": 5000,
+         "help": "Mensagem mostrada ao usuário antes da transferência."},
+        {"name": "queue", "type": "string", "required": false, "max_length": 80,
+         "help": "Departamento/fila (ex.: 'suporte', 'comercial')."},
+        {"name": "internal_note", "type": "text", "required": false, "max_length": 1000}
+      ]
+    },
+    {
+      "type": "end",
+      "label": "Encerrar",
+      "description": "Finaliza a conversa.",
+      "category": "basics",
+      "icon": "check-circle",
+      "color": "#78716c",
+      "status": "active",
+      "handles": {"in": true, "out": []},
+      "data_fields": [
+        {"name": "label", "type": "string", "required": false, "default": "Encerrar", "max_length": 80},
+        {"name": "completion_message", "type": "text", "required": false, "max_length": 5000,
+         "help": "Mensagem final (substitui flow.completion_message)."}
+      ]
+    }
+  ]
+}

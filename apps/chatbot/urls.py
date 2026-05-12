@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 
 from . import views
 from .whatsapp import evolution_webhook_auto, evolution_webhook_receive
@@ -6,6 +6,14 @@ from .whatsapp import evolution_webhook_auto, evolution_webhook_receive
 app_name = "chatbot"
 
 urlpatterns = [
+    # RV06 — Builder visual (React Flow island) + API JSON
+    path(
+        "flows/<int:pk>/builder/",
+        views.FlowBuilderView.as_view(),
+        name="flow_builder",
+    ),
+    path("api/chatbot/", include("apps.chatbot.builder.api.urls")),
+
     # Flow CRUD
     path("flows/", views.FlowListView.as_view(), name="flow_list"),
     path("flows/create/", views.FlowCreateView.as_view(), name="flow_create"),

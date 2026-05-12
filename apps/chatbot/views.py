@@ -128,6 +128,33 @@ class FlowDeleteView(EmpresaMixin, DeleteView):
         return self.delete(request, *args, **kwargs)
 
 
+class FlowBuilderView(EmpresaMixin, DetailView):
+    """RV06 — Tela host do React Flow island.
+
+    Renderiza `flow_builder.html` que monta o bundle React no `<div id=root>`.
+    O bundle lê dados-* attributes para descobrir endpoints e CSRF token.
+
+    Multi-tenant validado via EmpresaMixin (queryset filtrado).
+    """
+
+    model = ChatbotFlow
+    template_name = "chatbot/flow_builder.html"
+    context_object_name = "flow"
+
+    def get_queryset(self):
+        return super().get_queryset().filter(empresa=self.request.empresa)
+
+    def get_context_data(self, **kwargs):
+        from apps.chatbot.builder.api.views import _EMPTY_GRAPH, _get_or_create_draft
+
+        ctx = super().get_context_data(**kwargs)
+        draft = _get_or_create_draft(self.object, self.request.user)
+        ctx["initial_graph"] = draft.graph_json or _EMPTY_GRAPH
+        ctx["draft_version_id"] = draft.id
+        ctx["has_published"] = self.object.current_published_version_id is not None
+        return ctx
+
+
 class FlowToggleView(EmpresaMixin, View):
     """Ativa/desativa um fluxo de chatbot."""
 

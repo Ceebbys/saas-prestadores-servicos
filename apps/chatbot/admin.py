@@ -1,6 +1,15 @@
 from django.contrib import admin
 
-from .models import ChatbotAction, ChatbotChoice, ChatbotFlow, ChatbotStep
+from .models import (
+    ChatbotAction,
+    ChatbotChoice,
+    ChatbotExecutionLog,
+    ChatbotFlow,
+    ChatbotFlowVersion,
+    ChatbotMessage,
+    ChatbotSecret,
+    ChatbotStep,
+)
 
 
 class ChatbotStepInline(admin.TabularInline):
@@ -45,3 +54,42 @@ class ChatbotChoiceAdmin(admin.ModelAdmin):
 class ChatbotActionAdmin(admin.ModelAdmin):
     list_display = ["flow", "trigger", "action_type"]
     list_filter = ["trigger", "action_type"]
+
+
+# ---------------------------------------------------------------------------
+# RV06 — Builder visual
+# ---------------------------------------------------------------------------
+
+
+@admin.register(ChatbotFlowVersion)
+class ChatbotFlowVersionAdmin(admin.ModelAdmin):
+    list_display = ["flow", "numero", "status", "published_at", "validated_at"]
+    list_filter = ["status"]
+    readonly_fields = ["numero", "validated_at", "validation_errors", "schema_version"]
+    search_fields = ["flow__name", "notes"]
+
+
+@admin.register(ChatbotMessage)
+class ChatbotMessageAdmin(admin.ModelAdmin):
+    list_display = ["session", "direction", "node_id", "created_at"]
+    list_filter = ["direction"]
+    search_fields = ["session__session_key", "content"]
+    readonly_fields = ["session", "direction", "content", "payload", "node_id", "created_at"]
+
+
+@admin.register(ChatbotExecutionLog)
+class ChatbotExecutionLogAdmin(admin.ModelAdmin):
+    list_display = ["session", "event", "level", "node_id", "created_at"]
+    list_filter = ["event", "level"]
+    search_fields = ["session__session_key", "node_id"]
+    readonly_fields = ["session", "event", "level", "node_id", "payload", "created_at"]
+
+
+@admin.register(ChatbotSecret)
+class ChatbotSecretAdmin(admin.ModelAdmin):
+    list_display = ["empresa", "name", "last_used_at", "created_at"]
+    list_filter = ["empresa"]
+    search_fields = ["name", "description"]
+    # NÃO expor value_encrypted no admin form (Fernet binary)
+    exclude = ["value_encrypted"]
+    readonly_fields = ["empresa", "name", "description", "last_used_at", "created_by"]

@@ -12,9 +12,55 @@
 {% endblock %}
 
 {% block page_header %}
-<div class="mb-6">
-    <h1 class="text-2xl font-bold text-slate-900">{% if form.instance.pk %}Editar Fluxo de Chatbot{% else %}Novo Fluxo de Chatbot{% endif %}</h1>
+<div class="mb-6 flex items-start justify-between gap-4">
+    <div>
+        <h1 class="text-2xl font-bold text-slate-900">{% if form.instance.pk %}Editar Fluxo de Chatbot{% else %}Novo Fluxo de Chatbot{% endif %}</h1>
+    </div>
+    {% if form.instance.pk %}
+    {# RV06 — Botão para abrir editor visual #}
+    <form method="post" id="builder-init-form" class="inline-flex">
+        {% csrf_token %}
+        <button type="submit"
+                class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 text-white text-sm font-medium shadow-sm hover:from-indigo-600 hover:to-violet-600 transition-all"
+                data-init-url="{% url 'chatbot:builder_init' form.instance.pk %}"
+                data-builder-url="{% url 'chatbot:flow_builder' form.instance.pk %}">
+            {% icon "rectangle-stack" "w-4 h-4" %}
+            Abrir editor visual
+        </button>
+    </form>
+    <script>
+        // Cria/encontra o draft via /builder/init/, depois redireciona para o builder
+        document.getElementById('builder-init-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            var btn = this.querySelector('button[data-init-url]');
+            var initUrl = btn.dataset.initUrl;
+            var builderUrl = btn.dataset.builderUrl;
+            var csrf = this.querySelector('[name=csrfmiddlewaretoken]').value;
+            btn.disabled = true;
+            btn.textContent = 'Abrindo…';
+            fetch(initUrl, {
+                method: 'POST',
+                headers: {'X-CSRFToken': csrf, 'Content-Type': 'application/json'},
+                credentials: 'same-origin',
+                body: '{}',
+            }).then(function(r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            }).then(function() {
+                window.location.href = builderUrl;
+            }).catch(function(err) {
+                alert('Não foi possível abrir o editor visual. Tente novamente.');
+                btn.disabled = false;
+                console.error(err);
+            });
+        });
+    </script>
+    {% endif %}
 </div>
+
+{% if form.instance.pk and form.instance.use_visual_builder %}
+{% include "chatbot/partials/_flow_builder_banner.html" with flow=form.instance %}
+{% endif %}
 {% endblock %}
 
 {% block content %}

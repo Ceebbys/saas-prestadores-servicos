@@ -53,9 +53,15 @@
                            title="Preview">
                             {% icon "eye" "w-4 h-4" %}
                         </a>
+                        {# RV06 — link direto para construtor visual #}
+                        <a href="{% url 'chatbot:flow_builder' flow.pk %}"
+                           class="p-1.5 rounded-lg text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors inline-flex"
+                           title="Construtor visual">
+                            {% icon "rectangle-stack" "w-4 h-4" %}
+                        </a>
                         <a href="{% url 'chatbot:flow_update' flow.pk %}"
                            class="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors inline-flex"
-                           title="Editar">
+                           title="Editar (formulário)">
                             {% icon "pencil" "w-4 h-4" %}
                         </a>
                         <form method="post" action="{% url 'chatbot:flow_delete' flow.pk %}"

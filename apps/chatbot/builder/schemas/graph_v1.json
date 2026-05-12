@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ChatbotFlowGraph",
+  "description": "Schema v1 do graph_json produzido pelo builder visual.",
+  "type": "object",
+  "required": ["schema_version", "nodes", "edges"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1
+    },
+    "viewport": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": {"type": "number"},
+        "y": {"type": "number"},
+        "zoom": {"type": "number", "minimum": 0.1, "maximum": 4}
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "position", "data"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-zA-Z0-9_-]+$"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "start",
+              "message",
+              "question",
+              "menu",
+              "condition",
+              "collect_data",
+              "api_call",
+              "handoff",
+              "end"
+            ]
+          },
+          "position": {
+            "type": "object",
+            "required": ["x", "y"],
+            "additionalProperties": false,
+            "properties": {
+              "x": {"type": "number"},
+              "y": {"type": "number"}
+            }
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "width": {"type": "number"},
+          "height": {"type": "number"},
+          "selected": {"type": "boolean"},
+          "dragging": {"type": "boolean"},
+          "positionAbsolute": {
+            "type": "object",
+            "properties": {
+              "x": {"type": "number"},
+              "y": {"type": "number"}
+            }
+          }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "required": ["id", "source", "target"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "source": {"type": "string", "maxLength": 64},
+          "target": {"type": "string", "maxLength": 64},
+          "sourceHandle": {"type": ["string", "null"]},
+          "targetHandle": {"type": ["string", "null"]},
+          "label": {"type": ["string", "null"], "maxLength": 200},
+          "type": {"type": "string"},
+          "animated": {"type": "boolean"},
+          "style": {"type": "object", "additionalProperties": true},
+          "data": {"type": "object", "additionalProperties": true}
+        }
+      }
+    }
+  }
+}

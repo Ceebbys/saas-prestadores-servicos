@@ -42,6 +42,11 @@ tailwindcss.exe
 node_modules/
 theme/static_src/node_modules/
 
+# RV06 — Chatbot Builder (Vite + React Flow)
+# Bundle gerado no deploy (npm run build na VPS) — não committado
+static/js/chatbot-builder/
+frontend/chatbot-builder/dist/
+
 # Tailwind CLI binaries (any platform)
 tailwindcss-linux-*
 

@@ -1,0 +1,72 @@
+{% extends "layouts/authenticated.html" %}
+{% load static ui_tags %}
+
+{% block title %}Construtor visual — {{ flow.name }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'js/chatbot-builder/style.css' %}" onerror="this.remove();">
+<style>
+    /* Layout em fullscreen para o builder — sem padding nem max-width do main */
+    main.flex-1.p-6 { padding: 0 !important; }
+    body { overflow: hidden; }
+    #chatbot-builder-root {
+        position: fixed;
+        top: 4rem; /* topbar height */
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #f8fafc;
+    }
+    @media (min-width: 1024px) {
+        #chatbot-builder-root { left: 16rem; }
+    }
+    #chatbot-builder-loading {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 16px;
+        color: #475569;
+        font-family: system-ui, -apple-system, sans-serif;
+    }
+    #chatbot-builder-loading .spinner {
+        width: 32px;
+        height: 32px;
+        border: 3px solid #cbd5e1;
+        border-top-color: #4f46e5;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script type="module" src="{% static 'js/chatbot-builder/main.js' %}"
+        onerror="document.getElementById('chatbot-builder-loading').innerHTML = '<div style=\'color:#dc2626;text-align:center;max-width:400px;padding:24px\'><strong>Construtor visual não disponível</strong><p style=\'margin-top:8px;font-size:14px\'>O bundle do builder não foi encontrado. Faça <code>npm run build</code> em <code>frontend/chatbot-builder/</code> e rode <code>collectstatic</code>.</p></div>';"></script>
+{% endblock %}
+
+{% block content %}
+<div id="chatbot-builder-root"
+     data-flow-id="{{ flow.pk }}"
+     data-flow-name="{{ flow.name|escapejs }}"
+     data-csrf-token="{{ csrf_token }}"
+     data-graph-endpoint="{% url 'chatbot:builder_graph' flow.pk %}"
+     data-save-endpoint="{% url 'chatbot:builder_save' flow.pk %}"
+     data-validate-endpoint="{% url 'chatbot:builder_validate' flow.pk %}"
+     data-publish-endpoint="{% url 'chatbot:builder_publish' flow.pk %}"
+     data-init-endpoint="{% url 'chatbot:builder_init' flow.pk %}"
+     data-catalog-endpoint="{% url 'chatbot:node_catalog' %}"
+     data-flow-list-url="{% url 'chatbot:flow_list' %}"
+     data-flow-edit-url="{% url 'chatbot:flow_update' flow.pk %}"
+     data-has-published="{{ has_published|yesno:'true,false' }}"
+     data-use-visual-builder="{{ flow.use_visual_builder|yesno:'true,false' }}">
+    <div id="chatbot-builder-loading">
+        <div class="spinner"></div>
+        <p>Carregando construtor visual…</p>
+    </div>
+</div>
+{{ initial_graph|json_script:"chatbot-initial-graph" }}
+{% endblock %}

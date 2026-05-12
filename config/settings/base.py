@@ -193,3 +193,13 @@ PASSWORD_RESET_TIMEOUT = int(os.getenv("PASSWORD_RESET_TIMEOUT_DAYS", "1")) * 24
 
 # Public site URL used in transactional emails (full domain incl. scheme).
 SITE_URL = os.getenv("SITE_URL", "http://localhost:8000")
+
+# ---------------------------------------------------------------------------
+# RV06 — Limites do construtor visual de fluxos (chatbot builder)
+# ---------------------------------------------------------------------------
+CHATBOT_BUILDER_MAX_NODES = int(os.getenv("CHATBOT_BUILDER_MAX_NODES", "200"))
+CHATBOT_BUILDER_MAX_EDGES = int(os.getenv("CHATBOT_BUILDER_MAX_EDGES", "500"))
+CHATBOT_BUILDER_MAX_TEXT_LEN = int(os.getenv("CHATBOT_BUILDER_MAX_TEXT_LEN", "5000"))
+CHATBOT_BUILDER_MAX_GRAPH_BYTES = int(os.getenv("CHATBOT_BUILDER_MAX_GRAPH_BYTES", str(512 * 1024)))
+CHATBOT_BUILDER_RATE_LIMIT_CALLS = int(os.getenv("CHATBOT_BUILDER_RATE_LIMIT_CALLS", "60"))
+CHATBOT_BUILDER_RATE_LIMIT_WINDOW = int(os.getenv("CHATBOT_BUILDER_RATE_LIMIT_WINDOW", "60"))

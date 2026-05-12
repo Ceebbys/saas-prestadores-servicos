@@ -99,6 +99,27 @@ class ChatbotFlow(TenantOwnedModel):
         help_text="Quando ativo, bloqueia outros fluxos enquanto este estiver em andamento.",
     )
 
+    # RV06 — Builder visual (React Flow). Quando True, executor lê graph_json
+    # da versão publicada (motor v2). Setado automaticamente no primeiro
+    # publish bem-sucedido da FlowVersion.
+    use_visual_builder = models.BooleanField(
+        "Construtor visual",
+        default=False,
+        help_text=(
+            "Quando ativo, o fluxo é gerenciado pelo construtor visual e o "
+            "executor lê graph_json da versão publicada."
+        ),
+    )
+    current_published_version = models.ForeignKey(
+        "ChatbotFlowVersion",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Versão publicada atual",
+        help_text="Atalho para o executor (evita lookup por status a cada turno).",
+    )
+
     class Meta:
         verbose_name = "Fluxo de Chatbot"
         verbose_name_plural = "Fluxos de Chatbot"
@@ -492,6 +513,14 @@ class ChatbotSession(TimestampedModel):
         null=True,
         blank=True,
         verbose_name="Passo atual",
+        help_text="Apontador legado para ChatbotStep (motor v1).",
+    )
+    # RV06 — motor v2 (graph_json) usa current_node_id como apontador na sessão.
+    current_node_id = models.CharField(
+        "Nó atual (graph_json)",
+        max_length=64,
+        blank=True,
+        help_text="ID do nó atual no graph_json publicado (motor v2). Vazio para fluxos legados.",
     )
     lead_data = models.JSONField("Dados coletados", default=dict, blank=True)
     channel = models.CharField("Canal", max_length=20, default="webchat")
@@ -617,3 +646,292 @@ class ChatbotFlowDispatch(TenantOwnedModel):
     def __str__(self):
         prefix = "BLOCKED" if self.blocked else "DISPATCHED"
         return f"{prefix} {self.flow.name} → {self.sender_id} ({self.reason})"
+
+
+# ---------------------------------------------------------------------------
+# RV06 — Builder visual (React Flow island)
+# ---------------------------------------------------------------------------
+
+
+class ChatbotFlowVersion(TimestampedModel):
+    """Versão de um fluxo de chatbot — rascunho/publicada/arquivada.
+
+    Cada `ChatbotFlow` pode ter no máximo 1 DRAFT e 1 PUBLISHED ativos.
+    Versões anteriores publicadas viram ARCHIVED ao publicar uma nova.
+
+    O motor v2 (`apps.chatbot.builder.services.flow_executor`) interpreta
+    `graph_json` da versão PUBLISHED apontada por `flow.current_published_version`.
+    """
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Rascunho"
+        PUBLISHED = "published", "Publicada"
+        ARCHIVED = "archived", "Arquivada"
+
+    flow = models.ForeignKey(
+        ChatbotFlow,
+        on_delete=models.CASCADE,
+        related_name="versions",
+        verbose_name="Fluxo",
+    )
+    numero = models.PositiveIntegerField(
+        "Número da versão",
+        help_text="Sequencial por flow. Calculado automaticamente no save().",
+    )
+    status = models.CharField(
+        "Status",
+        max_length=20,
+        choices=Status.choices,
+        default=Status.DRAFT,
+    )
+    graph_json = models.JSONField(
+        "Grafo (graph_json)",
+        default=dict,
+        blank=True,
+        help_text="Estrutura {nodes, edges, viewport, metadata, schema_version}.",
+    )
+    schema_version = models.PositiveSmallIntegerField(
+        "Versão do schema",
+        default=1,
+        help_text="Versão do graph_v1 schema; incrementada em breaking changes.",
+    )
+    validation_errors = models.JSONField(
+        "Erros de validação",
+        default=list,
+        blank=True,
+        help_text="Lista de erros do último validate (ou [] se válido).",
+    )
+    validated_at = models.DateTimeField(
+        "Última validação", null=True, blank=True,
+    )
+    published_at = models.DateTimeField(
+        "Publicada em", null=True, blank=True,
+    )
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="published_chatbot_versions",
+        verbose_name="Publicada por",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_chatbot_versions",
+        verbose_name="Criada por",
+    )
+    notes = models.TextField(
+        "Notas de versão",
+        blank=True,
+        help_text="Release notes opcionais (changelog interno).",
+    )
+
+    class Meta:
+        verbose_name = "Versão de Fluxo"
+        verbose_name_plural = "Versões de Fluxo"
+        ordering = ["flow", "-numero"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["flow", "numero"],
+                name="chatbot_flowversion_unique_numero",
+            ),
+            models.UniqueConstraint(
+                fields=["flow"],
+                condition=models.Q(status="draft"),
+                name="chatbot_flowversion_one_draft_per_flow",
+            ),
+            models.UniqueConstraint(
+                fields=["flow"],
+                condition=models.Q(status="published"),
+                name="chatbot_flowversion_one_published_per_flow",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["flow", "status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.flow.name} v{self.numero} ({self.status})"
+
+    def save(self, *args, **kwargs):
+        if not self.numero:
+            # Calcula próximo número sequencial por flow
+            last = (
+                ChatbotFlowVersion.objects
+                .filter(flow=self.flow)
+                .order_by("-numero")
+                .first()
+            )
+            self.numero = (last.numero + 1) if last else 1
+        super().save(*args, **kwargs)
+
+    @property
+    def is_publishable(self) -> bool:
+        """True se o último validate foi bem-sucedido (sem erros)."""
+        return self.validated_at is not None and not self.validation_errors
+
+
+class ChatbotMessage(TimestampedModel):
+    """Mensagens trocadas durante uma sessão de chatbot.
+
+    Persistência relacional para auditoria, replay e BI futuro.
+    Decisão RV06: tabela própria (não JSONField) para queries estruturadas.
+    """
+
+    class Direction(models.TextChoices):
+        INBOUND = "inbound", "Recebida (usuário → bot)"
+        OUTBOUND = "outbound", "Enviada (bot → usuário)"
+        SYSTEM = "system", "Sistema"
+
+    session = models.ForeignKey(
+        ChatbotSession,
+        on_delete=models.CASCADE,
+        related_name="messages",
+        verbose_name="Sessão",
+    )
+    direction = models.CharField(
+        "Direção",
+        max_length=10,
+        choices=Direction.choices,
+    )
+    content = models.TextField("Conteúdo")
+    payload = models.JSONField(
+        "Payload extra",
+        default=dict,
+        blank=True,
+        help_text="Botões, anexos, raw provider data, metadados.",
+    )
+    node_id = models.CharField(
+        "ID do nó",
+        max_length=64,
+        blank=True,
+        help_text="ID do nó no graph_json OU 'step_<pk>' para fluxos legados.",
+    )
+
+    class Meta:
+        verbose_name = "Mensagem do Chatbot"
+        verbose_name_plural = "Mensagens do Chatbot"
+        ordering = ["session", "created_at"]
+        indexes = [
+            models.Index(fields=["session", "created_at"]),
+            models.Index(fields=["direction", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.direction} @ {self.session_id}: {self.content[:50]}"
+
+
+class ChatbotExecutionLog(TimestampedModel):
+    """Log estruturado de execução por sessão/nó.
+
+    Registra entrada/saída de nós, ações executadas, falhas de validação,
+    chamadas API e erros. Base para dashboards de uso/conversão.
+    """
+
+    class Event(models.TextChoices):
+        NODE_ENTERED = "node_entered", "Nó iniciado"
+        NODE_EXITED = "node_exited", "Nó concluído"
+        ACTION_EXECUTED = "action_executed", "Ação executada"
+        VALIDATION_FAILED = "validation_failed", "Validação falhou"
+        API_CALL = "api_call", "Chamada de API"
+        ERROR = "error", "Erro"
+        SESSION_STARTED = "session_started", "Sessão iniciada"
+        SESSION_COMPLETED = "session_completed", "Sessão concluída"
+
+    class Level(models.TextChoices):
+        INFO = "info", "Info"
+        WARNING = "warning", "Aviso"
+        ERROR = "error", "Erro"
+
+    session = models.ForeignKey(
+        ChatbotSession,
+        on_delete=models.CASCADE,
+        related_name="execution_logs",
+        verbose_name="Sessão",
+    )
+    node_id = models.CharField(
+        "ID do nó",
+        max_length=64,
+        blank=True,
+    )
+    event = models.CharField(
+        "Evento",
+        max_length=30,
+        choices=Event.choices,
+    )
+    level = models.CharField(
+        "Nível",
+        max_length=10,
+        choices=Level.choices,
+        default=Level.INFO,
+    )
+    payload = models.JSONField(
+        "Payload",
+        default=dict,
+        blank=True,
+    )
+
+    class Meta:
+        verbose_name = "Log de Execução"
+        verbose_name_plural = "Logs de Execução"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["session", "created_at"]),
+            models.Index(fields=["level", "-created_at"]),
+            models.Index(fields=["event", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"[{self.level}] {self.event} @ {self.node_id or '?'}"
+
+
+class ChatbotSecret(TenantOwnedModel):
+    """Cofre de segredos (API keys, tokens) usados por nós api_call.
+
+    Preparada em RV06-V1 mas SEM UI de CRUD nem uso ativo no executor —
+    o bloco api_call está marcado como "coming_soon" no catálogo. A
+    integração efetiva (UI de gerenciamento + lazy decrypt no executor)
+    fica para a V2.
+
+    Valor encriptado via `apps.core.encryption.Fernet` (mesma chave usada
+    em EmpresaEmailConfig).
+    """
+
+    name = models.CharField(
+        "Nome (slug)",
+        max_length=80,
+        help_text="Identificador único dentro da empresa. Ex.: 'crm_api_key'.",
+    )
+    description = models.TextField("Descrição", blank=True)
+    value_encrypted = models.BinaryField(
+        "Valor (encriptado)",
+        help_text="Conteúdo encriptado via Fernet. Nunca exibir em UI.",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_chatbot_secrets",
+        verbose_name="Criado por",
+    )
+    last_used_at = models.DateTimeField(
+        "Último uso", null=True, blank=True,
+    )
+
+    class Meta:
+        verbose_name = "Segredo do Chatbot"
+        verbose_name_plural = "Segredos do Chatbot"
+        ordering = ["empresa", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["empresa", "name"],
+                name="chatbot_secret_unique_name_per_empresa",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.empresa}: {self.name}"

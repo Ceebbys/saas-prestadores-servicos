@@ -1,0 +1,18 @@
+{% load ui_tags %}
+<div class="mb-6 rounded-xl bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-200 p-4 flex items-start gap-3">
+    <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-indigo-500 text-white flex items-center justify-center">
+        {% icon "rectangle-stack" "w-5 h-5" %}
+    </div>
+    <div class="flex-1">
+        <p class="text-sm font-semibold text-slate-900">Este fluxo é gerenciado pelo construtor visual</p>
+        <p class="text-xs text-slate-600 mt-0.5">
+            O motor de execução está usando a versão publicada do construtor visual.
+            O editor por formulários abaixo continua disponível em modo leitura para histórico.
+        </p>
+    </div>
+    <a href="{% url 'chatbot:flow_builder' flow.pk %}"
+       class="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-indigo-200 text-indigo-700 text-xs font-medium hover:bg-indigo-50">
+        {% icon "rectangle-stack" "w-4 h-4" %}
+        Abrir construtor
+    </a>
+</div>

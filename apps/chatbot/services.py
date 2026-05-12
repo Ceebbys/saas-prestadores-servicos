@@ -153,7 +153,23 @@ def start_session(
     channel: str = "webchat",
     sender_id: str = "",
 ) -> dict:
-    """Inicia uma nova sessão de chatbot.
+    """Inicia uma nova sessão de chatbot — despachador legacy/v2 (RV06).
+
+    Se o fluxo está em modo visual (use_visual_builder + versão publicada),
+    delega para o motor v2 (graph_json). Senão, segue com o motor legado.
+    """
+    if flow.use_visual_builder and flow.current_published_version_id:
+        from apps.chatbot.builder.services.flow_executor import start_session_v2
+        return start_session_v2(flow, channel=channel, sender_id=sender_id)
+    return _start_session_legacy(flow, channel=channel, sender_id=sender_id)
+
+
+def _start_session_legacy(
+    flow: ChatbotFlow,
+    channel: str = "webchat",
+    sender_id: str = "",
+) -> dict:
+    """Motor v1 legado — usa ChatbotStep/ChatbotChoice (preservado).
 
     Args:
         flow: ChatbotFlow ativo
@@ -193,7 +209,30 @@ def start_session(
 # ---------------------------------------------------------------------------
 
 def process_response(session_key: str, user_response: str) -> dict:
-    """Processa a resposta do usuário e avança o fluxo.
+    """Processa resposta do usuário — despachador legacy/v2 (RV06).
+
+    Decide o motor pela sessão: se foi criada por um flow visual,
+    `session.current_node_id` está populado e usamos o motor v2.
+    Caso contrário (legado, `current_step` populado), usamos v1.
+
+    Quando session não existe, propaga para o legado para preservar a
+    semântica `ValueError` esperada por chamadores antigos.
+    """
+    try:
+        session = ChatbotSession.objects.select_related("flow").get(
+            session_key=session_key,
+        )
+    except ChatbotSession.DoesNotExist:
+        return _process_response_legacy(session_key, user_response)
+
+    if session.current_node_id and session.flow.current_published_version_id:
+        from apps.chatbot.builder.services.flow_executor import process_response_v2
+        return process_response_v2(session_key, user_response)
+    return _process_response_legacy(session_key, user_response)
+
+
+def _process_response_legacy(session_key: str, user_response: str) -> dict:
+    """Motor v1 legado de process_response — preservado.
 
     Args:
         session_key: UUID da sessão

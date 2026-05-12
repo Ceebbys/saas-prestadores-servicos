@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chatbot Builder — Dev</title>
+    <style>
+      body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
+    </style>
+  </head>
+  <body>
+    <!-- Mock host similar ao template Django (para npm run dev) -->
+    <div id="chatbot-builder-root"
+         data-flow-id="1"
+         data-flow-name="Fluxo de Desenvolvimento"
+         data-csrf-token="dev-csrf-token"
+         data-graph-endpoint="/api/chatbot/flows/1/graph/"
+         data-save-endpoint="/api/chatbot/flows/1/graph/save/"
+         data-validate-endpoint="/api/chatbot/flows/1/validate/"
+         data-publish-endpoint="/api/chatbot/flows/1/publish/"
+         data-init-endpoint="/api/chatbot/flows/1/builder/init/"
+         data-catalog-endpoint="/api/chatbot/node-catalog/"
+         data-flow-list-url="/chatbot/flows/"
+         data-flow-edit-url="/chatbot/flows/1/edit/"
+         data-has-published="false"
+         data-use-visual-builder="false"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
