@@ -43,7 +43,7 @@ def parse_evolution_webhook(body: dict) -> tuple[str, str, str] | None:
     """
     event = body.get("event", "")
     if event != "messages.upsert":
-        logger.debug("evolution_webhook ignored: event=%r (esperado messages.upsert)", event)
+        logger.info("evolution_webhook ignored: event=%r (esperado messages.upsert)", event)
         return None
 
     data = body.get("data", {})
@@ -51,7 +51,7 @@ def parse_evolution_webhook(body: dict) -> tuple[str, str, str] | None:
 
     # Mensagens fromMe=true são tratadas por parse_evolution_webhook_outbound
     if key.get("fromMe", False):
-        logger.debug("evolution_webhook ignored inbound: fromMe=True (usa parser outbound)")
+        logger.info("evolution_webhook ignored inbound: fromMe=True (-> tentando outbound parser)")
         return None
 
     remote_jid = key.get("remoteJid", "") or ""
