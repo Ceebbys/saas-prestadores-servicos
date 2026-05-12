@@ -19,6 +19,13 @@ logger = logging.getLogger(__name__)
 # Esquemas perigosos — não deixar WeasyPrint resolver direto.
 _BLOCKED_SCHEMES = {"file", "ftp", "ftps"}
 
+# Hosts considerados "internos" — fetcher resolve via default_storage.
+_INTERNAL_HOSTS = {"", "localhost", "127.0.0.1"}
+
+# Base URL default — WeasyPrint precisa de algo para fazer urljoin de URLs
+# relativas como /media/img.png. Sem isso, emite warning e pula a imagem.
+DEFAULT_BASE_URL = "http://localhost/"
+
 
 def _guess_mime(name: str) -> str:
     mime, _ = mimetypes.guess_type(name)
@@ -40,8 +47,13 @@ def media_url_fetcher(url: str) -> dict:
     if parsed.scheme in _BLOCKED_SCHEMES:
         raise ValueError(f"Esquema bloqueado: {parsed.scheme}")
 
-    # Resolve URLs relativas /media/foo.png usando o storage
-    if parsed.path.startswith("/media/") and not parsed.netloc:
+    # Resolve URLs /media/* via storage Django:
+    # - Sem netloc (URL relativa);
+    # - OU netloc interno (localhost/127.0.0.1, comum após urljoin
+    #   com DEFAULT_BASE_URL ou request.build_absolute_uri).
+    # Externos (https://attacker.com/media/...) NÃO resolvem aqui — vão
+    # para o fetcher default do WeasyPrint, que faz requisição HTTP real.
+    if parsed.path.startswith("/media/") and parsed.netloc in _INTERNAL_HOSTS:
         name = parsed.path[len("/media/"):]
         try:
             if default_storage.exists(name):
@@ -71,8 +83,12 @@ def render_html_to_pdf(html: str, *, base_url: str | None = None) -> bytes:
 
     Args:
         html: HTML string completa
-        base_url: usado para resolver URLs relativas (passar request.build_absolute_uri("/")
-                  quando disponível)
+        base_url: usado para resolver URLs relativas. Se None, usa
+                  `DEFAULT_BASE_URL` ("http://localhost/") — necessário para o
+                  WeasyPrint chamar o url_fetcher com URLs absolutas geradas
+                  via urljoin. Sem isso, `<img src="/media/...">` em HTML
+                  vira warning "Relative URI reference without a base URI" e
+                  a imagem é pulada.
 
     Returns:
         bytes do PDF.
@@ -85,6 +101,6 @@ def render_html_to_pdf(html: str, *, base_url: str | None = None) -> bytes:
 
     return weasyprint.HTML(
         string=html,
-        base_url=base_url,
+        base_url=base_url or DEFAULT_BASE_URL,
         url_fetcher=media_url_fetcher,
     ).write_pdf()

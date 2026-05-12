@@ -43,6 +43,25 @@ class MediaUrlFetcherTests(TestCase):
                 "proposals/headers/1/logo.png"
             )
 
+    def test_resolves_media_via_storage_with_localhost_netloc(self):
+        # WeasyPrint após urljoin com DEFAULT_BASE_URL transforma /media/x.png em
+        # http://localhost/media/x.png. Fetcher precisa aceitar ambos.
+        with patch("apps.core.document_render.pdf.default_storage") as mock_storage:
+            mock_storage.exists.return_value = True
+            mock_storage.open.return_value = io.BytesIO(b"DATA")
+            result = media_url_fetcher("http://localhost/media/proposals/headers/1/logo.png")
+            self.assertEqual(result["file_obj"].read(), b"DATA")
+
+    def test_external_host_with_media_path_does_not_read_local(self):
+        # SSRF defense: https://attacker.com/media/x.png NÃO resolve via storage local.
+        with patch("apps.core.document_render.pdf.default_storage") as mock_storage, \
+             patch("weasyprint.urls.default_url_fetcher") as mock_default:
+            mock_default.return_value = {"file_obj": io.BytesIO(b""), "mime_type": "image/png"}
+            media_url_fetcher("https://attacker.com/media/secret.png")
+            # storage NÃO deve ser tocado para hosts externos
+            mock_storage.exists.assert_not_called()
+            mock_default.assert_called_once()
+
     def test_media_missing_falls_through_to_default(self):
         with patch("apps.core.document_render.pdf.default_storage") as mock_storage, \
              patch("weasyprint.urls.default_url_fetcher") as mock_default:
