@@ -2,13 +2,15 @@
 {% load static ui_tags %}
 
 {% block body %}
-{# RV05-G/H — Sidebar SEMPRE fixa (position:fixed) em todos breakpoints.
-   Antes usava `lg:static` em desktop, o que a colocava no fluxo do documento
-   e a fazia crescer/rolar junto com páginas longas. Agora: largura fixa
-   w-64, altura fixa de viewport (inset-y-0), independente da rolagem do
-   conteúdo. Main content compensa com .main-with-sidebar (CSS embebido —
-   Tailwind v4.1 está pré-compilado e classes novas como `lg:pl-64` não
-   entram sem rebuild da pipeline; aqui usamos uma classe custom equivalente). #}
+{% comment %}
+RV05-G/H — Sidebar SEMPRE fixa (position:fixed) em todos breakpoints.
+Antes usava `lg:static` em desktop, o que a colocava no fluxo do documento
+e a fazia crescer/rolar junto com páginas longas. Agora: largura fixa
+w-64, altura fixa de viewport (inset-y-0), independente da rolagem do
+conteúdo. Main content compensa com .main-with-sidebar (CSS embebido —
+Tailwind v4.1 está pré-compilado e classes novas como `lg:pl-64` não
+entram sem rebuild da pipeline; aqui usamos uma classe custom equivalente).
+{% endcomment %}
 <style>
     /* Equivalente ao Tailwind `lg:pl-64` (lg = 1024px, pl-64 = 16rem) */
     @media (min-width: 1024px) {
