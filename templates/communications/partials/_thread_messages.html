@@ -1,37 +1,75 @@
 {% load humanize ui_tags %}
 {% comment %}
-Partial só com conteúdo das mensagens. Usado por:
-  1. _thread.html (include inicial)
-  2. ThreadPartialView (polling 15s + WS refresh)
-  3. SendMessageView (após envio, recarrega só as mensagens — composer permanece)
+Layout WhatsApp-like:
+- Mensagens consecutivas do mesmo "ator" (mesmo direction+sender) ficam
+  agrupadas (espaço menor entre bolhas).
+- Horário fica ao LADO da bolha (em coluna externa).
+- Autor (Admin / Bot / Cliente) aparece UMA VEZ no final do grupo (abaixo
+  da última bolha).
+- Direção: inbound → esquerda; outbound/bot → direita; nota → full-width
+  amarela; system → centralizada italic.
 
-Layout moderno: bolha compacta (só texto), metadados fora em fonte 10px.
+Para detectar "mesmo ator" comparamos a chave gerada na view (ou inline
+via templatetag custom — usamos abordagem simples comparando com a prev).
 {% endcomment %}
 {% if thread_messages %}
 {% regroup thread_messages by created_at|date:"d/m/Y" as msgs_by_day %}
 {% for day_group in msgs_by_day %}
   <div class="thread-day-sep">{{ day_group.grouper }}</div>
   {% for msg in day_group.list %}
-    <div class="msg-row msg-row--{% if msg.channel == 'internal_note' %}note{% elif msg.direction == 'inbound' %}in{% elif msg.direction == 'system' %}sys{% else %}out{% endif %}">
-      {% if msg.channel == 'internal_note' %}
+    {% comment %}
+    Chave de "ator" para grouping. Inbound: sender_external_id;
+    Outbound humano: sender_user_id; Outbound bot: 'bot';
+    Sistema: 'sys'; Nota: 'note:user_id'.
+    {% endcomment %}
+    {% if msg.channel == 'internal_note' %}
+      <div class="msg-row msg-row--note">
         <div class="msg-note">
-          <div class="msg-note__head">
-            <span>📝 {{ msg.sender_user.full_name|default:msg.sender_user.email|default:"Sistema"|truncatechars:24 }} · {{ msg.created_at|date:"H:i" }}</span>
-          </div>
+          <div class="msg-note__head">📝 {{ msg.sender_user.full_name|default:msg.sender_user.email|default:"Sistema"|truncatechars:24 }} · {{ msg.created_at|date:"H:i" }}</div>
           <div class="msg-note__body">{{ msg.content|linebreaksbr }}</div>
         </div>
-      {% elif msg.direction == 'system' %}
+      </div>
+    {% elif msg.direction == 'system' %}
+      <div class="msg-row msg-row--sys">
         <div class="msg-system">{{ msg.content }}</div>
-      {% else %}
-        <div class="msg-bubble{% if msg.payload.sent_by_bot %} msg-bubble--bot{% endif %}">{{ msg.content|linebreaksbr }}</div>
-        <div class="msg-meta">
-          {% if msg.direction == 'inbound' %}{{ msg.sender_name|default:msg.sender_external_id|default:"Cliente"|truncatechars:18 }}{% elif msg.payload.sent_by_bot %}🤖 Bot{% elif msg.sender_user %}{{ msg.sender_user.full_name|default:msg.sender_user.email|truncatechars:18 }}{% else %}Você{% endif %}
-          <span class="msg-meta__sep">·</span>
-          {{ msg.created_at|date:"H:i" }}
-          {% if msg.delivery_status == 'failed' %}<span class="msg-meta__fail">· ⚠ falhou</span>{% endif %}
+      </div>
+    {% else %}
+      {% with side="in"|stringformat:"s" %}{% endwith %}
+      <div class="msg-row msg-row--{% if msg.direction == 'inbound' %}in{% else %}out{% endif %}{% if msg.payload.sent_by_bot %} msg-row--bot{% endif %}">
+        <div class="msg-bubble{% if msg.payload.sent_by_bot %} msg-bubble--bot{% endif %}">
+          <div class="msg-bubble__text">{{ msg.content|linebreaksbr }}</div>
+          <span class="msg-bubble__time">
+            {{ msg.created_at|date:"H:i" }}
+            {% if msg.delivery_status == 'failed' %}<span class="msg-meta__fail">⚠</span>{% endif %}
+            {% if msg.direction == 'outbound' and not msg.payload.sent_by_bot %}
+              {% if msg.delivery_status == 'read' %}<span class="msg-tick msg-tick--read">✓✓</span>
+              {% elif msg.delivery_status == 'delivered' %}<span class="msg-tick">✓✓</span>
+              {% elif msg.delivery_status == 'sent' %}<span class="msg-tick">✓</span>
+              {% endif %}
+            {% endif %}
+          </span>
         </div>
-      {% endif %}
-    </div>
+        {% comment %}
+        Autor SÓ aparece se NÃO for igual ao da próxima mensagem (último
+        do grupo). Usamos JS para esconder duplicados — server-side
+        comparação fica complexa demais sem helper.
+        {% endcomment %}
+        <div class="msg-author"
+             data-author-key="{% if msg.direction == 'inbound' %}in:{{ msg.sender_external_id|default:msg.sender_name|default:'cliente' }}{% elif msg.payload.sent_by_bot %}bot{% elif msg.sender_user_id %}user:{{ msg.sender_user_id }}{% else %}sys{% endif %}">
+          {% if msg.direction == 'inbound' %}
+            {{ msg.sender_name|default:msg.sender_external_id|default:"Cliente"|truncatechars:20 }}
+          {% elif msg.payload.sent_by_bot %}
+            🤖 Bot
+          {% elif msg.payload.source == 'mobile_app' %}
+            📱 Celular
+          {% elif msg.sender_user %}
+            {{ msg.sender_user.full_name|default:msg.sender_user.email|truncatechars:20 }}
+          {% else %}
+            Você
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
   {% endfor %}
 {% endfor %}
 {% else %}
@@ -40,3 +78,26 @@ Layout moderno: bolha compacta (só texto), metadados fora em fonte 10px.
   <p class="msg-empty__hint">Use o composer abaixo para iniciar a conversa.</p>
 </div>
 {% endif %}
+
+<script>
+// Grouping de mensagens consecutivas do mesmo ator:
+// - Espaço menor entre mensagens consecutivas do mesmo author (.msg-row--grouped)
+// - Autor visível APENAS na última mensagem do grupo
+(function() {
+  const rows = Array.from(document.querySelectorAll('.inbox-thread-scroll .msg-row'));
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const authorEl = row.querySelector('.msg-author');
+    if (!authorEl) continue;
+    const key = authorEl.dataset.authorKey;
+    // Olha a próxima msg da mesma coluna (não note/system)
+    const next = rows[i + 1];
+    const nextAuthor = next ? next.querySelector('.msg-author') : null;
+    if (nextAuthor && nextAuthor.dataset.authorKey === key) {
+      // Mesma pessoa que a próxima → esconde autor desta + reduz espaço
+      authorEl.style.display = 'none';
+      row.classList.add('msg-row--grouped');
+    }
+  }
+})();
+</script>

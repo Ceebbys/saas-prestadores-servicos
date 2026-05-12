@@ -33,65 +33,58 @@ NUMBER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣
 def parse_evolution_webhook(body: dict) -> tuple[str, str, str] | None:
     """Extrai sender_id, message_text e instance_name do payload da Evolution API.
 
+    SÓ retorna para mensagens INBOUND (cliente → nós). Mensagens fromMe=true
+    (operador responde direto pelo celular) são tratadas por
+    `parse_evolution_webhook_outbound`.
+
     Returns:
-        (sender_id, message_text, instance_name) ou None se não é mensagem processável
+        (sender_id, message_text, instance_name) ou None se não é mensagem
+        processável (com log de motivo em DEBUG).
     """
     event = body.get("event", "")
     if event != "messages.upsert":
+        logger.debug("evolution_webhook ignored: event=%r (esperado messages.upsert)", event)
         return None
 
     data = body.get("data", {})
     key = data.get("key", {})
 
-    # Ignorar mensagens enviadas por nós (evita loop)
+    # Mensagens fromMe=true são tratadas por parse_evolution_webhook_outbound
     if key.get("fromMe", False):
+        logger.debug("evolution_webhook ignored inbound: fromMe=True (usa parser outbound)")
         return None
 
     remote_jid = key.get("remoteJid", "") or ""
     if not remote_jid:
+        logger.debug("evolution_webhook ignored: remoteJid vazio")
         return None
 
-    # Rejeita grupos, broadcasts, canais — a Evolution API não consegue
-    # enviar reply individual para esses e o fluxo não faz sentido em grupo.
     _UNSUPPORTED_SUFFIXES = (
-        "@g.us",           # grupos
-        "@broadcast",      # listas de transmissão e status@broadcast
-        "@newsletter",     # canais
+        "@g.us", "@broadcast", "@newsletter",
     )
     if any(remote_jid.endswith(sfx) for sfx in _UNSUPPORTED_SUFFIXES):
+        logger.debug("evolution_webhook ignored: jid=%s (grupo/broadcast/channel)", remote_jid)
         return None
 
-    # WhatsApp 2024+ usa "addressing_mode=lid": o remoteJid vem como
-    # "<hash>@lid" (identidade anônima) e o número real chega em `senderPn`
-    # (ou variações: sender_pn, participantPn). Precisamos do número real
-    # para poder responder via Evolution (ela resolve @s.whatsapp.net).
     sender_pn = (
-        key.get("senderPn")
-        or key.get("sender_pn")
-        or data.get("senderPn")
-        or data.get("sender_pn")
-        or key.get("participantPn")
-        or data.get("participantPn")
-        or ""
+        key.get("senderPn") or key.get("sender_pn")
+        or data.get("senderPn") or data.get("sender_pn")
+        or key.get("participantPn") or data.get("participantPn") or ""
     )
 
     if remote_jid.endswith("@lid"):
-        # @lid puro sem sender_pn = contato verdadeiramente anônimo
-        # (canal, story) — ignorar. Com sender_pn resolvido, processar.
         if sender_pn and sender_pn.endswith("@s.whatsapp.net"):
             sender_id = sender_pn.replace("@s.whatsapp.net", "")
         else:
+            logger.debug("evolution_webhook ignored: @lid sem senderPn (anônimo)")
             return None
     else:
         sender_id = remote_jid.replace("@s.whatsapp.net", "")
 
-    # Precisa sobrar só dígitos e caber no tamanho de um telefone E.164
-    # (max 15 dígitos). IDs de grupo/canal novos vêm com 18 dígitos sem
-    # sufixo e seriam aceitos pelo isdigit — filtramos por comprimento.
     if not sender_id or not sender_id.isdigit() or len(sender_id) > 15:
+        logger.debug("evolution_webhook ignored: sender_id=%r inválido", sender_id)
         return None
 
-    # Extrair texto da mensagem (múltiplos formatos possíveis)
     message = data.get("message", {})
     text = (
         message.get("conversation")
@@ -102,11 +95,80 @@ def parse_evolution_webhook(body: dict) -> tuple[str, str, str] | None:
     )
 
     if not text:
+        msg_types = list((message or {}).keys())
+        logger.info(
+            "evolution_webhook ignored: mensagem sem texto (tipos=%s, sender=%s)",
+            msg_types[:5], sender_id,
+        )
         return None
 
     instance_name = body.get("instance", "")
-
+    logger.info(
+        "evolution_webhook inbound: sender=%s text=%r instance=%s",
+        sender_id, text[:60], instance_name,
+    )
     return (sender_id, text.strip(), instance_name)
+
+
+def parse_evolution_webhook_outbound(body: dict) -> tuple[str, str, str] | None:
+    """Extrai dados de uma mensagem OUTBOUND (operador respondeu pelo celular).
+
+    Estes eventos têm `fromMe=true` e devem ser registrados na inbox como
+    `direction=outbound` SEM chamar o bot (evitar loop de envio).
+
+    Returns:
+        (recipient_id, message_text, instance_name) ou None.
+    """
+    event = body.get("event", "")
+    if event != "messages.upsert":
+        return None
+    data = body.get("data", {})
+    key = data.get("key", {})
+    if not key.get("fromMe", False):
+        return None
+
+    remote_jid = key.get("remoteJid", "") or ""
+    if not remote_jid:
+        return None
+    _UNSUPPORTED_SUFFIXES = ("@g.us", "@broadcast", "@newsletter")
+    if any(remote_jid.endswith(sfx) for sfx in _UNSUPPORTED_SUFFIXES):
+        return None
+
+    # Quem é o destinatário (cliente)? Em fromMe=true, o remoteJid É o destinatário
+    sender_pn = (
+        key.get("senderPn") or key.get("sender_pn")
+        or data.get("senderPn") or data.get("sender_pn") or ""
+    )
+    if remote_jid.endswith("@lid"):
+        if sender_pn and sender_pn.endswith("@s.whatsapp.net"):
+            recipient_id = sender_pn.replace("@s.whatsapp.net", "")
+        else:
+            return None
+    else:
+        recipient_id = remote_jid.replace("@s.whatsapp.net", "")
+    if not recipient_id or not recipient_id.isdigit() or len(recipient_id) > 15:
+        return None
+
+    # Filtra mensagens que NÓS mesmos mandamos via Evolution API
+    # (já registradas pelo `send_whatsapp` — evita duplicar).
+    # Heurística: mensagens que vêm com `source="api"` na Evolution são nossas.
+    source = (data.get("source") or "").lower()
+    if source == "api":
+        return None  # já registramos via send_whatsapp
+
+    message = data.get("message", {})
+    text = (
+        message.get("conversation")
+        or (message.get("extendedTextMessage", {}) or {}).get("text")
+    )
+    if not text:
+        return None
+    instance_name = body.get("instance", "")
+    logger.info(
+        "evolution_webhook outbound (mobile): recipient=%s text=%r",
+        recipient_id, text[:60],
+    )
+    return (recipient_id, text.strip(), instance_name)
 
 
 # ---------------------------------------------------------------------------
@@ -467,6 +529,80 @@ def _mirror_to_inbox(flow, sender_id, inbound_text, outbound_text, *, session=No
         logger.exception("Erro ao replicar mensagem WhatsApp na inbox de comunicações")
 
 
+def _mirror_outbound_from_mobile(empresa, recipient_id, text):
+    """Espelha mensagem outbound enviada pelo OPERADOR direto do celular.
+
+    Quando o atendente responde diretamente pelo app WhatsApp do celular
+    (fromMe=true, source != 'api'), queremos registrar na inbox como
+    `direction=outbound` para o histórico ficar completo. NÃO chama o
+    bot (evita loop) e NÃO usa o flow — só registra na conversação do
+    lead correspondente.
+
+    Resolve o Lead por phone match. Se não encontrar, cria Lead lazy
+    (cliente novo a quem o operador escreveu primeiro).
+    """
+    from apps.communications.models import (
+        Conversation, ConversationMessage, get_or_create_conversation,
+    )
+    from apps.crm.models import Lead
+
+    phone_digits = "".join(c for c in (recipient_id or "") if c.isdigit())
+    if not phone_digits:
+        logger.warning("_mirror_outbound_from_mobile: recipient sem dígitos %r", recipient_id)
+        return
+
+    # Procura Lead existente por phone no mesmo tenant
+    lead = (
+        Lead.objects
+        .filter(empresa=empresa, phone__contains=phone_digits)
+        .order_by("-created_at")
+        .first()
+    )
+    if lead is None:
+        # Operador iniciou conversa nova → cria Lead lazy
+        try:
+            lead = Lead.objects.create(
+                empresa=empresa,
+                name=f"WhatsApp {phone_digits}",
+                phone=phone_digits,
+                source=Lead.Source.WHATSAPP,
+                external_ref=f"mobile:{empresa.pk}:{phone_digits}",
+                notes="Lead criado quando operador iniciou conversa via celular.",
+            )
+            logger.info(
+                "_mirror_outbound_from_mobile: lead lazy criado pk=%s recipient=%s",
+                lead.pk, phone_digits,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "_mirror_outbound_from_mobile: falha criando lead lazy"
+            )
+            return
+
+    try:
+        conv = get_or_create_conversation(empresa, lead)
+        ConversationMessage.objects.create(
+            conversation=conv,
+            direction=ConversationMessage.Direction.OUTBOUND,
+            channel=ConversationMessage.Channel.WHATSAPP,
+            content=text,
+            sender_external_id="",
+            sender_name="",
+            payload={"source": "mobile_app"},  # marca origem
+            delivery_status=ConversationMessage.DeliveryStatus.SENT,
+        )
+        # Atualiza last_message snapshot
+        conv.touch(
+            direction=ConversationMessage.Direction.OUTBOUND,
+            channel=ConversationMessage.Channel.WHATSAPP,
+            content=text,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "_mirror_outbound_from_mobile: falha ao gravar mensagem"
+        )
+
+
 def _send_reply(client, phone, reply_text, choices):
     """Envia resposta via Evolution API com botões ou texto."""
     if not reply_text:
@@ -497,10 +633,20 @@ def evolution_webhook_receive(request, token):
         if header_token and header_token != webhook_token:
             return JsonResponse({"error": "Invalid webhook token"}, status=403)
 
-    # Parser do payload
+    # 1) Tenta como mensagem INBOUND (cliente → nós)
     parsed = parse_evolution_webhook(body)
+
+    # 2) Se não é inbound, tenta como OUTBOUND (operador respondeu pelo celular)
     if not parsed:
-        # Não é mensagem processável (status update, fromMe, etc.) — OK silencioso
+        outbound = parse_evolution_webhook_outbound(body)
+        if outbound:
+            recipient_id, message_text, _ = outbound
+            flow = ChatbotFlow.objects.filter(
+                webhook_token=token, is_active=True,
+            ).select_related("empresa").first()
+            if flow:
+                _mirror_outbound_from_mobile(flow.empresa, recipient_id, message_text)
+            return JsonResponse({"status": "ok", "mirror": "outbound_mobile"})
         return JsonResponse({"status": "ignored"})
 
     sender_id, message_text, instance_name = parsed
@@ -551,8 +697,20 @@ def evolution_webhook_auto(request):
         if header_token and header_token != webhook_token:
             return JsonResponse({"error": "Invalid webhook token"}, status=403)
 
+    # 1) Tenta INBOUND
     parsed = parse_evolution_webhook(body)
+
+    # 2) Tenta OUTBOUND (operador respondeu pelo celular)
     if not parsed:
+        outbound = parse_evolution_webhook_outbound(body)
+        if outbound:
+            recipient_id, message_text, instance_name = outbound
+            config = WhatsAppConfig.objects.select_related("empresa").filter(
+                instance_name=instance_name,
+            ).first()
+            if config:
+                _mirror_outbound_from_mobile(config.empresa, recipient_id, message_text)
+            return JsonResponse({"status": "ok", "mirror": "outbound_mobile"})
         return JsonResponse({"status": "ignored"})
 
     sender_id, message_text, instance_name = parsed
