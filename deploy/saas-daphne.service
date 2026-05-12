@@ -1,0 +1,25 @@
+[Unit]
+Description=ServicoPro Daphne (ASGI - WebSocket)
+After=network.target redis.service
+Wants=redis.service
+
+[Service]
+Type=simple
+User=saas
+Group=saas
+WorkingDirectory=/opt/saas-prestadores
+EnvironmentFile=/opt/saas-prestadores/.env
+Environment="DJANGO_SETTINGS_MODULE=config.settings.prod"
+ExecStart=/opt/saas-prestadores/venv/bin/daphne \
+    -b 127.0.0.1 -p 8002 \
+    --proxy-headers \
+    --access-log - \
+    config.asgi:application
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=saas-daphne
+
+[Install]
+WantedBy=multi-user.target

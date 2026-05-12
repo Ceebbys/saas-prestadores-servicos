@@ -692,16 +692,17 @@ def evolution_webhook_auto(request):
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    # DIAGNÓSTICO TEMPORÁRIO: loga estrutura do body para entender tipos
-    # de evento que estão chegando da Evolution. Remover após estabilizar.
-    _event = body.get("event", "")
+    # Diagnóstico: loga só DMs (não grupos) para não poluir logs em prod
+    # com chats de grupo onde o whatsapp está silenciosamente participando.
     _data = body.get("data", {}) or {}
     _key = _data.get("key", {}) or {}
-    _msg_types = list((_data.get("message") or {}).keys())[:3]
-    logger.info(
-        "evo_webhook_in: event=%r fromMe=%s remoteJid=%r msg_types=%s",
-        _event, _key.get("fromMe"), _key.get("remoteJid"), _msg_types,
-    )
+    _jid = _key.get("remoteJid", "") or ""
+    if _jid and not _jid.endswith("@g.us") and not _jid.endswith("@broadcast"):
+        _msg_types = list((_data.get("message") or {}).keys())[:3]
+        logger.info(
+            "evo_webhook_in DM: event=%r fromMe=%s remoteJid=%r msg_types=%s",
+            body.get("event", ""), _key.get("fromMe"), _jid, _msg_types,
+        )
 
     # Validar token de segurança (opcional)
     webhook_token = getattr(settings, "EVOLUTION_WEBHOOK_TOKEN", "")
