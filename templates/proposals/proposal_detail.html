@@ -214,12 +214,22 @@
                     <dt class="text-xs text-slate-400">Total</dt>
                     <dd class="text-lg font-bold text-slate-900 mt-0.5">{{ proposal.total|currency }}</dd>
                 </div>
-                {% if proposal.payment_method %}
+                {# RV05 #5 — múltiplas formas com fallback legado #}
+                {% with formas=proposal.payment_methods.all %}
+                {% if formas %}
+                <div>
+                    <dt class="text-xs text-slate-400">Formas aceitas</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">
+                        {% for f in formas %}{{ f.nome }}{% if not forloop.last %} · {% endif %}{% endfor %}
+                    </dd>
+                </div>
+                {% elif proposal.payment_method %}
                 <div>
                     <dt class="text-xs text-slate-400">Forma de Pagamento</dt>
                     <dd class="text-sm text-slate-900 mt-0.5">{{ proposal.get_payment_method_display }}</dd>
                 </div>
                 {% endif %}
+                {% endwith %}
                 {% if proposal.is_installment and proposal.installment_count %}
                 <div>
                     <dt class="text-xs text-slate-400">Parcelamento</dt>
@@ -290,6 +300,22 @@
         <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
             <h3 class="text-sm font-semibold text-slate-700 mb-3">Termos e Condições</h3>
             <div class="text-sm text-slate-700 prose prose-sm max-w-none">{{ proposal.terms|safe }}</div>
+        </div>
+        {% endif %}
+
+        <!-- Rodapé (RV05 #6) -->
+        {% if proposal.footer_content or proposal.footer_image %}
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">Rodapé</h3>
+            {% if proposal.footer_image %}
+            <div class="mb-3 flex items-center justify-center">
+                <img src="{{ proposal.footer_image.url }}" alt="Rodapé"
+                     class="max-h-20 object-contain">
+            </div>
+            {% endif %}
+            {% if proposal.footer_content %}
+            <div class="text-sm text-slate-600 prose prose-sm max-w-none">{{ proposal.footer_content|safe }}</div>
+            {% endif %}
         </div>
         {% endif %}
     </div>

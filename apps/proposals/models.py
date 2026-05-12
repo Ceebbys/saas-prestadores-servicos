@@ -14,6 +14,37 @@ def _proposal_header_image_path(instance, filename):
     return f"proposals/headers/{empresa_id}/{filename}"
 
 
+def _proposal_footer_image_path(instance, filename):
+    """Path do rodapé (mesmo isolamento por empresa)."""
+    empresa_id = getattr(instance, "empresa_id", None) or "shared"
+    return f"proposals/footers/{empresa_id}/{filename}"
+
+
+class FormaPagamento(models.Model):
+    """Forma de pagamento — modelo GLOBAL (não tenant-owned).
+
+    Catálogo universal: PIX, Cartão Crédito, Cartão Débito, Dinheiro,
+    Transferência, Boleto. Permite múltipla seleção em Proposta via M2M.
+
+    Não é TenantOwnedModel porque o catálogo é o mesmo para todas as
+    empresas. Customização per-tenant (desativar uma forma, reordenar)
+    fica como evolução futura via `FormaPagamentoEmpresa` se houver demanda.
+    """
+
+    slug = models.SlugField("Slug", unique=True, max_length=40)
+    nome = models.CharField("Nome", max_length=80)
+    ordem = models.PositiveIntegerField("Ordem", default=0)
+    is_active = models.BooleanField("Ativa", default=True)
+
+    class Meta:
+        verbose_name = "Forma de Pagamento"
+        verbose_name_plural = "Formas de Pagamento"
+        ordering = ["ordem", "nome"]
+
+    def __str__(self):
+        return self.nome
+
+
 class ProposalTemplate(TenantOwnedModel):
     """Modelo de template reutilizável para propostas."""
 
@@ -157,11 +188,35 @@ class Proposal(SoftDeletableModel, TenantOwnedModel):
     installment_count = models.PositiveIntegerField(
         "Número de Parcelas", null=True, blank=True
     )
+    # Legado RV03 — único select de forma de pagamento. Mantido por uma
+    # release (dual-read) — drop planejado para RV06. Migração 0010 popula
+    # `payment_methods` a partir deste campo.
     payment_method = models.CharField(
-        "Forma de Pagamento",
+        "Forma de Pagamento (legado)",
         max_length=50,
         choices=PaymentMethod.choices,
         blank=True,
+    )
+    # RV05 #5 — Múltiplas formas de pagamento simultâneas.
+    payment_methods = models.ManyToManyField(
+        FormaPagamento,
+        blank=True,
+        related_name="proposals",
+        verbose_name="Formas de pagamento",
+    )
+
+    # RV05 #6 — Rodapé configurável.
+    footer_image = models.ImageField(
+        "Imagem do rodapé (logo/identidade)",
+        upload_to=_proposal_footer_image_path,
+        blank=True,
+        null=True,
+        help_text="PNG, JPG ou WEBP. Máx. 2MB.",
+    )
+    footer_content = models.TextField(
+        "Conteúdo do rodapé",
+        blank=True,
+        help_text="Texto rico — observações finais, contatos, info legais.",
     )
 
     sent_at = models.DateTimeField("Enviada em", null=True, blank=True)

@@ -33,13 +33,21 @@ def build_proposal_context(proposal: Proposal, request=None) -> dict:
     elif getattr(proposal.empresa, "logo", None):
         header_image = proposal.empresa.logo
 
+    # RV05 #6 — rodapé: imagem da proposta diretamente (sem cascata por enquanto)
+    footer_image = proposal.footer_image if proposal.footer_image else None
+
     items = list(proposal.items.all().order_by("order", "id"))
+    # RV05 #5 — Múltiplas formas de pagamento. Mantém compat com payment_method legado.
+    payment_methods = list(proposal.payment_methods.filter(is_active=True))
 
     return {
         "proposal": proposal,
         "items": items,
         "header_image": header_image,
         "header_image_url": header_image.url if header_image else "",
+        "footer_image": footer_image,
+        "footer_image_url": footer_image.url if footer_image else "",
+        "payment_methods": payment_methods,
         "lead": proposal.lead,
         "contato": getattr(proposal.lead, "contato", None) if proposal.lead else None,
         "empresa": proposal.empresa,
@@ -189,12 +197,25 @@ def render_proposal_docx(proposal: Proposal) -> bytes:
     run.font.size = Pt(13)
     run.bold = True
 
-    if proposal.is_installment and proposal.installment_count:
+    # RV05 #5 — Múltiplas formas de pagamento
+    formas = list(proposal.payment_methods.filter(is_active=True))
+    if formas:
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         p.add_run(
-            f"Em {proposal.installment_count}x — {proposal.get_payment_method_display() or ''}"
+            "Formas de pagamento aceitas: "
+            + " · ".join(f.nome for f in formas)
         )
+    elif proposal.payment_method:
+        # Fallback legado
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        p.add_run(proposal.get_payment_method_display() or "")
+
+    if proposal.is_installment and proposal.installment_count:
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        p.add_run(f"Em até {proposal.installment_count}x.")
 
     # Termos
     terms = _strip_html(proposal.terms)
@@ -202,12 +223,30 @@ def render_proposal_docx(proposal: Proposal) -> bytes:
         doc.add_heading("Termos e Condições", level=2)
         doc.add_paragraph(terms)
 
-    # Validade e rodapé
+    # Validade
     if proposal.valid_until:
         doc.add_paragraph()
         doc.add_paragraph(
             f"Válida até {proposal.valid_until:%d/%m/%Y}"
         ).alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+    # RV05 #6 — Rodapé configurável (imagem + texto)
+    footer_text = _strip_html(proposal.footer_content)
+    has_footer = bool(footer_text) or (
+        proposal.footer_image and hasattr(proposal.footer_image, "path")
+    )
+    if has_footer:
+        doc.add_paragraph()  # separador
+        if proposal.footer_image and hasattr(proposal.footer_image, "path"):
+            try:
+                doc.add_picture(proposal.footer_image.path, width=Cm(4))
+                doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            except Exception:
+                pass
+        if footer_text:
+            p = doc.add_paragraph(footer_text)
+            for run in p.runs:
+                run.font.size = Pt(9)
 
     out = io.BytesIO()
     doc.save(out)

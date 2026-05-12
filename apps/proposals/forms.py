@@ -25,7 +25,7 @@ class _RichTextSanitizingMixin:
 
 
 class ProposalForm(_RichTextSanitizingMixin, TailwindFormMixin, forms.ModelForm):
-    RICH_TEXT_FIELDS = ("introduction", "body", "terms")
+    RICH_TEXT_FIELDS = ("introduction", "body", "terms", "footer_content")
 
     class Meta:
         model = Proposal
@@ -40,9 +40,12 @@ class ProposalForm(_RichTextSanitizingMixin, TailwindFormMixin, forms.ModelForm)
             "introduction",
             "body",
             "terms",
+            "footer_image",
+            "footer_content",
             "discount_percent",
             "valid_until",
-            "payment_method",
+            "payment_methods",  # RV05 #5 — múltiplas formas
+            "payment_method",  # legado: dual-read durante 1 release
             "is_installment",
             "installment_count",
         ]
@@ -54,6 +57,8 @@ class ProposalForm(_RichTextSanitizingMixin, TailwindFormMixin, forms.ModelForm)
             "introduction": forms.Textarea(attrs={"rows": 5, "data-rich-text": "true"}),
             "body": forms.Textarea(attrs={"rows": 8, "data-rich-text": "true"}),
             "terms": forms.Textarea(attrs={"rows": 5, "data-rich-text": "true"}),
+            "footer_content": forms.Textarea(attrs={"rows": 4, "data-rich-text": "true"}),
+            "payment_methods": forms.CheckboxSelectMultiple(),
         }
 
     def __init__(self, *args, empresa=None, **kwargs):
@@ -75,9 +80,17 @@ class ProposalForm(_RichTextSanitizingMixin, TailwindFormMixin, forms.ModelForm)
             )
             self.fields["servico"].required = False
             self.fields["servico"].empty_label = "—"
+        # M2M de formas de pagamento — apenas as ativas
+        self.fields["payment_methods"].queryset = (
+            self.fields["payment_methods"].queryset.filter(is_active=True)
+        )
+        self.fields["payment_methods"].required = False
 
     def clean_header_image(self):
         return _validate_header_image(self.cleaned_data.get("header_image"))
+
+    def clean_footer_image(self):
+        return _validate_header_image(self.cleaned_data.get("footer_image"))
 
     def clean_introduction(self):
         return self._sanitize_rich("introduction")
@@ -87,6 +100,9 @@ class ProposalForm(_RichTextSanitizingMixin, TailwindFormMixin, forms.ModelForm)
 
     def clean_terms(self):
         return self._sanitize_rich("terms")
+
+    def clean_footer_content(self):
+        return self._sanitize_rich("footer_content")
 
 
 class ProposalItemForm(TailwindFormMixin, forms.ModelForm):
