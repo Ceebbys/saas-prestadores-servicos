@@ -2,12 +2,18 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from apps.core.models import TenantOwnedModel, TimestampedModel
+from apps.core.models import SoftDeletableModel, TenantOwnedModel, TimestampedModel
 from apps.core.validators import validate_cnpj, validate_cpf
 
 
-class Lead(TenantOwnedModel):
-    """Potencial cliente captado pelo CRM."""
+class Lead(SoftDeletableModel, TenantOwnedModel):
+    """Potencial cliente captado pelo CRM.
+
+    Soft-delete: `Lead.objects` esconde excluídos; `Lead.all_objects` retorna tudo.
+    `Lead.delete()` faz soft + cascade soft em filhos seguros (Opportunity,
+    Proposal não-aceita). Contract.lead é PROTECT (não cascade) — contrato
+    assinado preserva o Lead.
+    """
 
     class Source(models.TextChoices):
         SITE = "site", "Site"
@@ -111,6 +117,54 @@ class Lead(TenantOwnedModel):
         if self.contato_id:
             return self.contato.cpf_cnpj
         return self.cpf or self.cnpj
+
+    def delete(self, using=None, keep_parents=False, hard: bool = False,
+               cascade_soft: bool = True):
+        """Soft-delete com cascade para filhos seguros.
+
+        Comportamento:
+        - `hard=True`: deleção real (Django dispara PROTECT em Contract).
+        - `cascade_soft=True` (default): também soft-deleta Opportunities e
+          Proposals em estado DRAFT/SENT/VIEWED.
+        - **Pré-condição PROTECT**: se houver Contract vinculado, levanta
+          `ProtectedError` ANTES do soft-delete. Reflete `Contract.lead =
+          PROTECT` para preservação documental (LGPD/fiscal). Sem isso, o
+          soft seria silencioso e o lead "sumiria" da UI deixando contratos
+          órfãos.
+        """
+        from django.db.models import ProtectedError
+
+        # Pré-check PROTECT semântico
+        contracts = list(self.contracts.all()[:5])
+        if contracts:
+            raise ProtectedError(
+                "Lead vinculado a contrato(s). Exclua/cancele o contrato antes "
+                "de remover o lead (preservação documental).",
+                set(contracts),
+            )
+
+        if hard:
+            return super().delete(
+                using=using, keep_parents=keep_parents, hard=True,
+            )
+        if cascade_soft:
+            # Opportunities: hard-delete (são derivados, sem soft-delete próprio)
+            self.opportunities.all().delete()
+            # Proposals em estado pré-aceite: soft-delete cascata
+            try:
+                from apps.proposals.models import Proposal
+                Proposal.all_objects.filter(
+                    lead=self,
+                    status__in=[
+                        Proposal.Status.DRAFT,
+                        Proposal.Status.SENT,
+                        Proposal.Status.VIEWED,
+                    ],
+                    deleted_at__isnull=True,
+                ).update(deleted_at=timezone.now())
+            except ImportError:
+                pass
+        return super().delete(using=using, keep_parents=keep_parents)
 
 
 class Pipeline(TenantOwnedModel):

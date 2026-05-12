@@ -33,14 +33,27 @@
             </p>
         </div>
     </div>
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-2 flex-wrap">
+        <!-- Excluir só a oportunidade (mantém o lead na lista) -->
         <button hx-post="{% url 'crm:opportunity_delete' opportunity.pk %}"
-                hx-confirm="Tem certeza que deseja excluir esta oportunidade? Esta ação não pode ser desfeita."
+                hx-confirm="Excluir esta oportunidade? O lead permanecerá na lista de Leads."
                 hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-                class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-sm font-medium text-red-600 ring-1 ring-red-200 hover:bg-red-50 transition-colors">
+                class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white text-sm font-medium text-amber-700 ring-1 ring-amber-200 hover:bg-amber-50 transition-colors"
+                title="Remove só o card do Pipeline. O lead continua acessível em /crm/leads/.">
             {% icon "trash" "w-4 h-4" %}
-            Excluir
+            Excluir oportunidade
         </button>
+        <!-- Excluir o lead inteiro (cascade soft: opportunity + proposals draft/sent/viewed) -->
+        <form method="post" action="{% url 'crm:lead_delete_cascade' opportunity.lead.pk %}" class="inline">
+            {% csrf_token %}
+            <button type="submit"
+                    onclick="return confirm('Excluir o LEAD INTEIRO?\n\nIsso vai mover para a lixeira:\n• O lead\n• Esta oportunidade\n• Propostas em rascunho/enviadas/visualizadas\n\nContratos vinculados (se houver) permanecem (proteção LGPD).');"
+                    class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white text-sm font-medium text-red-700 ring-1 ring-red-300 hover:bg-red-50 transition-colors"
+                    title="Move o lead e suas pendências para a lixeira. Contratos PRESERVADOS.">
+                {% icon "trash" "w-4 h-4" %}
+                Excluir lead inteiro
+            </button>
+        </form>
         <a href="{% url 'crm:opportunity_update' opportunity.pk %}"
            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50 transition-colors">
             {% icon "pencil" "w-4 h-4" %}

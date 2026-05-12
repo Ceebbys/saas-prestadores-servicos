@@ -11,6 +11,11 @@ urlpatterns = [
     path("leads/<int:pk>/", views.LeadDetailView.as_view(), name="lead_detail"),
     path("leads/<int:pk>/edit/", views.LeadUpdateView.as_view(), name="lead_update"),
     path("leads/<int:pk>/delete/", views.LeadDeleteView.as_view(), name="lead_delete"),
+    path(
+        "leads/<int:pk>/delete-cascade/",
+        views.LeadDeleteCascadeView.as_view(),
+        name="lead_delete_cascade",
+    ),
     path("leads/<int:pk>/move/", views.LeadMoveView.as_view(), name="lead_move"),
     path(
         "leads/<int:lead_id>/contacts/new/",

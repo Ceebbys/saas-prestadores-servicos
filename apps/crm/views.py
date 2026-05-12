@@ -2,8 +2,9 @@ from django.contrib import messages
 from django.db.models import Count, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import (
     CreateView,
@@ -15,6 +16,21 @@ from django.views.generic import (
 )
 
 from apps.core.mixins import EmpresaMixin, HtmxResponseMixin
+
+
+def _resolve_cancel_url(request, default_name: str = "crm:lead_list") -> str:
+    """Resolve `?next=...` validado contra open-redirect.
+
+    Aceita apenas URLs no mesmo host. Cai no `default_name` se inválido/ausente.
+    """
+    next_url = (request.GET.get("next") or "").strip()
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return next_url
+    return reverse(default_name)
 
 from .forms import LeadContactForm, LeadForm, OpportunityForm
 from .models import Lead, LeadContact, Opportunity, Pipeline, PipelineStage
@@ -135,6 +151,8 @@ class LeadCreateView(EmpresaMixin, HtmxResponseMixin, CreateView):
             context["preselected_contato"] = Contato.objects.filter(
                 pk=contato_id, empresa=self.request.empresa
             ).first()
+        # Botão Cancelar: respeita ?next= (validado) ou cai na lista de Leads.
+        context["cancel_url"] = _resolve_cancel_url(self.request)
         return context
 
     def form_valid(self, form):
@@ -173,6 +191,11 @@ class LeadUpdateView(EmpresaMixin, HtmxResponseMixin, UpdateView):
         kwargs["empresa"] = self.request.empresa
         return kwargs
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["cancel_url"] = _resolve_cancel_url(self.request)
+        return context
+
     def form_valid(self, form):
         response = super().form_valid(form)
         messages.success(self.request, "Lead atualizado com sucesso.")
@@ -196,13 +219,52 @@ class LeadUpdateView(EmpresaMixin, HtmxResponseMixin, UpdateView):
 
 
 class LeadDeleteView(EmpresaMixin, DeleteView):
+    """Soft-delete do Lead.
+
+    Lead herda `SoftDeletableModel`; `lead.delete()` faz soft-delete e
+    cascateia para Opportunities + Proposals em estado pré-aceite.
+    Contratos não são tocados (Contract.lead = PROTECT).
+    """
+
     model = Lead
     success_url = reverse_lazy("crm:lead_list")
     http_method_names = ["post"]
 
     def post(self, request, *args, **kwargs):
-        messages.success(request, "Lead excluído com sucesso.")
+        messages.success(request, "Lead movido para lixeira.")
         return self.delete(request, *args, **kwargs)
+
+
+class LeadDeleteCascadeView(EmpresaMixin, View):
+    """Variante explícita: exclui o Lead vindo do Pipeline.
+
+    Acionada pelo botão "Excluir lead inteiro" na view de Opportunity.
+    Comportamento idêntico ao LeadDeleteView (soft + cascade soft), mas
+    redireciona para o Pipeline Board ao final em vez da lista.
+    """
+
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        from django.db.models import ProtectedError
+
+        lead = get_object_or_404(Lead, pk=pk, empresa=request.empresa)
+        number_or_name = lead.contact_name or lead.name
+        try:
+            lead.delete()  # soft + cascade (raises ProtectedError se contrato)
+        except ProtectedError:
+            n_contracts = lead.contracts.count()
+            messages.error(
+                request,
+                f"Não é possível excluir '{number_or_name}': há {n_contracts} contrato(s) "
+                f"vinculado(s). Cancele ou exclua o(s) contrato(s) primeiro.",
+            )
+            return redirect("crm:pipeline_board")
+        messages.success(
+            request,
+            f"Lead '{number_or_name}' e sua oportunidade foram movidos para a lixeira.",
+        )
+        return redirect("crm:pipeline_board")
 
 
 # ---------------------------------------------------------------------------

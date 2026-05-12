@@ -52,9 +52,14 @@ class Contract(TenantOwnedModel):
     )
     lead = models.ForeignKey(
         "crm.Lead",
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="contracts",
         verbose_name="Lead",
+        help_text=(
+            "Lead vinculado. PROTECT impede exclusão acidental de leads com "
+            "contratos: contrato assinado preserva a relação documental para "
+            "fins fiscais/LGPD. Para excluir, finalize ou exclua o contrato primeiro."
+        ),
     )
     template = models.ForeignKey(
         ContractTemplate,
