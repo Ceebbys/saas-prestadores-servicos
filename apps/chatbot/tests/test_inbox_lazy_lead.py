@@ -20,6 +20,8 @@ from apps.chatbot.models import ChatbotFlow, ChatbotSession
 from apps.chatbot.whatsapp import (
     _mirror_to_inbox,
     _resolve_or_create_lead_lazy,
+    parse_evolution_webhook,
+    parse_evolution_webhook_outbound,
 )
 from apps.communications.models import (
     Conversation,
@@ -37,6 +39,71 @@ def _make_flow(empresa, name="Test Flow"):
         is_active=True,
         welcome_message="Olá!",
     )
+
+
+class EvolutionParserTests(TestCase):
+    """Garante que ambos formatos de evento são aceitos.
+
+    Evolution API v1: 'messages.upsert' (lowercase + dot)
+    Evolution API v2: 'MESSAGES_UPSERT' (uppercase + underscore)
+    """
+
+    BASE_INBOUND = {
+        "instance": "test-instance",
+        "data": {
+            "key": {
+                "fromMe": False,
+                "remoteJid": "5511987654321@s.whatsapp.net",
+            },
+            "message": {"conversation": "Olá"},
+        },
+    }
+    BASE_OUTBOUND = {
+        "instance": "test-instance",
+        "data": {
+            "key": {
+                "fromMe": True,
+                "remoteJid": "5511987654321@s.whatsapp.net",
+            },
+            "message": {"conversation": "Resposta do operador"},
+        },
+    }
+
+    def test_inbound_accepts_v1_event_lowercase_dot(self):
+        body = {**self.BASE_INBOUND, "event": "messages.upsert"}
+        result = parse_evolution_webhook(body)
+        self.assertIsNotNone(result)
+        self.assertEqual(result[0], "5511987654321")
+        self.assertEqual(result[1], "Olá")
+
+    def test_inbound_accepts_v2_event_uppercase_underscore(self):
+        body = {**self.BASE_INBOUND, "event": "MESSAGES_UPSERT"}
+        result = parse_evolution_webhook(body)
+        self.assertIsNotNone(result, "Evolution v2 envia MESSAGES_UPSERT")
+        self.assertEqual(result[0], "5511987654321")
+
+    def test_inbound_rejects_other_events(self):
+        for event in ["CONNECTION_UPDATE", "connection.update", "qrcode.updated", ""]:
+            body = {**self.BASE_INBOUND, "event": event}
+            self.assertIsNone(parse_evolution_webhook(body), f"event={event!r} deveria ser ignorado")
+
+    def test_outbound_accepts_v2_event(self):
+        body = {**self.BASE_OUTBOUND, "event": "MESSAGES_UPSERT"}
+        result = parse_evolution_webhook_outbound(body)
+        self.assertIsNotNone(result)
+        self.assertEqual(result[0], "5511987654321")
+        self.assertEqual(result[1], "Resposta do operador")
+
+    def test_outbound_skips_api_source(self):
+        # Mensagens que NÓS enviamos via Evolution API (source=api) NÃO devem
+        # ser ré-gravadas — `send_whatsapp` já gravou.
+        body = {
+            **self.BASE_OUTBOUND,
+            "event": "MESSAGES_UPSERT",
+        }
+        body["data"]["source"] = "api"
+        result = parse_evolution_webhook_outbound(body)
+        self.assertIsNone(result)
 
 
 class LazyLeadResolutionTests(TestCase):

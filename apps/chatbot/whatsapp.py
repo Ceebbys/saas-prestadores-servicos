@@ -41,9 +41,11 @@ def parse_evolution_webhook(body: dict) -> tuple[str, str, str] | None:
         (sender_id, message_text, instance_name) ou None se não é mensagem
         processável (com log de motivo em DEBUG).
     """
-    event = body.get("event", "")
-    if event != "messages.upsert":
-        logger.info("evolution_webhook ignored: event=%r (esperado messages.upsert)", event)
+    event = body.get("event", "") or ""
+    # Evolution API v1 manda "messages.upsert"; v2 manda "MESSAGES_UPSERT".
+    # Aceitamos ambos formatos.
+    if event.lower().replace("_", ".") != "messages.upsert":
+        logger.info("evolution_webhook ignored: event=%r (esperado messages.upsert ou MESSAGES_UPSERT)", event)
         return None
 
     data = body.get("data", {})
@@ -119,8 +121,8 @@ def parse_evolution_webhook_outbound(body: dict) -> tuple[str, str, str] | None:
     Returns:
         (recipient_id, message_text, instance_name) ou None.
     """
-    event = body.get("event", "")
-    if event != "messages.upsert":
+    event = body.get("event", "") or ""
+    if event.lower().replace("_", ".") != "messages.upsert":
         return None
     data = body.get("data", {})
     key = data.get("key", {})
