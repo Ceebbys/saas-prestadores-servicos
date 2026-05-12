@@ -203,8 +203,10 @@ class ServiceTypeForm(TailwindFormMixin, forms.ModelForm):
                 self.fields[f].empty_label = "—"
 
     def clean_default_description(self):
-        from apps.proposals.sanitizer import sanitize_proposal_html
-        return sanitize_proposal_html(
+        # RV05-H — usa o core diretamente; antes importava via shim
+        # `apps.proposals.sanitizer` (que será deprecated em RV06).
+        from apps.core.document_render.sanitizer import sanitize_rich_html
+        return sanitize_rich_html(
             self.cleaned_data.get("default_description") or ""
         )
 

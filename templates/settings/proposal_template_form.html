@@ -1,7 +1,23 @@
 {% extends "layouts/authenticated.html" %}
-{% load ui_tags %}
+{% load static ui_tags %}
 
 {% block title %}{% if form.instance.pk %}Editar Template{% else %}Novo Template{% endif %} de Proposta — ServiçoPro{% endblock %}
+
+{% block extra_css %}
+{# RV05-H — Quill rich-text editor (widgets do form usam data-rich-text="true") #}
+<link rel="stylesheet" href="{% static 'vendor/quill/quill.snow.css' %}">
+<link rel="stylesheet" href="{% static 'css/quill-fonts.css' %}">
+<style>
+    .rich-text-editor .ql-editor { min-height: 120px; font-size: 14px; line-height: 1.5; }
+    .rich-text-editor .ql-toolbar { border: none; border-bottom: 1px solid #e2e8f0; }
+    .rich-text-editor .ql-container { border: none; }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/quill/quill.js' %}"></script>
+<script src="{% static 'js/rich-text-init.js' %}"></script>
+{% endblock %}
 
 {% block breadcrumb %}
 <nav class="flex items-center gap-2 text-sm text-slate-500 mb-4">

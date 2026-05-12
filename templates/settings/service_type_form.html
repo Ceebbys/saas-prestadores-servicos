@@ -5,6 +5,8 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/quill/quill.snow.css' %}">
+{# RV05-H — rótulos amigáveis no dropdown de fontes/tamanhos do Quill #}
+<link rel="stylesheet" href="{% static 'css/quill-fonts.css' %}">
 <style>
     .rich-text-editor .ql-editor { min-height: 120px; font-size: 14px; line-height: 1.5; }
     .rich-text-editor .ql-toolbar { border: none; border-bottom: 1px solid #e2e8f0; }

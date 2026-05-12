@@ -42,7 +42,11 @@ def build_proposal_context(proposal: Proposal, request=None) -> dict:
 
     items = list(proposal.items.all().order_by("order", "id"))
     # RV05 #5 — Múltiplas formas de pagamento. Mantém compat com payment_method legado.
-    payment_methods = list(proposal.payment_methods.filter(is_active=True))
+    # RV05-H — usa .all() (paridade com template HTML): formas já vinculadas à
+    # proposta têm direito histórico de aparecer no documento, mesmo se o admin
+    # desativou a forma globalmente depois. Para remover definitivamente,
+    # hard-delete a FormaPagamento.
+    payment_methods = list(proposal.payment_methods.all())
 
     return {
         "proposal": proposal,
@@ -202,7 +206,8 @@ def render_proposal_docx(proposal: Proposal) -> bytes:
     run.bold = True
 
     # RV05 #5 — Múltiplas formas de pagamento
-    formas = list(proposal.payment_methods.filter(is_active=True))
+    # RV05-H — .all() para paridade com template HTML (ver build_proposal_context)
+    formas = list(proposal.payment_methods.all())
     if formas:
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.RIGHT

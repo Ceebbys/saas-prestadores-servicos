@@ -197,8 +197,8 @@ class Proposal(SoftDeletableModel, TenantOwnedModel):
         "Número de Parcelas", null=True, blank=True
     )
     # Legado RV03 — único select de forma de pagamento. Mantido por uma
-    # release (dual-read) — drop planejado para RV06. Migração 0010 popula
-    # `payment_methods` a partir deste campo.
+    # release (dual-read) — drop planejado para RV06. Migração 0009
+    # (seed_and_backfill) popula `payment_methods` a partir deste campo.
     payment_method = models.CharField(
         "Forma de Pagamento (legado)",
         max_length=50,

@@ -100,9 +100,18 @@ class ContractFromProposalView(EmpresaMixin, CreateView):
         initial["lead"] = proposal.lead_id
         initial["title"] = f"Contrato - {proposal.title}"
         initial["value"] = proposal.total
-        # Herda termos da proposta como conteúdo inicial do contrato
+        # RV05-H — popula `body` (campo rich novo) E `terms` (rich) a partir
+        # da proposta. Antes populava apenas `content` legado, deixando o
+        # body vazio e o contrato dependendo do dual-read no render.
+        # Sanitização é redundante (Proposal.body/terms já são sanitizados
+        # no ProposalForm), mas mantém defense-in-depth.
+        from apps.core.document_render.sanitizer import sanitize_rich_html
+        if proposal.body:
+            initial["body"] = sanitize_rich_html(proposal.body)
         if proposal.terms:
-            initial["content"] = proposal.terms
+            initial["terms"] = sanitize_rich_html(proposal.terms)
+        if proposal.introduction:
+            initial["introduction"] = sanitize_rich_html(proposal.introduction)
         initial["notes"] = self._build_notes(proposal)
         return initial
 

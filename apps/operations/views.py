@@ -271,6 +271,8 @@ class WorkOrderPDFView(EmpresaMixin, DetailView):
         )
 
     def get(self, request, *args, **kwargs):
+        import logging
+
         self.object = self.get_object()
         wo = self.object
         items = list(wo.checklist_items.all())
@@ -290,9 +292,29 @@ class WorkOrderPDFView(EmpresaMixin, DetailView):
             request=request,
         )
 
-        import weasyprint
+        # RV05-H — usa render_html_to_pdf do core (url_fetcher seguro:
+        # bloqueia file://, ftp://, data: malicioso; resolve /media/ via
+        # default_storage). Paridade total com Proposta e Contrato.
+        from apps.core.document_render.pdf import render_html_to_pdf
+        from django.contrib import messages
+        from django.shortcuts import redirect
 
-        pdf = weasyprint.HTML(string=html_string).write_pdf()
+        try:
+            base_url = request.build_absolute_uri("/")
+            pdf = render_html_to_pdf(html_string, base_url=base_url)
+        except ValueError as exc:
+            messages.error(request, f"Não foi possível gerar PDF: {exc}")
+            return redirect("operations:work_order_detail", pk=wo.pk)
+        except Exception:  # noqa: BLE001
+            logging.getLogger(__name__).exception(
+                "Falha inesperada ao gerar PDF da OS %s (%s)",
+                wo.pk, wo.number,
+            )
+            messages.error(
+                request,
+                "Não foi possível gerar o PDF agora. Tente novamente — se persistir, contate o suporte.",
+            )
+            return redirect("operations:work_order_detail", pk=wo.pk)
 
         response = HttpResponse(pdf, content_type="application/pdf")
         response["Content-Disposition"] = (
