@@ -692,6 +692,17 @@ def evolution_webhook_auto(request):
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
+    # DIAGNÓSTICO TEMPORÁRIO: loga estrutura do body para entender tipos
+    # de evento que estão chegando da Evolution. Remover após estabilizar.
+    _event = body.get("event", "")
+    _data = body.get("data", {}) or {}
+    _key = _data.get("key", {}) or {}
+    _msg_types = list((_data.get("message") or {}).keys())[:3]
+    logger.info(
+        "evo_webhook_in: event=%r fromMe=%s remoteJid=%r msg_types=%s",
+        _event, _key.get("fromMe"), _key.get("remoteJid"), _msg_types,
+    )
+
     # Validar token de segurança (opcional)
     webhook_token = getattr(settings, "EVOLUTION_WEBHOOK_TOKEN", "")
     if webhook_token:
