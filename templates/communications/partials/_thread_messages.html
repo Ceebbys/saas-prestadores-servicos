@@ -25,7 +25,7 @@ via templatetag custom — usamos abordagem simples comparando com a prev).
     {% if msg.channel == 'internal_note' %}
       <div class="msg-row msg-row--note">
         <div class="msg-note">
-          <div class="msg-note__head">📝 {{ msg.sender_user.full_name|default:msg.sender_user.email|default:"Sistema"|truncatechars:24 }} · {{ msg.created_at|date:"H:i" }}</div>
+          <div class="msg-note__head">📝 {% if msg.sender_user %}{{ msg.sender_user.full_name|default:msg.sender_user.email|truncatechars:24 }}{% else %}Sistema{% endif %} · {{ msg.created_at|date:"H:i" }}</div>
           <div class="msg-note__body">{{ msg.content|linebreaksbr }}</div>
         </div>
       </div>
