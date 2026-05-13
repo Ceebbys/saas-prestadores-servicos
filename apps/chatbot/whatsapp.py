@@ -531,6 +531,60 @@ def _mirror_to_inbox(flow, sender_id, inbound_text, outbound_text, *, session=No
         logger.exception("Erro ao replicar mensagem WhatsApp na inbox de comunicações")
 
 
+def _mirror_inbound_no_bot(empresa, sender_id, text):
+    """Espelha mensagem INBOUND quando NÃO há flow do bot ativo.
+
+    Quando o cliente envia uma DM e o tenant não tem chatbot configurado
+    (ou não tem flow elegível), a mensagem AINDA precisa aparecer na inbox
+    para o operador humano responder.
+
+    Difere de `_mirror_to_inbox` por:
+    - Não vincula a session (não há chatbot rodando)
+    - Não tenta resolver flow.empresa (usa empresa passada direto)
+    - Resolve Lead por phone (lazy-create se não houver)
+    """
+    from apps.communications.services import record_inbound
+    from apps.crm.models import Lead
+
+    phone_digits = "".join(c for c in (sender_id or "") if c.isdigit())
+    if not phone_digits:
+        logger.warning("_mirror_inbound_no_bot: sender_id sem digitos %r", sender_id)
+        return
+
+    # Lead existente ou cria lazy
+    lead = (
+        Lead.objects
+        .filter(empresa=empresa, phone__contains=phone_digits)
+        .order_by("-created_at")
+        .first()
+    )
+    if lead is None:
+        try:
+            lead = Lead.objects.create(
+                empresa=empresa,
+                name=f"WhatsApp {phone_digits}",
+                phone=phone_digits,
+                source=Lead.Source.WHATSAPP,
+                external_ref=f"whatsapp:nochatbot:{phone_digits}",
+                notes="Lead criado a partir de mensagem WhatsApp recebida.",
+            )
+            logger.info(
+                "_mirror_inbound_no_bot: lead lazy criado pk=%s sender=%s",
+                lead.pk, phone_digits,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("_mirror_inbound_no_bot: falha criando lead")
+            return
+
+    try:
+        record_inbound(
+            empresa=empresa, lead=lead, channel="whatsapp",
+            content=text, sender_external_id=sender_id,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("_mirror_inbound_no_bot: falha gravando inbound")
+
+
 def _mirror_outbound_from_mobile(empresa, recipient_id, text):
     """Espelha mensagem outbound enviada pelo OPERADOR direto do celular.
 
@@ -658,6 +712,13 @@ def evolution_webhook_receive(request, token):
         webhook_token=token, is_active=True,
     ).first()
     if not flow:
+        # Tenta espelhar mesmo sem flow — tenta resolver empresa via instance
+        config = WhatsAppConfig.objects.select_related("empresa").filter(
+            instance_name=instance_name,
+        ).first()
+        if config:
+            _mirror_inbound_no_bot(config.empresa, sender_id, message_text)
+            return JsonResponse({"status": "ok", "mirror": "inbound_no_bot"})
         return JsonResponse({"error": "Flow not found or inactive"}, status=404)
 
     try:
@@ -758,8 +819,11 @@ def evolution_webhook_auto(request):
         if active:
             flow = active.flow
 
+    # SEMPRE espelha a mensagem na inbox — mesmo SEM flow do chatbot.
+    # A inbox é o histórico mestre; o bot é opcional.
     if not flow:
-        return JsonResponse({"error": "No eligible WhatsApp flow"}, status=404)
+        _mirror_inbound_no_bot(config.empresa, sender_id, message_text)
+        return JsonResponse({"status": "ok", "mirror": "inbound_no_bot"})
 
     try:
         reply_text, choices, is_complete, lead_id = _process_evolution_message(
