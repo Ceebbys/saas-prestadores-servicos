@@ -18,6 +18,7 @@ from django.test import TestCase
 from apps.accounts.models import Empresa
 from apps.chatbot.models import ChatbotFlow, ChatbotSession
 from apps.chatbot.whatsapp import (
+    _mirror_inbound_no_bot,
     _mirror_to_inbox,
     _resolve_or_create_lead_lazy,
     parse_evolution_webhook,
@@ -341,3 +342,108 @@ class CreateLeadHydratesLazyTests(TestCase):
         lazy.refresh_from_db()
         # Hidratação só toca campos que começam com "WhatsApp " ou vazios
         self.assertEqual(lazy.name, "Nome Manual do Admin")
+
+
+class AutoCreateContatoTests(TestCase):
+    """RV06 Item 4 — Quando WhatsApp recebe primeira msg, cria Contato também."""
+
+    def setUp(self):
+        self.empresa = create_test_empresa()
+        self.flow = _make_flow(self.empresa)
+
+    def test_lazy_lead_also_creates_contato(self):
+        from apps.contacts.models import Contato
+        from apps.crm.models import Lead
+
+        # Primeira msg → resolve cria Lead E Contato vinculado
+        sender = "5511987654321"
+        # Session existente (criada por start_session) para passar ao resolver
+        session = ChatbotSession.objects.create(
+            flow=self.flow, sender_id=sender, channel="whatsapp",
+            status=ChatbotSession.Status.ACTIVE,
+        )
+        before_contatos = Contato.objects.count()
+        before_leads = Lead.objects.count()
+
+        lead = _resolve_or_create_lead_lazy(
+            self.flow, sender, session=session,
+        )
+
+        self.assertIsNotNone(lead)
+        self.assertEqual(Lead.objects.count(), before_leads + 1)
+        self.assertEqual(Contato.objects.count(), before_contatos + 1)
+        # Lead.contato vinculado
+        lead.refresh_from_db()
+        self.assertIsNotNone(lead.contato_id)
+        # Contato criado com phone e whatsapp
+        contato = lead.contato
+        self.assertEqual(contato.phone, sender)
+        self.assertEqual(contato.whatsapp, sender)
+        self.assertEqual(contato.empresa, self.empresa)
+        self.assertEqual(contato.source, Contato.Source.WHATSAPP)
+
+    def test_repeated_calls_reuse_contato(self):
+        """Não duplica Contato quando mesmo número volta a mandar msg."""
+        from apps.contacts.models import Contato
+
+        sender = "5511944332211"
+        s1 = ChatbotSession.objects.create(
+            flow=self.flow, sender_id=sender, channel="whatsapp",
+            status=ChatbotSession.Status.ACTIVE,
+        )
+        _resolve_or_create_lead_lazy(self.flow, sender, session=s1)
+        before = Contato.objects.filter(empresa=self.empresa).count()
+
+        # Segunda sessão do mesmo número
+        s2 = ChatbotSession.objects.create(
+            flow=self.flow, sender_id=sender, channel="whatsapp",
+            status=ChatbotSession.Status.ACTIVE,
+        )
+        _resolve_or_create_lead_lazy(self.flow, sender, session=s2)
+        # Mesma quantidade de Contatos
+        self.assertEqual(
+            Contato.objects.filter(empresa=self.empresa).count(), before,
+        )
+
+    def test_mirror_inbound_no_bot_also_creates_contato(self):
+        """Tenant sem chatbot flow: ainda cria Lead + Contato."""
+        from apps.contacts.models import Contato
+        from apps.crm.models import Lead
+
+        sender = "5511955667788"
+        _mirror_inbound_no_bot(self.empresa, sender, "Olá")
+        # Lead E Contato criados
+        lead = Lead.objects.get(empresa=self.empresa, phone=sender)
+        self.assertIsNotNone(lead.contato_id)
+        contato = Contato.objects.get(empresa=self.empresa, phone=sender)
+        self.assertEqual(contato.whatsapp, sender)
+
+    def test_hydrate_lazy_lead_updates_contato_in_parallel(self):
+        """Quando fluxo completa, Contato também é hidratado com name/email/cpf."""
+        from apps.automation.services import create_lead_from_chatbot
+
+        sender = "5511966554433"
+        session = ChatbotSession.objects.create(
+            flow=self.flow, sender_id=sender, channel="whatsapp",
+            status=ChatbotSession.Status.ACTIVE,
+        )
+        lazy = _resolve_or_create_lead_lazy(self.flow, sender, session=session)
+        # Antes da hidratação
+        self.assertTrue(lazy.contato.name.startswith("WhatsApp"))
+        self.assertEqual(lazy.contato.email, "")
+
+        # Final do fluxo
+        session_data = {
+            "name": "Maria Silva",
+            "email": "maria@x.com",
+            "phone": sender,
+            "session_id": str(session.session_key),
+        }
+        create_lead_from_chatbot(self.empresa, self.flow, session_data)
+
+        lazy.refresh_from_db()
+        # Lead hidratado
+        self.assertEqual(lazy.name, "Maria Silva")
+        # Contato hidratado em paralelo
+        self.assertEqual(lazy.contato.name, "Maria Silva")
+        self.assertEqual(lazy.contato.email, "maria@x.com")

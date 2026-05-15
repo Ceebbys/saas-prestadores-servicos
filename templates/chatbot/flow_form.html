@@ -63,6 +63,34 @@
 {% endif %}
 {% endblock %}
 
+{% block extra_js %}
+{% if form.instance.pk and form.instance.use_visual_builder %}
+<script>
+// RV06 Item 2 — Quando flow.use_visual_builder=True, desabilita todos os
+// campos do form legacy (visual de read-only). Mantém apenas o botão
+// "Voltar para editor legado" no banner ativo.
+(function() {
+  document.addEventListener('DOMContentLoaded', function() {
+    var form = document.getElementById('flow-config-form');
+    if (!form) return;
+    var els = form.querySelectorAll('input, select, textarea, button[type=submit]');
+    els.forEach(function(el) {
+      // Não desabilita o CSRF token nem o checkbox de send_completion
+      if (el.name === 'csrfmiddlewaretoken') return;
+      el.disabled = true;
+      el.classList.add('opacity-60', 'cursor-not-allowed');
+    });
+    // Esconde botão Salvar (substituído pela mensagem do banner)
+    var submitBtn = form.querySelector('button[type=submit]');
+    if (submitBtn) {
+      submitBtn.style.display = 'none';
+    }
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}
+
 {% block content %}
 <div class="max-w-3xl space-y-6">
     <!-- Flow form -->

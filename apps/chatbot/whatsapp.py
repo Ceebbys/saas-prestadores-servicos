@@ -474,6 +474,24 @@ def _resolve_or_create_lead_lazy(flow, sender_id, session=None, lead_id=None):
                 "_mirror_to_inbox: lead lazy criado pk=%s sender=%s",
                 new_lead.pk, phone_digits,
             )
+        # RV06 Item 4 — Auto-create Contato (CRM profissional)
+        # Cria/reaproveita Contato pelo phone e vincula ao Lead. Sem
+        # documento (preenchido depois quando bot perguntar CPF/CNPJ).
+        if not new_lead.contato_id:
+            try:
+                from apps.contacts.services import (
+                    get_or_create_contato_for_phone, link_contato_to_lead,
+                )
+                contato, _created = get_or_create_contato_for_phone(
+                    flow.empresa, phone_digits,
+                    name=f"WhatsApp {phone_digits}",
+                )
+                link_contato_to_lead(contato, new_lead)
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "_mirror_to_inbox: falha criando/vinculando Contato lazy "
+                    "(lead=%s)", new_lead.pk,
+                )
         # Vincula à session
         if session is not None and not session.lead_id:
             session.lead = new_lead
@@ -576,6 +594,22 @@ def _mirror_inbound_no_bot(empresa, sender_id, text):
             logger.exception("_mirror_inbound_no_bot: falha criando lead")
             return
 
+    # RV06 Item 4 — Auto-create Contato (CRM profissional)
+    if not lead.contato_id:
+        try:
+            from apps.contacts.services import (
+                get_or_create_contato_for_phone, link_contato_to_lead,
+            )
+            contato, _ = get_or_create_contato_for_phone(
+                empresa, phone_digits, name=f"WhatsApp {phone_digits}",
+            )
+            link_contato_to_lead(contato, lead)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "_mirror_inbound_no_bot: falha criando/vinculando Contato (lead=%s)",
+                lead.pk,
+            )
+
     try:
         record_inbound(
             empresa=empresa, lead=lead, channel="whatsapp",
@@ -634,6 +668,22 @@ def _mirror_outbound_from_mobile(empresa, recipient_id, text):
                 "_mirror_outbound_from_mobile: falha criando lead lazy"
             )
             return
+
+    # RV06 Item 4 — Auto-create Contato (também para mobile-out)
+    if not lead.contato_id:
+        try:
+            from apps.contacts.services import (
+                get_or_create_contato_for_phone, link_contato_to_lead,
+            )
+            contato, _ = get_or_create_contato_for_phone(
+                empresa, phone_digits, name=f"WhatsApp {phone_digits}",
+            )
+            link_contato_to_lead(contato, lead)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "_mirror_outbound_from_mobile: falha criando Contato (lead=%s)",
+                lead.pk,
+            )
 
     try:
         conv = get_or_create_conversation(empresa, lead)

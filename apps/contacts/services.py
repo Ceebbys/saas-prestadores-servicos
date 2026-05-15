@@ -79,6 +79,61 @@ def get_or_create_contato_by_document(
         return contato, True
 
 
+def get_or_create_contato_for_phone(
+    empresa, phone: str, name: str | None = None,
+) -> tuple[Contato, bool]:
+    """RV06 — Encontra ou cria Contato pelo phone (WhatsApp inbound).
+
+    Quando um cliente novo manda mensagem WhatsApp, queremos criar:
+    - Lead (lazy) — já existe via _resolve_or_create_lead_lazy
+    - Contato (NOVO) — esta função
+
+    Estratégia:
+    1. Procura Contato existente com phone OR whatsapp matching (case-tolerant)
+    2. Se não existe, cria com phone+whatsapp preenchidos
+    3. Sem CPF/CNPJ — pode ser preenchido depois quando o bot perguntar
+
+    Retorna: (contato, created_bool). Idempotente.
+    """
+    phone_digits = "".join(c for c in (phone or "") if c.isdigit())
+    if not phone_digits:
+        raise ValueError("phone vazio — não dá pra criar Contato sem identificação")
+
+    safe_name = (name or "").strip() or f"WhatsApp {phone_digits}"
+
+    with transaction.atomic():
+        # Tenta match por phone OU whatsapp (cobertura completa)
+        existing = (
+            Contato.objects.select_for_update()
+            .filter(empresa=empresa)
+            .filter(
+                Q(phone__icontains=phone_digits)
+                | Q(whatsapp__icontains=phone_digits)
+            )
+            .order_by("-updated_at")
+            .first()
+        )
+        if existing is not None:
+            logger.debug(
+                "contacts: reused Contato id=%s for phone=%s (empresa=%s)",
+                existing.pk, phone_digits, empresa.pk,
+            )
+            return existing, False
+
+        contato = Contato.objects.create(
+            empresa=empresa,
+            name=safe_name,
+            phone=phone_digits,
+            whatsapp=phone_digits,
+            source=Contato.Source.WHATSAPP,
+        )
+        logger.info(
+            "contacts: created Contato id=%s via WhatsApp lazy phone=%s empresa=%s",
+            contato.pk, phone_digits, empresa.pk,
+        )
+        return contato, True
+
+
 def link_contato_to_lead(contato: Contato, lead) -> None:
     """Attach `contato` to `lead` if not already set. Skips cross-tenant."""
     if lead.contato_id == contato.pk:

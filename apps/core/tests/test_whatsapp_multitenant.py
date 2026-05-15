@@ -190,8 +190,9 @@ class EvolutionWebhookAutoMultiTenantTests(TransactionTestCase):
         self.assertIn("custom-evo:9090", call_args[0][0])
         self.assertEqual(call_args[1]["headers"]["apikey"], "custom-key")
 
-    def test_from_me_ignored_without_config_lookup(self):
-        """fromMe=True deve retornar 200 'ignored' sem fazer lookup de WhatsAppConfig."""
+    def test_from_me_handled_by_outbound_parser(self):
+        """RV06 — fromMe=True é tratado pelo parser de outbound (mensagem do
+        operador no celular vira outbound_mobile na inbox). Retorna 200."""
         payload = _make_evo_payload(instance="inst-a")
         payload["data"]["key"]["fromMe"] = True
 
@@ -201,11 +202,14 @@ class EvolutionWebhookAutoMultiTenantTests(TransactionTestCase):
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json()["status"], "ignored")
+        body = resp.json()
+        self.assertIn(body["status"], ("ok", "ignored"))
+        # Nenhuma session do bot é iniciada (fromMe não dispara fluxo)
         self.assertEqual(ChatbotSession.objects.count(), 0)
 
-    def test_no_active_flow_returns_404(self):
-        """Empresa tem config mas sem flow ativo → 404."""
+    def test_no_active_flow_mirrors_inbound_to_inbox(self):
+        """RV06 — Empresa tem WhatsAppConfig mas sem flow ativo:
+        a mensagem é espelhada via _mirror_inbound_no_bot (não 404)."""
         self.flow_b.is_active = False
         self.flow_b.save()
 
@@ -215,4 +219,6 @@ class EvolutionWebhookAutoMultiTenantTests(TransactionTestCase):
             data=json.dumps(payload),
             content_type="application/json",
         )
-        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(body.get("mirror"), "inbound_no_bot")

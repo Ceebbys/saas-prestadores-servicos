@@ -21,6 +21,12 @@ urlpatterns = [
     path("flows/<int:pk>/edit/", views.FlowUpdateView.as_view(), name="flow_update"),
     path("flows/<int:pk>/delete/", views.FlowDeleteView.as_view(), name="flow_delete"),
     path("flows/<int:pk>/toggle/", views.FlowToggleView.as_view(), name="flow_toggle"),
+    # RV06 Item 2 — Desativa o builder visual e volta para editor legacy
+    path(
+        "flows/<int:pk>/disable-visual/",
+        views.FlowDisableVisualView.as_view(),
+        name="flow_disable_visual",
+    ),
     # Steps (inline management)
     path("flows/<int:pk>/steps/add/", views.StepAddView.as_view(), name="step_add"),
     path(

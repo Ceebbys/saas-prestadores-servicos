@@ -1,18 +1,42 @@
 {% load ui_tags %}
-<div class="mb-6 rounded-xl bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-200 p-4 flex items-start gap-3">
-    <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-indigo-500 text-white flex items-center justify-center">
-        {% icon "rectangle-stack" "w-5 h-5" %}
+{# RV06 Item 2 — Banner exibido quando flow.use_visual_builder=True.
+
+   Mostra que o motor de execução está usando a versão visual publicada
+   (não o editor legacy de steps). Oferece 2 caminhos:
+   1. "Abrir construtor" — vai para o builder visual (edição via UI)
+   2. "Voltar para editor legado" — desativa o visual + arquiva versão
+      publicada + volta para edição via ChatbotStep formset (com modal de
+      confirmação para evitar acidentes).
+#}
+<div class="mb-6 rounded-xl bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-200 p-4">
+    <div class="flex items-start gap-3">
+        <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-indigo-500 text-white flex items-center justify-center">
+            {% icon "rectangle-stack" "w-5 h-5" %}
+        </div>
+        <div class="flex-1">
+            <p class="text-sm font-semibold text-slate-900">🔒 Este fluxo é gerenciado pelo construtor visual</p>
+            <p class="text-xs text-slate-600 mt-0.5">
+                O motor de execução está usando a versão publicada do construtor visual.
+                Os campos abaixo continuam em modo leitura para histórico — alterações
+                feitas aqui <strong>não serão usadas</strong> a menos que você volte para o editor legacy.
+            </p>
+        </div>
+        <div class="flex flex-col gap-1.5 items-end">
+            <a href="{% url 'chatbot:flow_builder' flow.pk %}"
+               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700">
+                {% icon "rectangle-stack" "w-4 h-4" %}
+                Abrir construtor visual
+            </a>
+            <form method="post"
+                  action="{% url 'chatbot:flow_disable_visual' flow.pk %}"
+                  onsubmit="return confirm('Voltar para o editor legado vai ARQUIVAR a versão visual publicada. O motor passará a usar os passos antigos (ChatbotStep). Confirma?');"
+                  class="inline">
+                {% csrf_token %}
+                <button type="submit"
+                        class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white border border-amber-300 text-amber-800 text-[11px] font-medium hover:bg-amber-50">
+                    Voltar para editor legado
+                </button>
+            </form>
+        </div>
     </div>
-    <div class="flex-1">
-        <p class="text-sm font-semibold text-slate-900">Este fluxo é gerenciado pelo construtor visual</p>
-        <p class="text-xs text-slate-600 mt-0.5">
-            O motor de execução está usando a versão publicada do construtor visual.
-            O editor por formulários abaixo continua disponível em modo leitura para histórico.
-        </p>
-    </div>
-    <a href="{% url 'chatbot:flow_builder' flow.pk %}"
-       class="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-indigo-200 text-indigo-700 text-xs font-medium hover:bg-indigo-50">
-        {% icon "rectangle-stack" "w-4 h-4" %}
-        Abrir construtor
-    </a>
 </div>

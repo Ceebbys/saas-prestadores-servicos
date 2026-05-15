@@ -275,21 +275,28 @@ def _validate_fields(node_id: str, data: dict, fields: list, errors: list) -> No
 def _validate_menu_handles(node: dict, graph: dict, errors: list) -> None:
     """Menu: cada option precisa ter handle_id único e edge correspondente."""
     options = (node.get("data") or {}).get("options") or []
-    handle_ids = [o.get("handle_id") for o in options if isinstance(o, dict)]
+    handle_ids: list[str] = []
+    labels: dict[str, str] = {}
+    for o in options:
+        if isinstance(o, dict):
+            hid = o.get("handle_id") or ""
+            handle_ids.append(hid)
+            labels[hid] = o.get("label") or hid
     # Handles únicos
     seen = set()
     for h in handle_ids:
         if not h:
             errors.append(_err(
                 node["id"], "data.options",
-                "Toda opção precisa de um handle_id.",
+                "Toda opção do menu precisa de um identificador único (handle_id).",
                 "MENU_OPTION_MISSING_HANDLE",
             ))
             continue
         if h in seen:
             errors.append(_err(
                 node["id"], "data.options",
-                f"handle_id duplicado: '{h}'. Cada opção precisa de um identificador único.",
+                f"Opção '{labels.get(h, h)}' tem identificador duplicado. "
+                f"Cada opção precisa de um identificador único — renomeie ou recrie.",
                 "MENU_DUPLICATE_HANDLE",
             ))
         seen.add(h)
@@ -297,9 +304,11 @@ def _validate_menu_handles(node: dict, graph: dict, errors: list) -> None:
     outbound = graph_utils.outbound_handles_of(graph, node["id"])
     for h in handle_ids:
         if h and h not in outbound:
+            label = labels.get(h, h)
             errors.append(_err(
                 node["id"], f"options.{h}",
-                f"Opção '{h}' não tem destino conectado.",
+                f"Opção '{label}' não está conectada a nenhum próximo bloco. "
+                f"Arraste uma conexão a partir desta opção para outro bloco.",
                 "MENU_OPTION_NOT_CONNECTED",
             ))
 

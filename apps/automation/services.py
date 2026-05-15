@@ -215,7 +215,36 @@ def _hydrate_lazy_lead(lead, session_data: dict):
         for k, v in updates.items():
             setattr(lead, k, v)
         lead.save(update_fields=list(updates.keys()) + ["updated_at"])
+
+    # RV06 Item 4 — Hidrata Contato em paralelo (sem sobrescrever campos
+    # já preenchidos pelo admin). Contato pode ter sido criado lazy ao
+    # receber primeira msg WhatsApp via `_mirror_to_inbox`.
+    if lead.contato_id:
+        _hydrate_lazy_contato(lead.contato, session_data)
+
     return lead
+
+
+def _hydrate_lazy_contato(contato, session_data: dict):
+    """Atualiza campos vazios do Contato com dados da sessão."""
+    updates = {}
+    name = (session_data.get("name") or "").strip()
+    if name and (not contato.name or contato.name.startswith("WhatsApp ")):
+        updates["name"] = name
+    email = (session_data.get("email") or "").strip()
+    if email and not contato.email:
+        updates["email"] = email
+    company = (session_data.get("company") or "").strip()
+    if company and not contato.company:
+        updates["company"] = company
+    cpf_cnpj = (session_data.get("cpf_cnpj") or "").strip()
+    if cpf_cnpj and not contato.cpf_cnpj_normalized:
+        updates["cpf_cnpj"] = cpf_cnpj
+    if updates:
+        for k, v in updates.items():
+            setattr(contato, k, v)
+        # save() normaliza cpf_cnpj automaticamente
+        contato.save(update_fields=list(updates.keys()) + ["updated_at"])
 
 
 @transaction.atomic

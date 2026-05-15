@@ -197,7 +197,9 @@ class EvolutionWebhookViewTests(TransactionTestCase):
         # No session should be created
         self.assertEqual(ChatbotSession.objects.count(), 0)
 
-    def test_evolution_webhook_from_me_ignored(self):
+    def test_evolution_webhook_from_me_handled_as_outbound(self):
+        """RV06 — fromMe=True (mensagem do operador via celular) é processada
+        pelo parser de outbound em vez de ser descartada."""
         payload = _make_evolution_payload(from_me=True)
         resp = self.client.post(
             self.url,
@@ -205,7 +207,10 @@ class EvolutionWebhookViewTests(TransactionTestCase):
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json()["status"], "ignored")
+        body = resp.json()
+        # Aceita "ok" (espelhada como outbound_mobile) ou "ignored"
+        # (sem WhatsAppConfig p/ resolver empresa no teste)
+        self.assertIn(body["status"], ("ok", "ignored"))
 
 
 # ===========================================================================

@@ -108,13 +108,48 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
   },
 
   updateNodeData: (nodeId, dataPatch) => {
-    set((state) => ({
-      nodes: state.nodes.map((n) =>
+    set((state) => {
+      const newNodes = state.nodes.map((n) =>
         n.id === nodeId ? { ...n, data: { ...n.data, ...dataPatch } } : n,
-      ),
-      isDirty: true,
-      saveState: "idle",
-    }));
+      );
+      // RV06 Item 3 — Sanitiza edges órfãs quando options de menu mudam.
+      // Quando user reordena/deleta opções, handle_ids antigos ficam órfãos
+      // (edges apontando para handle_id que não existe mais no node).
+      let newEdges = state.edges;
+      const updatedNode = newNodes.find((n) => n.id === nodeId);
+      if (
+        updatedNode &&
+        updatedNode.type === "menu" &&
+        "options" in dataPatch
+      ) {
+        const validHandleIds = new Set<string>(
+          ((updatedNode.data.options as any[]) || [])
+            .map((o) => o?.handle_id)
+            .filter(Boolean),
+        );
+        const before = state.edges.length;
+        newEdges = state.edges.filter((e) => {
+          // Mantém edges cujo source != este menu (não afetadas)
+          if (e.source !== nodeId) return true;
+          // Edges deste menu precisam ter sourceHandle válido
+          const h = e.sourceHandle || "";
+          return validHandleIds.has(h);
+        });
+        if (newEdges.length < before) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[builder] cleanOrphanEdges: removidas ${before - newEdges.length} ` +
+            `edge(s) órfã(s) do menu ${nodeId} (handle_ids inválidos).`,
+          );
+        }
+      }
+      return {
+        nodes: newNodes,
+        edges: newEdges,
+        isDirty: true,
+        saveState: "idle",
+      };
+    });
   },
 
   deleteNode: (nodeId) => {

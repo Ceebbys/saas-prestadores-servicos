@@ -113,6 +113,17 @@ class FlowUpdateView(EmpresaMixin, HtmxResponseMixin, UpdateView):
         return context
 
     def form_valid(self, form):
+        # RV06 Item 2 — Defesa server-side: rejeita save quando fluxo está
+        # em modo visual. Frontend já desabilita inputs, mas form pode ser
+        # POST direto via API; bloqueamos aqui também.
+        if form.instance.use_visual_builder:
+            messages.error(
+                self.request,
+                "Este fluxo é gerenciado pelo construtor visual. "
+                "Para editá-lo no editor legado, primeiro clique em "
+                "'Voltar para editor legado' no banner.",
+            )
+            return redirect("chatbot:flow_update", pk=form.instance.pk)
         response = super().form_valid(form)
         messages.success(self.request, "Fluxo atualizado com sucesso.")
         return response
@@ -167,9 +178,60 @@ class FlowToggleView(EmpresaMixin, View):
         return redirect("chatbot:flow_list")
 
 
+class FlowDisableVisualView(EmpresaMixin, View):
+    """RV06 Item 2 — Volta o flow para o editor legacy (ChatbotStep).
+
+    Comportamento:
+    - Define `flow.use_visual_builder = False`
+    - Arquiva versão PUBLISHED ativa (motor passa a usar legacy)
+    - Mantém histórico de versões intacto (não deleta)
+
+    Idempotente: rodar 2x não causa efeito colateral.
+    """
+
+    def post(self, request, pk):
+        from apps.chatbot.models import ChatbotFlowVersion
+        flow = get_object_or_404(ChatbotFlow, pk=pk, empresa=request.empresa)
+        if not flow.use_visual_builder:
+            messages.info(request, "Este fluxo já está no editor legacy.")
+            return redirect("chatbot:flow_update", pk=pk)
+        flow.use_visual_builder = False
+        flow.save(update_fields=["use_visual_builder", "updated_at"])
+        # Arquiva versão publicada (mantém para histórico)
+        published = ChatbotFlowVersion.objects.filter(
+            flow=flow, status=ChatbotFlowVersion.Status.PUBLISHED,
+        ).first()
+        if published:
+            published.status = ChatbotFlowVersion.Status.ARCHIVED
+            published.save(update_fields=["status", "updated_at"])
+            flow.current_published_version = None
+            flow.save(update_fields=["current_published_version", "updated_at"])
+        messages.success(
+            request,
+            "Editor legacy reativado. O construtor visual foi arquivado "
+            "(mas continua salvo no histórico de versões).",
+        )
+        return redirect("chatbot:flow_update", pk=pk)
+
+
 # ---------------------------------------------------------------------------
 # Step Management (inline)
 # ---------------------------------------------------------------------------
+
+
+def _guard_legacy_edit(flow, request):
+    """RV06 Item 2 — Rejeita edições do editor legacy quando visual ativo.
+
+    Retorna redirect (truthy) se deve bloquear, ou None se OK seguir.
+    """
+    if flow.use_visual_builder:
+        messages.error(
+            request,
+            "Este fluxo é gerenciado pelo construtor visual. "
+            "Volte ao editor legado pelo banner antes de editar passos.",
+        )
+        return redirect("chatbot:flow_update", pk=flow.pk)
+    return None
 
 
 class StepAddView(EmpresaMixin, View):
@@ -177,6 +239,9 @@ class StepAddView(EmpresaMixin, View):
 
     def post(self, request, pk):
         flow = get_object_or_404(ChatbotFlow, pk=pk, empresa=request.empresa)
+        blocked = _guard_legacy_edit(flow, request)
+        if blocked:
+            return blocked
         form = ChatbotStepForm(request.POST, flow=flow)
         if form.is_valid():
             step = form.save(commit=False)
@@ -202,6 +267,9 @@ class StepUpdateView(EmpresaMixin, View):
 
     def post(self, request, pk, step_pk):
         flow = get_object_or_404(ChatbotFlow, pk=pk, empresa=request.empresa)
+        blocked = _guard_legacy_edit(flow, request)
+        if blocked:
+            return blocked
         step = get_object_or_404(ChatbotStep, pk=step_pk, flow=flow)
         form = ChatbotStepForm(request.POST, instance=step, flow=flow)
         if form.is_valid():
@@ -228,6 +296,9 @@ class StepDeleteView(EmpresaMixin, View):
 
     def post(self, request, pk, step_pk):
         flow = get_object_or_404(ChatbotFlow, pk=pk, empresa=request.empresa)
+        blocked = _guard_legacy_edit(flow, request)
+        if blocked:
+            return blocked
         ChatbotStep.objects.filter(pk=step_pk, flow=flow).delete()
         messages.success(request, "Passo removido com sucesso.")
         return redirect("chatbot:flow_update", pk=flow.pk)
@@ -297,6 +368,9 @@ class ActionAddView(EmpresaMixin, View):
 
     def post(self, request, pk):
         flow = get_object_or_404(ChatbotFlow, pk=pk, empresa=request.empresa)
+        blocked = _guard_legacy_edit(flow, request)
+        if blocked:
+            return blocked
         form = ChatbotActionForm(request.POST, flow=flow)
         if form.is_valid():
             action = form.save(commit=False)
@@ -315,6 +389,9 @@ class ActionDeleteView(EmpresaMixin, View):
 
     def post(self, request, pk, action_pk):
         flow = get_object_or_404(ChatbotFlow, pk=pk, empresa=request.empresa)
+        blocked = _guard_legacy_edit(flow, request)
+        if blocked:
+            return blocked
         ChatbotAction.objects.filter(pk=action_pk, flow=flow).delete()
         messages.success(request, "Ação removida com sucesso.")
         return redirect("chatbot:flow_update", pk=flow.pk)

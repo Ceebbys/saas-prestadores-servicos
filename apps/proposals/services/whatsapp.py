@@ -52,29 +52,56 @@ def send_proposal_whatsapp(
 ) -> tuple[bool, str, str]:
     """Envia proposta por WhatsApp.
 
+    RV06 #6 — Logs estruturados + mensagens de erro úteis (cada tentativa
+    deixa rastro claro em journalctl + retorna mensagem específica para o admin).
+
     Returns:
         (success, mode, message). mode ∈ {"attachment", "link", "failed"}.
-        message é a mensagem de status amigável para exibir ao usuário.
+        message é amigável e diz **o que** falhou e **como agir**.
     """
     if not to_phone:
-        return False, "failed", "Telefone não fornecido."
+        return False, "failed", "Telefone do lead não está cadastrado. Edite o lead e adicione o número antes de enviar."
 
     client, err = _client_for_empresa(proposal.empresa)
     if not client:
         return False, "failed", err
 
+    # Verifica explicitamente que client tem credenciais
+    if not getattr(client, "configured", True):
+        logger.warning(
+            "send_proposal_whatsapp: Evolution não configurada (proposal=%s empresa=%s)",
+            proposal.pk, proposal.empresa_id,
+        )
+        return False, "failed", (
+            "Evolution API não está configurada para esta empresa. "
+            "Vá em Configurações → WhatsApp e preencha URL/Token/Instância."
+        )
+
     # Limpeza simples do telefone (Evolution costuma aceitar 5511…)
     phone = "".join(c for c in to_phone if c.isdigit())
+    if not phone:
+        return False, "failed", (
+            f"Telefone '{to_phone}' não contém dígitos válidos. "
+            "Verifique o cadastro do lead."
+        )
 
     custom_msg = (message or "").strip()
+    public_url = _build_public_link(proposal, request)
 
     # 1) Tentativa: anexar PDF
+    pdf_size_kb = None
+    media_err: str = ""
     try:
         pdf_bytes = render_proposal_pdf(proposal, request=request)
+        pdf_size_kb = len(pdf_bytes) // 1024
         b64 = base64.b64encode(pdf_bytes).decode("ascii")
         caption = (
             custom_msg
             or f"Olá! Segue a proposta {proposal.number} em anexo."
+        )
+        logger.info(
+            "send_proposal_whatsapp attempt=media proposal=%s empresa=%s phone=%s pdf_kb=%s",
+            proposal.pk, proposal.empresa_id, phone, pdf_size_kb,
         )
         ok, err_msg = client.send_media(
             phone=phone,
@@ -85,31 +112,80 @@ def send_proposal_whatsapp(
         )
         if ok:
             _post_send_success(proposal)
+            logger.info(
+                "send_proposal_whatsapp success=media proposal=%s pdf_kb=%s",
+                proposal.pk, pdf_size_kb,
+            )
             return True, "attachment", "Proposta enviada com PDF anexado."
-        logger.info(
-            "send_media falhou (%s) — tentando fallback para link", err_msg,
+        media_err = err_msg or "erro desconhecido"
+        logger.warning(
+            "send_proposal_whatsapp media_failed proposal=%s empresa=%s pdf_kb=%s err=%s — tentando link",
+            proposal.pk, proposal.empresa_id, pdf_size_kb, media_err,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Falha gerando/enviando PDF anexo via WhatsApp")
+        media_err = f"exceção: {exc!r}"
+        logger.exception(
+            "send_proposal_whatsapp media_exception proposal=%s",
+            proposal.pk,
+        )
         # cai no fallback de link
 
     # 2) Fallback: link público
-    public_url = _build_public_link(proposal, request)
     text = (
         custom_msg
         + ("\n\n" if custom_msg else "")
         + f"Olá! Sua proposta está pronta: {public_url}"
     ).strip()
-    if client.send_text(phone, text):
+    logger.info(
+        "send_proposal_whatsapp attempt=link proposal=%s phone=%s",
+        proposal.pk, phone,
+    )
+    try:
+        link_ok = client.send_text(phone, text)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "send_proposal_whatsapp link_exception proposal=%s", proposal.pk,
+        )
+        link_ok = False
+
+    if link_ok:
         _post_send_success(proposal)
+        logger.info(
+            "send_proposal_whatsapp success=link proposal=%s (media falhou antes)",
+            proposal.pk,
+        )
         return True, "link", (
-            "Anexo PDF falhou — link de visualização enviado com sucesso."
+            "PDF não pôde ser anexado (instância WhatsApp pode estar offline ou "
+            "limite de tamanho atingido); enviei o link de visualização."
         )
 
+    # Ambos falharam — retorna diagnóstico para o admin
+    logger.error(
+        "send_proposal_whatsapp failed_total proposal=%s empresa=%s media_err=%s",
+        proposal.pk, proposal.empresa_id, media_err,
+    )
+    diagnosis = _diagnose_failure(media_err)
     return False, "failed", (
-        "Não foi possível enviar via WhatsApp. "
+        f"Não foi possível enviar pelo WhatsApp. "
+        f"{diagnosis} "
         f"Copie e envie manualmente: {public_url}"
     )
+
+
+def _diagnose_failure(media_err: str) -> str:
+    """Mensagem de diagnóstico humana baseada no erro da Evolution API."""
+    e = (media_err or "").lower()
+    if "401" in e or "unauthor" in e:
+        return "Token/credenciais inválidos — verifique a API Key da Evolution."
+    if "404" in e or "not found" in e or "does not exist" in e:
+        return "Instância WhatsApp não encontrada na Evolution — verifique o nome da instância em Configurações."
+    if "connecting" in e or "close" in e or "offline" in e:
+        return "WhatsApp Web não está conectado — abra o painel da Evolution e parea o QR code novamente."
+    if "timeout" in e:
+        return "Tempo esgotado conectando à Evolution API — pode haver instabilidade de rede."
+    if "5" in e[:1]:  # HTTP 5xx
+        return "Erro no servidor da Evolution API (5xx) — tente novamente em alguns minutos."
+    return "Verifique se a instância WhatsApp está conectada (state=open na Evolution)."
 
 
 def _post_send_success(proposal: Proposal):
