@@ -174,6 +174,7 @@ def send_proposal_whatsapp(
 
 def _diagnose_failure(media_err: str) -> str:
     """Mensagem de diagnóstico humana baseada no erro da Evolution API."""
+    import re
     e = (media_err or "").lower()
     if "401" in e or "unauthor" in e:
         return "Token/credenciais inválidos — verifique a API Key da Evolution."
@@ -183,7 +184,8 @@ def _diagnose_failure(media_err: str) -> str:
         return "WhatsApp Web não está conectado — abra o painel da Evolution e parea o QR code novamente."
     if "timeout" in e:
         return "Tempo esgotado conectando à Evolution API — pode haver instabilidade de rede."
-    if "5" in e[:1]:  # HTTP 5xx
+    # HTTP 5xx — qualquer 5\d\d na mensagem
+    if re.search(r"\b5\d\d\b", e):
         return "Erro no servidor da Evolution API (5xx) — tente novamente em alguns minutos."
     return "Verifique se a instância WhatsApp está conectada (state=open na Evolution)."
 

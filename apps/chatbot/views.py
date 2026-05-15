@@ -325,6 +325,7 @@ class StepChoicesEditView(EmpresaMixin, View):
 
     def get(self, request, pk, step_pk):
         flow = get_object_or_404(ChatbotFlow, pk=pk, empresa=request.empresa)
+        # RV06 Item 2 — sem guard no GET, apenas renderizar read-only se visual ativo
         step = get_object_or_404(ChatbotStep, pk=step_pk, flow=flow)
         formset = ChatbotChoiceFormSet(instance=step, prefix=f"choices-{step.pk}")
         self._get_form_kwargs_for_choices(formset, flow, step)
@@ -334,6 +335,10 @@ class StepChoicesEditView(EmpresaMixin, View):
 
     def post(self, request, pk, step_pk):
         flow = get_object_or_404(ChatbotFlow, pk=pk, empresa=request.empresa)
+        # RV06 Item 2 — bloqueia mutação quando visual ativo
+        blocked = _guard_legacy_edit(flow, request)
+        if blocked:
+            return blocked
         step = get_object_or_404(ChatbotStep, pk=step_pk, flow=flow)
         formset = ChatbotChoiceFormSet(
             request.POST, instance=step, prefix=f"choices-{step.pk}"

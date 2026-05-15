@@ -276,9 +276,7 @@ def _handle_register_event(session: "ChatbotSession", config: dict) -> dict:
 def _handle_send_email(session: "ChatbotSession", config: dict) -> dict:
     """Envia e-mail via SMTP do tenant. Suporta placeholders Jinja2."""
     from apps.communications.services import send_email
-    from apps.communications.models import (
-        Conversation, get_or_create_conversation,
-    )
+    from apps.communications.models import get_or_create_conversation
     from apps.communications.templates_service import _build_context, _get_env
 
     to_kind = config.get("to") or "lead"
@@ -351,11 +349,10 @@ def _handle_send_email(session: "ChatbotSession", config: dict) -> dict:
         }
     else:
         # Sem lead → enviar via Django mail direto (não grava na inbox)
-        from django.core.mail import send_mail
+        from django.core.mail import EmailMessage
         from apps.proposals.services.email import _resolve_smtp_for
         try:
             connection, from_address = _resolve_smtp_for(session.flow.empresa)
-            from django.core.mail import EmailMessage
             EmailMessage(
                 subject=rendered_subject,
                 body=rendered_body,
