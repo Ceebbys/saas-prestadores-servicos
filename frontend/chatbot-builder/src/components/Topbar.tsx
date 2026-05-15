@@ -60,6 +60,9 @@ export function Topbar() {
   const setValidation = useBuilderStore((s) => s.setValidation);
   const setSaveState = useBuilderStore((s) => s.setSaveState);
   const markClean = useBuilderStore((s) => s.markClean);
+  const setValidationPanelOpen = useBuilderStore((s) => s.setValidationPanelOpen);
+  const validationErrors = useBuilderStore((s) => s.validationErrors);
+  const validationWarnings = useBuilderStore((s) => s.validationWarnings);
   const { saveDraft, validate, publish } = useGraphAPI();
   const [busy, setBusy] = useState<string | null>(null);
   const [publishMsg, setPublishMsg] = useState<string | null>(null);
@@ -82,12 +85,14 @@ export function Topbar() {
     const result = await validate();
     if (result) {
       setValidation(result.errors, result.warnings);
-      if (result.valid && result.warnings.length === 0) {
-        alert("✓ Fluxo válido — sem erros nem avisos.");
-      } else if (result.valid) {
-        alert(`✓ Fluxo válido (${result.warnings.length} aviso(s)).`);
+      // RV06 Hotfix — abre o painel SEMPRE que houver algo a mostrar.
+      // Antes só mostrava um alert genérico ("X erros — confira o painel")
+      // sem que o painel realmente existisse.
+      if (result.errors.length > 0 || result.warnings.length > 0) {
+        setValidationPanelOpen(true);
       } else {
-        alert(`✗ Fluxo inválido — ${result.errors.length} erro(s). Confira o painel.`);
+        setValidationPanelOpen(true);
+        // mantém aberto também no caso de sucesso para feedback positivo
       }
     }
     setBusy(null);
@@ -105,7 +110,7 @@ export function Topbar() {
       setTimeout(() => setPublishMsg(null), 4000);
     } else if (r.status === 422 && r.data.errors) {
       setValidation(r.data.errors, r.data.warnings ?? []);
-      alert(`Fluxo inválido — ${r.data.errors.length} erro(s). Corrija antes de publicar.`);
+      setValidationPanelOpen(true);
     } else {
       alert(`Erro ao publicar: ${r.data.error ?? "desconhecido"}`);
     }
@@ -135,12 +140,45 @@ export function Topbar() {
         <TemplatesButton />
         <SimulatorToggle />
         <button
-          className="btn btn--ghost"
+          className={`btn btn--ghost validation-trigger ${
+            validationErrors.length > 0 ? "validation-trigger--has-errors" : ""
+          } ${
+            validationErrors.length === 0 && validationWarnings.length > 0
+              ? "validation-trigger--has-warnings"
+              : ""
+          }`}
           onClick={handleValidate}
           disabled={busy !== null}
+          title={
+            validationErrors.length > 0
+              ? `${validationErrors.length} erro(s) pendente(s) — clique para revalidar`
+              : validationWarnings.length > 0
+              ? `${validationWarnings.length} aviso(s) — clique para revalidar`
+              : "Validar fluxo"
+          }
         >
-          Validar
+          {busy === "validate" ? "Validando…" : "Validar"}
+          {validationErrors.length > 0 && (
+            <span className="validation-trigger__badge validation-trigger__badge--error">
+              {validationErrors.length}
+            </span>
+          )}
+          {validationErrors.length === 0 && validationWarnings.length > 0 && (
+            <span className="validation-trigger__badge validation-trigger__badge--warning">
+              {validationWarnings.length}
+            </span>
+          )}
         </button>
+        {(validationErrors.length > 0 || validationWarnings.length > 0) && (
+          <button
+            className="btn btn--ghost"
+            onClick={() => setValidationPanelOpen(true)}
+            disabled={busy !== null}
+            title="Reabrir painel de problemas"
+          >
+            Ver problemas
+          </button>
+        )}
         <button
           className="btn btn--secondary"
           onClick={handleSave}

@@ -36,6 +36,12 @@ interface BuilderState {
   // V2C — Browser de templates
   templateBrowserOpen: boolean;
   setTemplateBrowserOpen: (open: boolean) => void;
+  // RV06-Hotfix — Painel de validação (lista os erros + permite focar node)
+  validationPanelOpen: boolean;
+  setValidationPanelOpen: (open: boolean) => void;
+  // Request de "focar este node" — Canvas observa e centraliza via React Flow
+  focusNodeRequest: { nodeId: string; ts: number } | null;
+  requestFocusNode: (nodeId: string) => void;
 
   // Setters
   setConfig: (c: BuilderConfig) => void;
@@ -76,6 +82,11 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
   setSimulatorOpen: (simulatorOpen) => set({ simulatorOpen }),
   templateBrowserOpen: false,
   setTemplateBrowserOpen: (templateBrowserOpen) => set({ templateBrowserOpen }),
+  validationPanelOpen: false,
+  setValidationPanelOpen: (validationPanelOpen) => set({ validationPanelOpen }),
+  focusNodeRequest: null,
+  requestFocusNode: (nodeId) =>
+    set({ focusNodeRequest: { nodeId, ts: Date.now() }, selectedNodeId: nodeId }),
 
   setConfig: (config) => set({ config }),
   setCatalog: (catalog) => set({ catalog }),

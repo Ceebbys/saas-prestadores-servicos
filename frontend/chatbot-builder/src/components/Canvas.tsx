@@ -4,7 +4,7 @@
  * Recebe nodes/edges do store, sincroniza mudanças (move/connect/delete)
  * de volta, registra tipos customizados de nó.
  */
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -53,10 +53,26 @@ function CanvasInner() {
   const markDirty = useBuilderStore((s) => s.markDirty);
   const addNode = useBuilderStore((s) => s.addNode);
   const validationErrors = useBuilderStore((s) => s.validationErrors);
+  const focusNodeRequest = useBuilderStore((s) => s.focusNodeRequest);
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, setCenter } = useReactFlow();
 
   useAutosave();
+
+  // RV06 Hotfix — quando ValidationPanel pede para focar um node, centraliza
+  useEffect(() => {
+    if (!focusNodeRequest) return;
+    const node = nodes.find((n) => n.id === focusNodeRequest.nodeId);
+    if (!node || !node.position) return;
+    try {
+      setCenter(node.position.x + 120, node.position.y + 60, {
+        zoom: 1.1,
+        duration: 400,
+      });
+    } catch {
+      /* React Flow ainda pode estar montando — ignora silenciosamente */
+    }
+  }, [focusNodeRequest, nodes, setCenter]);
 
   // Nodes com classe de erro injetada
   const errorNodeIds = useMemo(

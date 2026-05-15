@@ -11,6 +11,7 @@ import { Canvas } from "./components/Canvas";
 import { PropertiesPanel } from "./components/PropertiesPanel";
 import { Simulator } from "./components/Simulator";
 import { TemplateBrowser } from "./components/TemplateBrowser";
+import { ValidationPanel } from "./components/ValidationPanel";
 import { useBuilderStore } from "./store/builderStore";
 import type { BuilderConfig, GraphJson, NodeCatalog } from "./types";
 
@@ -95,6 +96,7 @@ export function App({ config, initialGraph }: AppProps) {
       </div>
       <SimulatorContainer />
       <TemplateBrowserContainer />
+      <ValidationPanelContainer />
     </div>
   );
 }
@@ -111,4 +113,11 @@ function TemplateBrowserContainer() {
   const open = useBuilderStore((s) => s.templateBrowserOpen);
   const setOpen = useBuilderStore((s) => s.setTemplateBrowserOpen);
   return <TemplateBrowser open={open} onClose={() => setOpen(false)} />;
+}
+
+
+function ValidationPanelContainer() {
+  const open = useBuilderStore((s) => s.validationPanelOpen);
+  const setOpen = useBuilderStore((s) => s.setValidationPanelOpen);
+  return <ValidationPanel open={open} onClose={() => setOpen(false)} />;
 }
