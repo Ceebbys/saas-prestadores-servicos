@@ -321,6 +321,35 @@ body {
   background: var(--slate-50);
 }
 
+/* RV06 — Campos extras condicionais (por action_type) */
+.properties-panel__extra-fields {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--slate-300);
+}
+.properties-panel__divider {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--slate-500);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.properties-panel__divider::before,
+.properties-panel__divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--slate-200);
+}
+.field__help--error {
+  color: #b91c1c;
+  font-weight: 500;
+}
+
 .field { margin-bottom: 14px; }
 .field label {
   display: block;

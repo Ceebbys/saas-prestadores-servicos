@@ -6,7 +6,11 @@
  */
 import { useCallback } from "react";
 import { useBuilderStore } from "../store/builderStore";
-import type { GraphJson, ValidationResult } from "../types";
+import type { GraphJson, OptionItem, ValidationResult } from "../types";
+
+// Cache simples por key (in-memory) para reduzir chamadas — invalidado no reload do builder.
+const _optionsCache: Record<string, { ts: number; options: OptionItem[] }> = {};
+const _OPTIONS_TTL_MS = 30_000; // 30s — refresca em F5/reload da página
 
 interface PublishResult {
   published_version_id: number;
@@ -87,5 +91,42 @@ export function useGraphAPI() {
     return data.graph as GraphJson;
   }, [config]);
 
-  return { saveDraft, validate, publish, reloadGraph };
+  /**
+   * RV06 — Carrega options para selects dinâmicos do PropertiesPanel.
+   *
+   * Keys: services, pipeline_stages, proposal_templates, contract_templates, tags.
+   * Cache in-memory de 30s para evitar refetch a cada render.
+   */
+  const fetchOptions = useCallback(async (key: string): Promise<OptionItem[]> => {
+    if (!config) return [];
+    const cached = _optionsCache[key];
+    if (cached && Date.now() - cached.ts < _OPTIONS_TTL_MS) {
+      return cached.options;
+    }
+    // Reusa o prefix da rota de graph para derivar /api/chatbot/options/<key>/
+    // Endpoint exemplo: /api/chatbot/flows/N/graph/ → /api/chatbot/options/<key>/
+    const optionsUrl = config.endpoints.graph
+      .replace(/\/flows\/\d+\/graph\/?$/, `/options/${encodeURIComponent(key)}/`);
+    try {
+      const resp = await fetch(optionsUrl, {
+        method: "GET",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+      if (!resp.ok) {
+        // eslint-disable-next-line no-console
+        console.warn(`[builder] fetchOptions(${key}) HTTP ${resp.status}`);
+        return [];
+      }
+      const data = (await resp.json()) as { options: OptionItem[] };
+      _optionsCache[key] = { ts: Date.now(), options: data.options || [] };
+      return data.options || [];
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`[builder] fetchOptions(${key}) failed`, err);
+      return [];
+    }
+  }, [config]);
+
+  return { saveDraft, validate, publish, reloadGraph, fetchOptions };
 }

@@ -406,6 +406,8 @@ class ChatbotAction(TimestampedModel):
         REGISTER_EVENT = "register_event", "Registrar evento"
         SEND_EMAIL = "send_email", "Enviar e-mail"
         SEND_WHATSAPP = "send_whatsapp", "Enviar WhatsApp"
+        SEND_PROPOSAL = "send_proposal", "Enviar proposta"  # RV06
+        SEND_CONTRACT = "send_contract", "Enviar contrato"  # RV06
         CREATE_TASK = "create_task", "Criar tarefa"
         # Tipos legados ainda suportados:
         NOTIFY_USER = "notify_user", "Notificar usuário (legado)"

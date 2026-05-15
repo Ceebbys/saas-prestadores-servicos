@@ -71,13 +71,32 @@ class ActionNodeCatalogTests(TestCase):
         self.assertIn("order", names)
         self.assertIn("is_active", names)
 
-    def test_action_type_enum_includes_8_types(self):
+    def test_action_type_enum_includes_all_types(self):
+        """RV06 — 10 tipos: 8 originais + send_proposal + send_contract."""
         entry = get_node_type("action")
         action_type_field = next(f for f in entry["data_fields"] if f["name"] == "action_type")
-        self.assertIn("create_lead", action_type_field["options"])
-        self.assertIn("update_pipeline", action_type_field["options"])
-        self.assertIn("send_email", action_type_field["options"])
-        self.assertEqual(len(action_type_field["options"]), 8)
+        # Os 8 originais
+        for t in ("create_lead", "update_pipeline", "apply_tag", "link_servico",
+                  "register_event", "send_email", "send_whatsapp", "create_task"):
+            self.assertIn(t, action_type_field["options"])
+        # RV06: 2 novos
+        self.assertIn("send_proposal", action_type_field["options"])
+        self.assertIn("send_contract", action_type_field["options"])
+        self.assertEqual(len(action_type_field["options"]), 10)
+
+    def test_data_fields_per_action_type_exists(self):
+        """RV06 — catálogo declara campos extras condicionais por action_type."""
+        entry = get_node_type("action")
+        per_type = entry.get("data_fields_per_action_type")
+        self.assertIsNotNone(per_type, "data_fields_per_action_type deve existir no catálogo")
+        # link_servico precisa de servico_id (item 1 da fatura)
+        link_fields = per_type.get("link_servico", [])
+        names = [f["name"] for f in link_fields]
+        self.assertIn("servico_id", names)
+        # send_proposal precisa de proposal_template_id
+        self.assertIn("proposal_template_id", [f["name"] for f in per_type.get("send_proposal", [])])
+        # send_contract precisa de contract_template_id
+        self.assertIn("contract_template_id", [f["name"] for f in per_type.get("send_contract", [])])
 
 
 class ActionNodeValidatorTests(TestCase):

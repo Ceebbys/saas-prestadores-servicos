@@ -328,3 +328,45 @@ class LeadContact(TenantOwnedModel):
 
     def __str__(self):
         return f"{self.lead.name} — {self.get_channel_display()} ({self.contacted_at:%d/%m/%Y %H:%M})"
+
+
+class LeadTag(TenantOwnedModel):
+    """Tag livre aplicada a um Lead (RV06 — automação 'apply_tag').
+
+    Modelo mínimo: nome livre + lead + empresa. Sem cores/categorias por enquanto
+    (escopo da iteração V2). Garante unicidade (empresa, lead, name) para evitar
+    duplicação quando a action `apply_tag` é executada múltiplas vezes.
+    """
+
+    lead = models.ForeignKey(
+        Lead,
+        on_delete=models.CASCADE,
+        related_name="tags_applied",
+        verbose_name="Lead",
+    )
+    name = models.CharField("Tag", max_length=40, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="lead_tags_created",
+        verbose_name="Criado por",
+    )
+
+    class Meta:
+        verbose_name = "Tag de Lead"
+        verbose_name_plural = "Tags de Leads"
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["empresa", "lead", "name"],
+                name="crm_leadtag_unique_per_lead",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["empresa", "name"]),
+        ]
+
+    def __str__(self):
+        return f"#{self.name} → {self.lead.name}"

@@ -192,49 +192,18 @@ def _validate_node_data(
         ))
 
     data = node.get("data") or {}
-    for field in catalog_entry.get("data_fields", []):
-        fname = field["name"]
-        required = field.get("required", False)
-        value = data.get(fname)
-        max_len = field.get("max_length") or field.get("max")
 
-        if required and (value is None or (isinstance(value, str) and not value.strip())):
-            errors.append(_err(
-                node["id"], f"data.{fname}",
-                f"Campo obrigatório '{field.get('label') or fname}' não preenchido.",
-                "REQUIRED_FIELD_EMPTY",
-            ))
-            continue
+    # Campos básicos (sempre validados)
+    _validate_fields(
+        node["id"], data, catalog_entry.get("data_fields", []), errors,
+    )
 
-        if isinstance(value, str) and max_len and len(value) > max_len:
-            errors.append(_err(
-                node["id"], f"data.{fname}",
-                f"Texto excede o limite de {max_len} caracteres.",
-                "FIELD_TOO_LONG",
-            ))
-
-        if field["type"] == "enum" and value and value not in field.get("options", []):
-            errors.append(_err(
-                node["id"], f"data.{fname}",
-                f"Valor '{value}' não está nas opções permitidas.",
-                "INVALID_ENUM_VALUE",
-            ))
-
-        if field["type"] == "array" and value is not None:
-            min_items = field.get("min_items", 0)
-            max_items = field.get("max_items", 9999)
-            if not isinstance(value, list) or len(value) < min_items:
-                errors.append(_err(
-                    node["id"], f"data.{fname}",
-                    f"Lista precisa de pelo menos {min_items} item(s).",
-                    "ARRAY_TOO_SHORT",
-                ))
-            elif len(value) > max_items:
-                errors.append(_err(
-                    node["id"], f"data.{fname}",
-                    f"Lista excede o limite de {max_items} item(s).",
-                    "ARRAY_TOO_LONG",
-                ))
+    # RV06 — Campos adicionais condicionais por action_type (apenas em node 'action')
+    if ntype == "action":
+        action_type = (data.get("action_type") or "").strip()
+        per_type = catalog_entry.get("data_fields_per_action_type") or {}
+        extra_fields = per_type.get(action_type, [])
+        _validate_fields(node["id"], data, extra_fields, errors)
 
     # Regras específicas por tipo
     if ntype == "menu":
@@ -245,6 +214,62 @@ def _validate_node_data(
         _validate_api_call_handles(node, graph, errors, flow=flow)
     elif ntype == "start":
         _validate_start(node, graph, errors)
+
+
+def _validate_fields(node_id: str, data: dict, fields: list, errors: list) -> None:
+    """Valida lista de field definitions contra `data`.
+
+    Reutilizado para data_fields básicos e data_fields_per_action_type.
+    Tipos suportados: string, text, integer, boolean, enum, array, select.
+    """
+    for field in fields:
+        fname = field["name"]
+        required = field.get("required", False)
+        value = data.get(fname)
+        max_len = field.get("max_length") or field.get("max")
+
+        if required and (value is None or (isinstance(value, str) and not value.strip())):
+            errors.append(_err(
+                node_id, f"data.{fname}",
+                f"Campo obrigatório '{field.get('label') or fname}' não preenchido.",
+                "REQUIRED_FIELD_EMPTY",
+            ))
+            continue
+
+        if isinstance(value, str) and max_len and len(value) > max_len:
+            errors.append(_err(
+                node_id, f"data.{fname}",
+                f"Texto excede o limite de {max_len} caracteres.",
+                "FIELD_TOO_LONG",
+            ))
+
+        if field["type"] == "enum" and value and value not in field.get("options", []):
+            errors.append(_err(
+                node_id, f"data.{fname}",
+                f"Valor '{value}' não está nas opções permitidas.",
+                "INVALID_ENUM_VALUE",
+            ))
+
+        if field["type"] == "array" and value is not None:
+            min_items = field.get("min_items", 0)
+            max_items = field.get("max_items", 9999)
+            if not isinstance(value, list) or len(value) < min_items:
+                errors.append(_err(
+                    node_id, f"data.{fname}",
+                    f"Lista precisa de pelo menos {min_items} item(s).",
+                    "ARRAY_TOO_SHORT",
+                ))
+            elif len(value) > max_items:
+                errors.append(_err(
+                    node_id, f"data.{fname}",
+                    f"Lista excede o limite de {max_items} item(s).",
+                    "ARRAY_TOO_LONG",
+                ))
+
+        # `select` é validado apenas em "preenchido se required"; a verificação
+        # de que o ID existe no tenant é feita no executor/handler (precisa de
+        # acesso ao DB e à empresa do flow — fora do escopo do validator
+        # estático).
 
 
 def _validate_menu_handles(node: dict, graph: dict, errors: list) -> None:

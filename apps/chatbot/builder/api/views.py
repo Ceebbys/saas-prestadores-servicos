@@ -370,3 +370,104 @@ def node_catalog_view(request: HttpRequest):
     if request.method != "GET":
         return JsonResponse({"error": "method_not_allowed"}, status=405)
     return JsonResponse(load_node_catalog())
+
+
+# ---------------------------------------------------------------------------
+# GET /api/chatbot/options/<key>/ — dropdown options para PropertiesPanel
+# ---------------------------------------------------------------------------
+
+
+@login_required
+@rate_limit_per_user(max_calls=120, window=60)
+def chatbot_options_view(request: HttpRequest, key: str):
+    """RV06 — Carrega options para selects dinâmicos do builder.
+
+    Usado por `data_fields_per_action_type` em node_catalog para popular
+    dropdowns de serviços, pipeline stages, proposal templates, etc.
+
+    Returns: {"options": [{"value": "1", "label": "Topografia"}, ...]}
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "method_not_allowed"}, status=405)
+
+    empresa = getattr(request, "empresa", None)
+    if empresa is None:
+        return JsonResponse({"error": "no_active_empresa"}, status=403)
+
+    loader = _OPTIONS_LOADERS.get(key)
+    if loader is None:
+        return JsonResponse(
+            {"error": "unknown_options_key", "key": key,
+             "available_keys": list(_OPTIONS_LOADERS.keys())},
+            status=404,
+        )
+    try:
+        options = loader(empresa)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Erro carregando options key=%s empresa=%s", key, empresa.pk)
+        return JsonResponse({"error": "load_failed", "detail": str(exc)[:200]}, status=500)
+    return JsonResponse({"options": options, "key": key})
+
+
+def _opts_services(empresa) -> list[dict]:
+    from apps.operations.models import ServiceType
+    qs = ServiceType.objects.filter(empresa=empresa, is_active=True).order_by("name")
+    return [
+        {
+            "value": str(s.pk),
+            "label": s.name,
+            "extra": {
+                "price": str(s.default_price),
+                "prazo_dias": s.default_prazo_dias,
+                "category": s.category,
+            },
+        }
+        for s in qs
+    ]
+
+
+def _opts_pipeline_stages(empresa) -> list[dict]:
+    from apps.crm.models import PipelineStage
+    qs = (
+        PipelineStage.objects
+        .filter(pipeline__empresa=empresa)
+        .select_related("pipeline")
+        .order_by("pipeline__name", "order")
+    )
+    return [
+        {"value": str(s.pk), "label": f"{s.pipeline.name} — {s.name}"}
+        for s in qs
+    ]
+
+
+def _opts_proposal_templates(empresa) -> list[dict]:
+    from apps.proposals.models import ProposalTemplate
+    qs = ProposalTemplate.objects.filter(empresa=empresa).order_by("name")
+    return [{"value": str(t.pk), "label": t.name} for t in qs]
+
+
+def _opts_contract_templates(empresa) -> list[dict]:
+    from apps.contracts.models import ContractTemplate
+    qs = ContractTemplate.objects.filter(empresa=empresa).order_by("name")
+    return [{"value": str(t.pk), "label": t.name} for t in qs]
+
+
+def _opts_tags(empresa) -> list[dict]:
+    """Tags já usadas no tenant (autocompletar). Sem dedupe via DISTINCT por simplicidade."""
+    from apps.crm.models import LeadTag
+    qs = (
+        LeadTag.objects.filter(empresa=empresa)
+        .values_list("name", flat=True)
+        .distinct()
+        .order_by("name")
+    )
+    return [{"value": name, "label": name} for name in qs[:100]]
+
+
+_OPTIONS_LOADERS = {
+    "services": _opts_services,
+    "pipeline_stages": _opts_pipeline_stages,
+    "proposal_templates": _opts_proposal_templates,
+    "contract_templates": _opts_contract_templates,
+    "tags": _opts_tags,
+}

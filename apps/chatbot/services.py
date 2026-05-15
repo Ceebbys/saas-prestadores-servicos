@@ -432,36 +432,33 @@ def _execute_step_actions(session: ChatbotSession, step) -> None:
 
 
 def _execute_action(action, session: ChatbotSession) -> None:
-    """Dispatcher central de tipos de ação.
+    """Dispatcher central de tipos de ação (motor V1 — legacy ChatbotAction).
 
-    A maioria dos tipos é placeholder hoje (logado como 'not yet implemented').
-    Foi expandido em RV05 para servir como ponto de extensão futuro.
-    Apenas CREATE_LEAD tem implementação real consolidada.
+    RV06 — todos os 10 tipos têm handler real em `action_handlers.dispatch_action`.
+    `action.config` carrega parâmetros específicos do tipo (servico_id, tag_name, etc.).
     """
-    t = action.action_type
-    if t == ChatbotAction.ActionType.CREATE_LEAD:
-        lead = _create_lead_action(session)
-        if lead:
-            session.lead = lead
-            session.save(update_fields=["lead", "updated_at"])
-        return
-
-    # Placeholders documentados — registrar como log para futura implementação
+    from apps.chatbot.action_handlers import dispatch_action
+    result = dispatch_action(
+        action.action_type, session, action.config or {},
+    )
     logger.info(
-        "ChatbotAction tipo '%s' ainda não implementado (action=%s, flow=%s)",
-        t, action.pk, session.flow_id,
+        "ChatbotAction executada: type=%s ok=%s msg=%s (action=%s, flow=%s)",
+        action.action_type, result["ok"], result.get("message", "")[:120],
+        action.pk, session.flow_id,
     )
 
 
 @transaction.atomic
 def _execute_flow_actions(session: ChatbotSession) -> int | None:
-    """Executa ações globais do fluxo (sem step vinculado, legado).
+    """Executa ações globais do fluxo (sem step vinculado, legado V1).
 
-    Filtra `step__isnull=True` para não rodar per-step actions duas vezes.
+    RV06 — usa `action_handlers.dispatch_action` para todos os tipos.
 
     Returns:
         PK do lead criado, se houver
     """
+    from apps.chatbot.action_handlers import dispatch_action
+
     lead_id = None
     actions = ChatbotAction.objects.filter(
         flow=session.flow,
@@ -470,21 +467,24 @@ def _execute_flow_actions(session: ChatbotSession) -> int | None:
         is_active=True,
     ).order_by("order", "id")
 
+    has_create_lead = False
     for action in actions:
+        result = dispatch_action(
+            action.action_type, session, action.config or {},
+        )
+        logger.info(
+            "Flow action '%s' result: ok=%s msg=%s (action=%s, flow=%s)",
+            action.action_type, result["ok"], result.get("message", "")[:120],
+            action.pk, session.flow.pk,
+        )
         if action.action_type == ChatbotAction.ActionType.CREATE_LEAD:
-            lead = _create_lead_action(session)
-            if lead:
-                lead_id = lead.pk
-                session.lead = lead
-                session.save(update_fields=["lead", "updated_at"])
-        else:
-            logger.info(
-                "Chatbot action type '%s' not yet implemented (flow=%s)",
-                action.action_type, session.flow.pk,
-            )
+            has_create_lead = True
+            extra = result.get("extra") or {}
+            if extra.get("lead_id"):
+                lead_id = extra["lead_id"]
 
-    # Se não há ação de create_lead mas tem dados, criar mesmo assim
-    if not actions.filter(action_type=ChatbotAction.ActionType.CREATE_LEAD).exists():
+    # Se não há ação de create_lead mas tem dados, criar mesmo assim (legacy compat)
+    if not has_create_lead:
         if session.lead_data.get("name") or session.lead_data.get("email"):
             lead = _create_lead_action(session)
             if lead:

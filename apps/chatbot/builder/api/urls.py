@@ -61,4 +61,11 @@ urlpatterns = [
         views.ApplyTemplateView.as_view(),
         name="builder_apply_template",
     ),
+    # RV06 — Options dinâmicas para dropdowns no PropertiesPanel
+    # Keys: services, pipeline_stages, proposal_templates, contract_templates, tags
+    path(
+        "options/<slug:key>/",
+        views.chatbot_options_view,
+        name="chatbot_options",
+    ),
 ]

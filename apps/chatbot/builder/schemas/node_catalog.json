@@ -162,6 +162,8 @@
            "register_event",
            "send_email",
            "send_whatsapp",
+           "send_proposal",
+           "send_contract",
            "create_task"
          ],
          "help": "Tipo de ação executada quando o fluxo chega neste bloco."},
@@ -169,7 +171,62 @@
          "help": "Ordem de execução (útil quando há múltiplas ações encadeadas)."},
         {"name": "is_active", "type": "boolean", "required": false, "default": true,
          "help": "Desligue para pular esta ação sem removê-la do fluxo."}
-      ]
+      ],
+      "data_fields_per_action_type": {
+        "create_lead": [],
+        "register_event": [
+          {"name": "event_name", "type": "string", "required": true, "max_length": 80,
+           "help": "Nome do evento a registrar no log de automação (ex.: 'cliente_qualificado')."}
+        ],
+        "update_pipeline": [
+          {"name": "pipeline_stage_id", "type": "select", "required": true,
+           "source": "pipeline_stages",
+           "help": "Etapa do pipeline onde mover o lead."}
+        ],
+        "apply_tag": [
+          {"name": "tag_name", "type": "string", "required": true, "max_length": 40,
+           "help": "Nome da tag a aplicar (ex.: 'qualificado', 'cliente-vip')."}
+        ],
+        "link_servico": [
+          {"name": "servico_id", "type": "select", "required": true,
+           "source": "services",
+           "help": "Serviço pré-fixado a vincular ao lead. Carrega nome, valor, descrição, prazo e modelos de proposta/contrato."}
+        ],
+        "send_email": [
+          {"name": "to", "type": "enum", "required": true, "default": "lead",
+           "options": ["lead", "admin", "custom"],
+           "help": "Destinatário: lead (e-mail coletado), admin (e-mail da empresa) ou custom (digitar abaixo)."},
+          {"name": "to_custom", "type": "string", "required": false, "max_length": 200,
+           "help": "E-mail específico (preencher só quando to=custom)."},
+          {"name": "subject", "type": "string", "required": true, "max_length": 200,
+           "help": "Assunto. Suporta {{ lead.name }}, {{ empresa.name }}."},
+          {"name": "body", "type": "text", "required": true, "max_length": 10000,
+           "help": "Corpo do e-mail. Suporta variáveis Jinja2."}
+        ],
+        "send_whatsapp": [
+          {"name": "text", "type": "text", "required": true, "max_length": 4000,
+           "help": "Mensagem a enviar. Suporta {{ lead.name }}, {{ empresa.name }}."}
+        ],
+        "send_proposal": [
+          {"name": "proposal_template_id", "type": "select", "required": false,
+           "source": "proposal_templates",
+           "help": "Template a usar caso precise criar nova proposta. Se vazio, usa o template padrão da empresa OU do serviço vinculado."},
+          {"name": "auto_create_if_missing", "type": "boolean", "required": false, "default": true,
+           "help": "Se não houver proposta para este lead, cria automaticamente via template."}
+        ],
+        "send_contract": [
+          {"name": "contract_template_id", "type": "select", "required": false,
+           "source": "contract_templates",
+           "help": "Template de contrato. Se vazio, usa o padrão da empresa OU do serviço vinculado."},
+          {"name": "auto_create_if_missing", "type": "boolean", "required": false, "default": true,
+           "help": "Se não houver contrato para este lead, cria automaticamente via template."}
+        ],
+        "create_task": [
+          {"name": "_unimplemented_warning", "type": "string", "required": false,
+           "default": "⚠️ Esta ação ainda não está disponível — disponível em versão futura.",
+           "help": "Ação placeholder. Ao executar, apenas loga e segue."}
+        ]
+      }
     },
     {
       "type": "handoff",

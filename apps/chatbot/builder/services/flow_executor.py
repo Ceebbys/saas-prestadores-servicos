@@ -324,11 +324,14 @@ def _advance_from_handle(graph: dict, node: dict, session: ChatbotSession, handl
 def _execute_action_node(node: dict, session: ChatbotSession) -> None:
     """Executa o nó visual `action` despachando por `action_type`.
 
-    Reusa a implementação legada de `_create_lead_action` (apps.chatbot.services)
-    para CREATE_LEAD — única ação totalmente implementada. Demais tipos viram
-    log estruturado em `ChatbotExecutionLog` (placeholder, igual ao motor v1).
-    Erros NÃO derrubam o fluxo: apenas log e segue para o próximo nó.
+    RV06 — usa `action_handlers.dispatch_action` (todos 10 tipos implementados).
+    `data` do node serve como `config` para o handler (servico_id, tag_name,
+    proposal_template_id, etc., conforme `data_fields_per_action_type`).
+
+    Erros NÃO derrubam o fluxo — `dispatch_action` captura internamente.
     """
+    from apps.chatbot.action_handlers import dispatch_action
+
     data = node.get("data") or {}
     action_type = (data.get("action_type") or "").strip()
     is_active = data.get("is_active", True)
@@ -345,59 +348,16 @@ def _execute_action_node(node: dict, session: ChatbotSession) -> None:
         "order": data.get("order", 0),
     })
 
-    try:
-        if action_type == "create_lead":
-            # Defensivo: precisa de pelo menos 1 sinal de identificação
-            # (name, email ou phone) em lead_data. Caso contrário cria lead
-            # vazio/anônimo que polui o CRM. Pula a ação com warning.
-            lead_data = session.lead_data or {}
-            has_identity = bool(
-                lead_data.get("name")
-                or lead_data.get("email")
-                or lead_data.get("phone")
-                or lead_data.get("cpf_cnpj")
-            )
-            if not has_identity:
-                _log(session, node["id"], "action_executed", "warning", {
-                    "action_type": "create_lead",
-                    "skipped": True,
-                    "reason": "no_identity_in_lead_data",
-                    "hint": "Posicione o bloco 'Criar lead' DEPOIS de pelo menos um Coletar dado ou Pergunta.",
-                })
-                logger.warning(
-                    "Action create_lead pulado em node %s (session=%s): "
-                    "lead_data sem name/email/phone/cpf_cnpj.",
-                    node["id"], session.session_key,
-                )
-            else:
-                from apps.chatbot.services import _create_lead_action
-                lead = _create_lead_action(session)
-                if lead:
-                    session.lead = lead
-                    session.save(update_fields=["lead", "updated_at"])
-                    _log(session, node["id"], "action_executed", "info", {
-                        "action_type": "create_lead",
-                        "lead_id": lead.pk,
-                    })
-        else:
-            # Placeholders — log "not yet implemented" (consistente com v1)
-            logger.info(
-                "Action node %s tipo '%s' ainda não implementado (flow=%s, session=%s)",
-                node["id"], action_type, session.flow_id, session.session_key,
-            )
-            _log(session, node["id"], "action_executed", "warning", {
-                "action_type": action_type,
-                "not_implemented": True,
-            })
-    except Exception:
-        logger.exception(
-            "Erro ao executar action node %s (tipo=%s, session=%s) — continuando",
-            node["id"], action_type, session.session_key,
-        )
-        _log(session, node["id"], "error", "error", {
-            "action_type": action_type,
-            "reason": "action_execution_failed",
-        })
+    # `data` inteiro é passado como config — inclui campos por action_type
+    # (servico_id, tag_name, pipeline_stage_id, subject/body, proposal_template_id, etc.)
+    result = dispatch_action(action_type, session, data)
+    level = "info" if result.get("ok") else "warning"
+    _log(session, node["id"], "action_executed", level, {
+        "action_type": action_type,
+        "ok": result.get("ok"),
+        "message": result.get("message", "")[:200],
+        **(result.get("extra") or {}),
+    })
 
 
 def _execute_api_call(node: dict, session: ChatbotSession) -> bool:

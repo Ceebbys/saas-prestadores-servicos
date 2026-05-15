@@ -1,3 +1,4 @@
+import uuid
 from decimal import Decimal
 
 from django.db import models
@@ -156,6 +157,23 @@ class Contract(SoftDeletableModel, TenantOwnedModel):
     end_date = models.DateField("Data de Término", null=True, blank=True)
     signed_at = models.DateTimeField("Assinado em", null=True, blank=True)
     notes = models.TextField("Observações", blank=True)
+
+    # RV06 — Envio por WhatsApp (link público) + tracking
+    public_token = models.UUIDField(
+        "Token público",
+        unique=True,
+        db_index=True,
+        default=uuid.uuid4,
+        editable=False,
+        help_text="UUID para URL pública /c/<token>/ (envio por WhatsApp).",
+    )
+    last_whatsapp_sent_at = models.DateTimeField(
+        "Último envio WhatsApp", null=True, blank=True, editable=False,
+    )
+    sent_at = models.DateTimeField(
+        "Enviado em", null=True, blank=True, editable=False,
+        help_text="Timestamp do primeiro envio (qualquer canal).",
+    )
 
     class Meta:
         verbose_name = "Contrato"

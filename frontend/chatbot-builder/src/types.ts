@@ -120,7 +120,9 @@ export interface BuilderConfig {
 // Catálogo de tipos de bloco (mirror de node_catalog.json)
 export interface NodeCatalogField {
   name: string;
-  type: "string" | "text" | "integer" | "boolean" | "enum" | "array";
+  // RV06 — tipo `select` é dropdown dinâmico carregado de
+  // GET /api/chatbot/options/<source>/ (services, pipeline_stages, etc.)
+  type: "string" | "text" | "integer" | "boolean" | "enum" | "array" | "select";
   required?: boolean;
   default?: unknown;
   max_length?: number;
@@ -129,6 +131,8 @@ export interface NodeCatalogField {
   min_items?: number;
   max_items?: number;
   options?: string[];
+  /** RV06: chave do endpoint /api/chatbot/options/<source>/ para popular select. */
+  source?: string;
   help?: string;
   label?: string;
   item_schema?: Record<string, unknown>;
@@ -150,6 +154,20 @@ export interface NodeCatalogEntry {
   max_per_graph?: number;
   min_per_graph?: number;
   data_fields: NodeCatalogField[];
+  /** RV06 — Campos adicionais condicionais por action_type (apenas para node tipo "action"). */
+  data_fields_per_action_type?: Record<string, NodeCatalogField[]>;
+}
+
+// RV06 — Resposta do endpoint /api/chatbot/options/<key>/
+export interface OptionItem {
+  value: string;
+  label: string;
+  extra?: Record<string, unknown>;
+}
+
+export interface OptionsResponse {
+  options: OptionItem[];
+  key: string;
 }
 
 export interface NodeCatalog {
