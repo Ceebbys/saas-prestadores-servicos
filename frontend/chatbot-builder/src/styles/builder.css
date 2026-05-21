@@ -788,3 +788,38 @@ body {
 .validation-trigger__badge--warning { background: #d97706; }
 .validation-trigger--has-errors { border-color: #fecaca; color: #991b1b; }
 .validation-trigger--has-warnings { color: #92400e; }
+
+/* -------- RV06 — Preview do item selecionado em DynamicSelect -------- */
+.select-preview {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: #f1f5f9;
+  border: 1px solid var(--slate-200);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.select-preview__title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--slate-500);
+  margin-bottom: 6px;
+}
+.select-preview__list { margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.select-preview__row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px;
+  align-items: start;
+}
+.select-preview__row dt {
+  font-weight: 600;
+  color: var(--slate-600);
+  margin: 0;
+}
+.select-preview__row dd {
+  margin: 0;
+  color: var(--slate-900);
+  word-break: break-word;
+}

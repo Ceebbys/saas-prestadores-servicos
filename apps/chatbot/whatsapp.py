@@ -195,6 +195,39 @@ class EvolutionAPIClient:
             "apikey": self.api_key,
         }
 
+    def fetch_instance_state(self) -> tuple[str, str]:
+        """RV06 — Consulta o estado da instância na Evolution API.
+
+        Returns:
+            (state, error). state ∈ {"open", "connecting", "close", "unknown"}.
+            Quando há erro de rede/auth/etc, retorna ("unknown", error_msg).
+            Usado por send_proposal_whatsapp/send_contract_whatsapp como
+            pré-check, garantindo mensagem de erro precisa antes mesmo
+            de tentar enviar.
+        """
+        if not self.configured:
+            return "unknown", "Evolution API não configurada"
+        try:
+            import httpx
+            url = f"{self.api_url}/instance/connectionState/{self.instance}"
+            resp = httpx.get(url, headers=self._headers(), timeout=8.0)
+            if resp.status_code == 401:
+                return "unknown", "401 unauthorized"
+            if resp.status_code == 404:
+                return "unknown", "404 instance not found"
+            if resp.status_code >= 400:
+                return "unknown", f"HTTP {resp.status_code}: {resp.text[:150]}"
+            data = resp.json()
+            # Evolution v1: {"instance": {"state": "open"}} ou {"state": "open"}
+            state = (
+                (data.get("instance") or {}).get("state")
+                or data.get("state")
+                or "unknown"
+            )
+            return str(state).lower(), ""
+        except Exception as exc:  # noqa: BLE001
+            return "unknown", f"network/parse error: {exc!r}"[:200]
+
     def send_text(self, phone: str, text: str) -> bool:
         """Envia mensagem de texto simples."""
         if not self.configured:

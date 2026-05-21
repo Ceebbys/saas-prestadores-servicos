@@ -5,7 +5,7 @@ no Windows (limitação de ambiente dev — em produção Linux funciona normalm
 """
 import uuid
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from django.core import mail
 from django.test import TestCase
@@ -95,6 +95,9 @@ class WhatsAppServiceTests(TestCase):
     def test_attachment_path_marks_sent(self, _mock_pdf):
         p = _proposal(self.empresa, status=Proposal.Status.DRAFT)
         with patch(
+            "apps.proposals.services.whatsapp.EvolutionAPIClient.fetch_instance_state",
+            return_value=("open", ""),
+        ), patch(
             "apps.proposals.services.whatsapp.EvolutionAPIClient.send_media",
             return_value=(True, ""),
         ):
@@ -108,6 +111,9 @@ class WhatsAppServiceTests(TestCase):
     def test_attachment_failure_falls_back_to_link(self, _mock_pdf):
         p = _proposal(self.empresa, status=Proposal.Status.DRAFT)
         with patch(
+            "apps.proposals.services.whatsapp.EvolutionAPIClient.fetch_instance_state",
+            return_value=("open", ""),
+        ), patch(
             "apps.proposals.services.whatsapp.EvolutionAPIClient.send_media",
             return_value=(False, "API down"),
         ), patch(
@@ -123,6 +129,9 @@ class WhatsAppServiceTests(TestCase):
     def test_both_failing_returns_failed(self, _mock_pdf):
         p = _proposal(self.empresa)
         with patch(
+            "apps.proposals.services.whatsapp.EvolutionAPIClient.fetch_instance_state",
+            return_value=("open", ""),
+        ), patch(
             "apps.proposals.services.whatsapp.EvolutionAPIClient.send_media",
             return_value=(False, "boom"),
         ), patch(
@@ -133,6 +142,25 @@ class WhatsAppServiceTests(TestCase):
         self.assertFalse(ok)
         self.assertEqual(mode, "failed")
         self.assertIn("Copie", msg)
+
+    def test_pre_check_skips_send_when_disconnected(self, _mock_pdf):
+        """RV06 Hotfix — quando instância está 'close'/'connecting', falha
+        imediato com diagnóstico específico e SEM tentar send_media."""
+        p = _proposal(self.empresa)
+        send_media_mock = MagicMock()
+        with patch(
+            "apps.proposals.services.whatsapp.EvolutionAPIClient.fetch_instance_state",
+            return_value=("close", ""),
+        ), patch(
+            "apps.proposals.services.whatsapp.EvolutionAPIClient.send_media",
+            send_media_mock,
+        ):
+            ok, mode, msg = send_proposal_whatsapp(p, to_phone="11999999999")
+        self.assertFalse(ok)
+        self.assertEqual(mode, "failed")
+        self.assertIn("não está conectado", msg.lower())
+        self.assertIn("parea", msg.lower())
+        send_media_mock.assert_not_called()
 
 
 class PublicViewTests(TestCase):

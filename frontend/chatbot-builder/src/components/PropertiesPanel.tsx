@@ -272,6 +272,11 @@ function DynamicSelect({
     return () => { alive = false; };
   }, [field.source, fetchOptions]);
 
+  // RV06 — Quando há valor selecionado, mostra preview dos `extra` (nome,
+  // valor, descrição, prazo, modelo). Atende o item 1 da fatura RV06.
+  const selected = opts.find((o) => o.value === (value as string));
+  const extras = selected?.extra as Record<string, unknown> | undefined;
+
   return (
     <div className="field">
       <label htmlFor={id}>{labelize(field)}</label>
@@ -295,6 +300,68 @@ function DynamicSelect({
         </p>
       )}
       {field.help && <p className="field__help">{field.help}</p>}
+      {extras && Object.keys(extras).length > 0 && (
+        <SelectedOptionPreview extras={extras} />
+      )}
+    </div>
+  );
+}
+
+
+/**
+ * Card de preview mostrando os campos extras do item selecionado.
+ * Atende o pedido do cliente (RV06 Item 1): ao selecionar um serviço,
+ * mostrar nome, valor, descrição, prazo e modelo relacionado.
+ */
+function SelectedOptionPreview({ extras }: { extras: Record<string, unknown> }) {
+  const fmt = (k: string, v: unknown): { label: string; value: string } | null => {
+    if (v == null || v === "") return null;
+    const text = String(v);
+    switch (k) {
+      case "price":
+        return {
+          label: "Valor",
+          value: text.startsWith("R$") ? text : `R$ ${text}`,
+        };
+      case "prazo_dias":
+        return { label: "Prazo", value: `${text} dia(s)` };
+      case "category":
+        return { label: "Categoria", value: text };
+      case "description":
+      case "default_description":
+        return { label: "Descrição", value: text };
+      case "proposal_template_id":
+        return { label: "Modelo de proposta", value: `#${text}` };
+      case "contract_template_id":
+        return { label: "Modelo de contrato", value: `#${text}` };
+      default:
+        return null;
+    }
+  };
+
+  // Dedupe description/default_description (preferir default se ambos)
+  const filtered = { ...extras };
+  if (filtered.default_description && filtered.description) {
+    delete filtered.description;
+  }
+
+  const rows = Object.entries(filtered)
+    .map(([k, v]) => fmt(k, v))
+    .filter((r): r is { label: string; value: string } => r !== null);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="select-preview">
+      <div className="select-preview__title">Dados carregados</div>
+      <dl className="select-preview__list">
+        {rows.map((r, i) => (
+          <div key={i} className="select-preview__row">
+            <dt>{r.label}</dt>
+            <dd>{r.value}</dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }

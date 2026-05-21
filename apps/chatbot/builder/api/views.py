@@ -410,6 +410,12 @@ def chatbot_options_view(request: HttpRequest, key: str):
 
 
 def _opts_services(empresa) -> list[dict]:
+    """RV06 — Lista serviços com os 5 campos pedidos na fatura:
+    nome (label), valor (default_price), descrição (default_description),
+    prazo (default_prazo_dias), modelo relacionado (default_proposal_template_id
+    + default_contract_template_id). O PropertiesPanel exibe esses dados
+    quando o usuário escolhe um serviço no dropdown.
+    """
     from apps.operations.models import ServiceType
     qs = ServiceType.objects.filter(empresa=empresa, is_active=True).order_by("name")
     return [
@@ -420,6 +426,10 @@ def _opts_services(empresa) -> list[dict]:
                 "price": str(s.default_price),
                 "prazo_dias": s.default_prazo_dias,
                 "category": s.category,
+                "description": s.description or "",
+                "default_description": s.default_description or "",
+                "proposal_template_id": s.default_proposal_template_id,
+                "contract_template_id": s.default_contract_template_id,
             },
         }
         for s in qs

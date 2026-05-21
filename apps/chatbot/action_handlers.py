@@ -144,14 +144,20 @@ def _handle_link_servico(session: "ChatbotSession", config: dict) -> dict:
     # Grava em session.lead_data (usado por create_lead_from_chatbot)
     lead_data = dict(session.lead_data or {})
     lead_data["servico_id"] = servico.pk
-    # Snapshot dos campos do serviço (útil para próximas ações: send_proposal)
+    # RV06 — Snapshot completo do serviço (5 campos pedidos na fatura:
+    # nome, valor, descrição, prazo, modelo relacionado). Usado por
+    # próximas ações (send_proposal/send_contract) E pelo create_lead.
     lead_data["servico_snapshot"] = {
         "id": servico.pk,
         "name": servico.name,
+        "description": servico.description or "",
+        "default_description": servico.default_description or "",
         "default_price": str(servico.default_price),
         "default_prazo_dias": servico.default_prazo_dias,
         "default_proposal_template_id": servico.default_proposal_template_id,
         "default_contract_template_id": servico.default_contract_template_id,
+        "default_pipeline_id": servico.default_pipeline_id,
+        "default_stage_id": servico.default_stage_id,
     }
     session.lead_data = lead_data
     session.save(update_fields=["lead_data", "updated_at"])

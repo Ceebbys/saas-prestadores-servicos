@@ -88,6 +88,29 @@ def send_proposal_whatsapp(
     custom_msg = (message or "").strip()
     public_url = _build_public_link(proposal, request)
 
+    # RV06 — Pré-check do estado da instância. Se ela não está conectada,
+    # falha imediato com diagnóstico ESPECÍFICO em vez de tentar e cair
+    # no fallback genérico. Cobre 90% dos casos reais reportados pelo cliente.
+    state, state_err = client.fetch_instance_state()
+    logger.info(
+        "send_proposal_whatsapp pre_check proposal=%s state=%s err=%s",
+        proposal.pk, state, state_err,
+    )
+    if state not in ("open", "unknown"):
+        # state="connecting" ou "close" — instância existe mas não está pareada
+        return False, "failed", (
+            f"WhatsApp não está conectado (estado: {state}). "
+            "Abra o painel da Evolution e parea o QR code novamente. "
+            f"Enquanto isso, envie manualmente: {public_url}"
+        )
+    if state == "unknown" and state_err:
+        # Erro consultando estado — é o melhor indício do problema real
+        diagnosis = _diagnose_failure(state_err)
+        return False, "failed", (
+            f"Não foi possível verificar o WhatsApp da empresa. {diagnosis} "
+            f"Envie manualmente enquanto resolve: {public_url}"
+        )
+
     # 1) Tentativa: anexar PDF
     pdf_size_kb = None
     media_err: str = ""

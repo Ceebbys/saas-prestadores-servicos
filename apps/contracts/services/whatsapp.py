@@ -74,6 +74,26 @@ def send_contract_whatsapp(
     public_url = _build_public_link(contract, request)
     media_err = ""
 
+    # RV06 — Pré-check do estado da instância (consistente com proposals).
+    state, state_err = client.fetch_instance_state()
+    logger.info(
+        "send_contract_whatsapp pre_check contract=%s state=%s err=%s",
+        contract.pk, state, state_err,
+    )
+    if state not in ("open", "unknown"):
+        return False, "failed", (
+            f"WhatsApp não está conectado (estado: {state}). "
+            "Abra o painel da Evolution e parea o QR code novamente. "
+            f"Enquanto isso, envie manualmente: {public_url}"
+        )
+    if state == "unknown" and state_err:
+        from apps.proposals.services.whatsapp import _diagnose_failure
+        diagnosis = _diagnose_failure(state_err)
+        return False, "failed", (
+            f"Não foi possível verificar o WhatsApp da empresa. {diagnosis} "
+            f"Envie manualmente enquanto resolve: {public_url}"
+        )
+
     # 1) Tentativa: anexar PDF
     try:
         pdf_bytes = render_contract_pdf(contract, request=request)
