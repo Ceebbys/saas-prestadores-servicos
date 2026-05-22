@@ -211,8 +211,49 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
       metadata: {
         exported_at: new Date().toISOString(),
       },
-      nodes: state.nodes,
-      edges: state.edges,
+      nodes: state.nodes.map(_sanitizeNodeForSave),
+      edges: state.edges.map(_sanitizeEdgeForSave),
     };
   },
 }));
+
+
+/**
+ * RV06 Hotfix — Remove campos transitórios injetados pelo React Flow
+ * (className, measured, selectable, connectable, deletable, draggable,
+ * focusable, parentId, expandParent, extent, zIndex, sourcePosition,
+ * targetPosition, hidden, ariaLabel, handleBounds). O JSON Schema do
+ * graph_v1 tem `additionalProperties: false` em nodes, então qualquer
+ * extra causa erro "Estrutura inválida". Mantemos apenas o whitelist
+ * do schema: id, type, position, data, width, height, selected,
+ * dragging, positionAbsolute.
+ */
+function _sanitizeNodeForSave(n: GraphNode): GraphNode {
+  const out: any = {
+    id: n.id,
+    type: n.type,
+    position: n.position,
+    data: n.data ?? {},
+  };
+  if ((n as any).width != null) out.width = (n as any).width;
+  if ((n as any).height != null) out.height = (n as any).height;
+  if ((n as any).positionAbsolute) out.positionAbsolute = (n as any).positionAbsolute;
+  return out as GraphNode;
+}
+
+function _sanitizeEdgeForSave(e: GraphEdge): GraphEdge {
+  // Whitelist do schema: id, source, target, sourceHandle, targetHandle,
+  // label, type, animated, data
+  const out: any = {
+    id: e.id,
+    source: e.source,
+    target: e.target,
+  };
+  if ((e as any).sourceHandle != null) out.sourceHandle = (e as any).sourceHandle;
+  if ((e as any).targetHandle != null) out.targetHandle = (e as any).targetHandle;
+  if ((e as any).label != null) out.label = (e as any).label;
+  if ((e as any).type != null) out.type = (e as any).type;
+  if ((e as any).animated != null) out.animated = (e as any).animated;
+  if ((e as any).data != null) out.data = (e as any).data;
+  return out as GraphEdge;
+}

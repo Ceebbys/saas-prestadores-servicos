@@ -135,3 +135,65 @@ def outbound_handles_of(graph: dict, node_id: str) -> set[str]:
         for e in graph.get("edges", [])
         if e.get("source") == node_id
     }
+
+
+# ---------------------------------------------------------------------------
+# RV06 Hotfix — Sanitização defensiva contra extras do React Flow
+# ---------------------------------------------------------------------------
+
+# Whitelist do schema graph_v1.json para nodes
+_ALLOWED_NODE_KEYS = frozenset({
+    "id", "type", "position", "data",
+    "width", "height", "selected", "dragging", "positionAbsolute",
+})
+
+# Whitelist do schema graph_v1.json para edges
+_ALLOWED_EDGE_KEYS = frozenset({
+    "id", "source", "target", "sourceHandle", "targetHandle",
+    "label", "type", "animated", "data", "style", "selected",
+    "markerEnd", "markerStart",
+})
+
+# Whitelist para position
+_ALLOWED_POSITION_KEYS = frozenset({"x", "y"})
+
+
+def sanitize_graph_for_storage(graph: dict) -> dict:
+    """RV06 Hotfix — Remove campos transitórios injetados pelo React Flow
+    antes de gravar no banco / validar contra o schema.
+
+    O React Flow adiciona automaticamente em cada node: `className`,
+    `measured`, `selectable`, `connectable`, `deletable`, `draggable`,
+    `focusable`, `parentId`, `expandParent`, `extent`, `zIndex`,
+    `sourcePosition`, `targetPosition`, `hidden`, `ariaLabel`,
+    `handleBounds`. Esses campos quebram o `additionalProperties: false`
+    do schema graph_v1.
+
+    Mantém apenas o whitelist do schema. Aplicado em:
+    - GraphSaveView (POST /save/) — para fluxos novos
+    - GraphValidateView (POST /validate/) — para fluxos legacy que
+      já tinham lixo salvo no banco antes desta correção.
+
+    Não muta o `graph` original.
+    """
+    if not isinstance(graph, dict):
+        return graph
+    sanitized = dict(graph)
+    nodes_in = graph.get("nodes") or []
+    edges_in = graph.get("edges") or []
+    sanitized["nodes"] = [_sanitize_node(n) for n in nodes_in if isinstance(n, dict)]
+    sanitized["edges"] = [_sanitize_edge(e) for e in edges_in if isinstance(e, dict)]
+    return sanitized
+
+
+def _sanitize_node(node: dict) -> dict:
+    out = {k: v for k, v in node.items() if k in _ALLOWED_NODE_KEYS}
+    # Sanitize nested position (não permite x/y extras)
+    pos = out.get("position")
+    if isinstance(pos, dict):
+        out["position"] = {k: v for k, v in pos.items() if k in _ALLOWED_POSITION_KEYS}
+    return out
+
+
+def _sanitize_edge(edge: dict) -> dict:
+    return {k: v for k, v in edge.items() if k in _ALLOWED_EDGE_KEYS}

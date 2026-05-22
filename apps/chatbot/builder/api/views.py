@@ -99,6 +99,8 @@ class GraphSaveView(BuilderAPIView):
     """Salva (autosave) o graph atual no draft."""
 
     def post(self, request: HttpRequest, pk: int):
+        from apps.chatbot.builder.services.graph_utils import sanitize_graph_for_storage
+
         body = self.json_body(request)
         if isinstance(body, JsonResponse):
             return body
@@ -111,6 +113,11 @@ class GraphSaveView(BuilderAPIView):
             return JsonResponse({"error": "too_many_nodes"}, status=422)
         if len(graph.get("edges", [])) > settings.CHATBOT_BUILDER_MAX_EDGES:
             return JsonResponse({"error": "too_many_edges"}, status=422)
+
+        # RV06 Hotfix — sanitiza extras do React Flow (className, measured, etc)
+        # antes de gravar. Sem isso, o validator depois rejeita com
+        # "Additional properties are not allowed".
+        graph = sanitize_graph_for_storage(graph)
 
         draft = _get_or_create_draft(self.flow, request.user)
         draft.graph_json = graph
@@ -136,11 +143,27 @@ class GraphValidateView(BuilderAPIView):
     """Roda validate_graph no draft. Salva resultado em validation_errors."""
 
     def post(self, request: HttpRequest, pk: int):
+        from apps.chatbot.builder.services.graph_utils import sanitize_graph_for_storage
+
         draft = _get_or_create_draft(self.flow, request.user)
-        result = validate_graph(draft.graph_json, flow=self.flow)
+        # RV06 Hotfix — fluxos legacy gravados antes do save sanitizar podem
+        # ter className/measured do React Flow. Limpa em-memória ANTES de
+        # validar, e re-persiste limpo se houve mudança.
+        original = draft.graph_json or {}
+        sanitized = sanitize_graph_for_storage(original)
+        if sanitized != original:
+            draft.graph_json = sanitized
+            logger.info(
+                "GraphValidateView: sanitized %s nodes / %s edges (removed RF extras)",
+                len(sanitized.get("nodes", [])),
+                len(sanitized.get("edges", [])),
+            )
+        result = validate_graph(sanitized, flow=self.flow)
         draft.validation_errors = result["errors"]
         draft.validated_at = timezone.now()
-        draft.save(update_fields=["validation_errors", "validated_at", "updated_at"])
+        draft.save(update_fields=[
+            "graph_json", "validation_errors", "validated_at", "updated_at",
+        ])
         return JsonResponse({
             "valid": result["valid"],
             "errors": result["errors"],
@@ -165,9 +188,17 @@ class GraphPublishView(BuilderAPIView):
     """
 
     def post(self, request: HttpRequest, pk: int):
+        from apps.chatbot.builder.services.graph_utils import sanitize_graph_for_storage
+
         draft = _get_or_create_draft(self.flow, request.user)
+        # RV06 Hotfix — sanea extras do React Flow no draft antes de validar.
+        # Trata draft legacy que pode ter sido salvo com lixo.
+        sanitized = sanitize_graph_for_storage(draft.graph_json or {})
+        if sanitized != draft.graph_json:
+            draft.graph_json = sanitized
+            draft.save(update_fields=["graph_json", "updated_at"])
         # Re-valida no momento do publish (defesa)
-        result = validate_graph(draft.graph_json, flow=self.flow)
+        result = validate_graph(sanitized, flow=self.flow)
         if not result["valid"]:
             return JsonResponse({
                 "error": "invalid_graph",
@@ -191,7 +222,7 @@ class GraphPublishView(BuilderAPIView):
             now = timezone.now()
             published = ChatbotFlowVersion.objects.create(
                 flow=flow_locked,
-                graph_json=draft.graph_json,
+                graph_json=sanitized,
                 schema_version=draft.schema_version,
                 validation_errors=[],
                 validated_at=now,
