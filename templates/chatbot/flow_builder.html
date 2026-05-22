@@ -51,7 +51,7 @@
 {% block content %}
 <div id="chatbot-builder-root"
      data-flow-id="{{ flow.pk }}"
-     data-flow-name="{{ flow.name|escapejs }}"
+     data-flow-name="{{ flow.name }}"
      data-csrf-token="{{ csrf_token }}"
      data-graph-endpoint="{% url 'chatbot:builder_graph' flow.pk %}"
      data-save-endpoint="{% url 'chatbot:builder_save' flow.pk %}"

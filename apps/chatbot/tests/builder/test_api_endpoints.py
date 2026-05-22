@@ -194,6 +194,28 @@ class BuilderInitTests(TestCase):
         self.assertEqual(resp2.status_code, 200)
         self.assertFalse(resp2.json()["created"])
 
+    def test_graph_endpoint_auto_converts_legacy_when_no_draft(self):
+        """RV06 Hotfix: ao acessar /builder/ diretamente (sem passar pelo
+        /init/), o GET do graph deve criar um draft já convertido do legacy
+        em vez de retornar EMPTY_GRAPH."""
+        # Garante que NÃO existe draft ainda
+        ChatbotFlowVersion.objects.filter(flow=self.flow).delete()
+        self.assertFalse(
+            ChatbotFlowVersion.objects.filter(flow=self.flow).exists(),
+        )
+        url = reverse("chatbot:builder_graph", args=[self.flow.pk])
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        # Draft foi criado E tem nodes convertidos (não está vazio)
+        types = [n["type"] for n in data["graph"]["nodes"]]
+        self.assertIn("question", types,
+            f"Draft deveria ter sido convertido do legacy. Got: {types}")
+        self.assertGreater(
+            len(data["graph"]["nodes"]), 1,
+            "Esperava mais de 1 node (start + steps legacy)",
+        )
+
 
 class NodeCatalogTests(TestCase):
     def setUp(self):

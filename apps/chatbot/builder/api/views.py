@@ -47,17 +47,40 @@ _EMPTY_GRAPH = {
 
 
 def _get_or_create_draft(flow: ChatbotFlow, user) -> ChatbotFlowVersion:
-    """Retorna a versão draft do flow. Se não existir, cria vazia."""
+    """Retorna a versão draft do flow.
+
+    RV06 — Bug reportado: ao abrir o construtor visual de um fluxo que JÁ tem
+    etapas configuradas no editor legacy (ChatbotStep + ChatbotChoice), o
+    canvas aparecia vazio (só o bloco 'Início' sintético). Causa: criava
+    draft com `_EMPTY_GRAPH` em vez de converter o legacy.
+
+    Agora: se o flow tem ChatbotStep configurado, converte legacy → graph
+    automaticamente. Senão (fluxo novo, sem legacy), cria com EMPTY_GRAPH.
+
+    Idempotente: se já existe draft, retorna o existente sem mexer.
+    """
     draft = (
         ChatbotFlowVersion.objects.filter(flow=flow, status=ChatbotFlowVersion.Status.DRAFT)
         .order_by("-numero")
         .first()
     )
     if draft is None:
+        # Sem draft ainda: se o flow tem legacy preenchido, converte
+        from apps.chatbot.models import ChatbotStep
+        has_legacy_steps = ChatbotStep.objects.filter(flow=flow).exists()
+        if has_legacy_steps:
+            initial_graph = convert_legacy_flow_to_graph(flow)
+            logger.info(
+                "_get_or_create_draft: convertendo legacy → graph (flow=%s, steps=%s)",
+                flow.pk,
+                ChatbotStep.objects.filter(flow=flow).count(),
+            )
+        else:
+            initial_graph = _EMPTY_GRAPH
         draft = ChatbotFlowVersion.objects.create(
             flow=flow,
             status=ChatbotFlowVersion.Status.DRAFT,
-            graph_json=_EMPTY_GRAPH,
+            graph_json=initial_graph,
             created_by=user if user and user.is_authenticated else None,
         )
     return draft
