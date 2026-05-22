@@ -105,3 +105,91 @@ class LegacyEditReadOnlyTests(TestCase):
         # Como flow.use_visual_builder=False, guard retorna None imediatamente
         # antes de tocar request → não levanta
         self.assertIsNone(result)
+
+
+class FlowMigrateToVisualTests(TestCase):
+    """Onda 1 — Botão 'Migrar para construtor visual' no editor legacy."""
+
+    def setUp(self):
+        self.empresa = create_test_empresa(slug="migrate-test")
+        self.user = create_test_user("mig@t.com", "MIG", self.empresa)
+        self.client.force_login(self.user)
+        self.flow = ChatbotFlow.objects.create(
+            empresa=self.empresa, name="Test Migration", channel="whatsapp",
+            is_active=True, use_visual_builder=False,
+        )
+
+    def test_migration_with_legacy_steps_converts_to_draft(self):
+        """Flow com etapas legacy: convertidas para graph_json no draft."""
+        ChatbotStep.objects.create(
+            flow=self.flow, order=0,
+            question_text="Qual seu nome?", step_type="name",
+        )
+        ChatbotStep.objects.create(
+            flow=self.flow, order=1,
+            question_text="Qual seu e-mail?", step_type="email",
+        )
+        url = reverse("chatbot:flow_migrate_to_visual", args=[self.flow.pk])
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/builder/", resp.url)
+
+        self.flow.refresh_from_db()
+        self.assertTrue(self.flow.use_visual_builder)
+
+        from apps.chatbot.models import ChatbotFlowVersion
+        draft = ChatbotFlowVersion.objects.filter(
+            flow=self.flow, status=ChatbotFlowVersion.Status.DRAFT,
+        ).first()
+        self.assertIsNotNone(draft)
+        types = [n["type"] for n in draft.graph_json["nodes"]]
+        # Esperado: start + 2 question/collect_data + (talvez end)
+        self.assertIn("start", types)
+        self.assertGreater(len(draft.graph_json["nodes"]), 1)
+
+    def test_migration_without_legacy_creates_empty_canvas(self):
+        """Flow sem etapas legacy: cria draft com apenas o bloco 'Início'."""
+        url = reverse("chatbot:flow_migrate_to_visual", args=[self.flow.pk])
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 302)
+
+        self.flow.refresh_from_db()
+        self.assertTrue(self.flow.use_visual_builder)
+
+        from apps.chatbot.models import ChatbotFlowVersion
+        draft = ChatbotFlowVersion.objects.get(
+            flow=self.flow, status=ChatbotFlowVersion.Status.DRAFT,
+        )
+        types = [n["type"] for n in draft.graph_json["nodes"]]
+        self.assertEqual(types, ["start"])
+
+    def test_migration_is_idempotent(self):
+        """Chamar 2x: 2ª vez apenas redireciona (info message)."""
+        url = reverse("chatbot:flow_migrate_to_visual", args=[self.flow.pk])
+        self.client.post(url)
+        from apps.chatbot.models import ChatbotFlowVersion
+        n_drafts_after_first = ChatbotFlowVersion.objects.filter(
+            flow=self.flow, status=ChatbotFlowVersion.Status.DRAFT,
+        ).count()
+
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 302)
+        # Não cria 2º draft
+        self.assertEqual(
+            ChatbotFlowVersion.objects.filter(
+                flow=self.flow, status=ChatbotFlowVersion.Status.DRAFT,
+            ).count(),
+            n_drafts_after_first,
+        )
+
+    def test_migration_cross_tenant_blocked(self):
+        """User não pode migrar fluxo de outra empresa."""
+        other = create_test_empresa(slug="migrate-other")
+        other_flow = ChatbotFlow.objects.create(
+            empresa=other, name="Outro", channel="whatsapp",
+        )
+        url = reverse("chatbot:flow_migrate_to_visual", args=[other_flow.pk])
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 404)
+        other_flow.refresh_from_db()
+        self.assertFalse(other_flow.use_visual_builder)

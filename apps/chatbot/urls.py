@@ -27,6 +27,12 @@ urlpatterns = [
         views.FlowDisableVisualView.as_view(),
         name="flow_disable_visual",
     ),
+    # Onda 1 — Migra um fluxo legacy para o construtor visual
+    path(
+        "flows/<int:pk>/migrate-to-visual/",
+        views.FlowMigrateToVisualView.as_view(),
+        name="flow_migrate_to_visual",
+    ),
     # Steps (inline management)
     path("flows/<int:pk>/steps/add/", views.StepAddView.as_view(), name="step_add"),
     path(

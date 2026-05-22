@@ -214,6 +214,81 @@ class FlowDisableVisualView(EmpresaMixin, View):
         return redirect("chatbot:flow_update", pk=pk)
 
 
+class FlowMigrateToVisualView(EmpresaMixin, View):
+    """Onda 1 — Migra um fluxo legacy para o construtor visual.
+
+    Comportamento:
+    - Converte ChatbotStep + ChatbotChoice para graph_json (idempotente)
+    - Cria/reutiliza um ChatbotFlowVersion DRAFT
+    - Marca `flow.use_visual_builder = True` (editor legacy fica read-only)
+    - Redireciona direto para `/chatbot/flows/<pk>/builder/`
+
+    NÃO destrói o legacy — os ChatbotStep/Choice continuam intactos para
+    rollback via FlowDisableVisualView.
+
+    Idempotente: chamar 2x apenas re-leva ao builder; não recria draft.
+    """
+
+    def post(self, request, pk):
+        from apps.chatbot.models import ChatbotFlowVersion, ChatbotStep
+        from apps.chatbot.builder.services.flow_converter import (
+            convert_legacy_flow_to_graph,
+        )
+
+        flow = get_object_or_404(ChatbotFlow, pk=pk, empresa=request.empresa)
+        if flow.use_visual_builder:
+            messages.info(request, "Este fluxo já está no construtor visual.")
+            return redirect("chatbot:flow_builder", pk=pk)
+
+        has_legacy = ChatbotStep.objects.filter(flow=flow).exists()
+        draft = (
+            ChatbotFlowVersion.objects.filter(
+                flow=flow, status=ChatbotFlowVersion.Status.DRAFT,
+            )
+            .order_by("-numero")
+            .first()
+        )
+        if draft is None:
+            initial_graph = (
+                convert_legacy_flow_to_graph(flow) if has_legacy else {
+                    "schema_version": 1,
+                    "viewport": {"x": 0, "y": 0, "zoom": 1},
+                    "metadata": {},
+                    "nodes": [
+                        {
+                            "id": "n_start",
+                            "type": "start",
+                            "position": {"x": 100, "y": 100},
+                            "data": {"label": "Início"},
+                        }
+                    ],
+                    "edges": [],
+                }
+            )
+            draft = ChatbotFlowVersion.objects.create(
+                flow=flow,
+                status=ChatbotFlowVersion.Status.DRAFT,
+                graph_json=initial_graph,
+                created_by=request.user if request.user.is_authenticated else None,
+            )
+        flow.use_visual_builder = True
+        flow.save(update_fields=["use_visual_builder", "updated_at"])
+        if has_legacy:
+            n_steps = ChatbotStep.objects.filter(flow=flow).count()
+            messages.success(
+                request,
+                f"Fluxo migrado para o construtor visual ({n_steps} etapa(s) "
+                "convertidas). Revise as conexões e publique quando estiver pronto.",
+            )
+        else:
+            messages.success(
+                request,
+                "Fluxo aberto no construtor visual. Arraste blocos do menu lateral "
+                "para começar.",
+            )
+        return redirect("chatbot:flow_builder", pk=pk)
+
+
 # ---------------------------------------------------------------------------
 # Step Management (inline)
 # ---------------------------------------------------------------------------
