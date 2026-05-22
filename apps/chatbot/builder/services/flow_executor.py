@@ -529,38 +529,18 @@ def _validate_user_input(node: dict, user_response: str) -> dict:
         return {"error": False, "normalized_value": text}
 
     if ntype == "menu":
+        # RV06 — usa matcher unificado (idêntico ao simulator). Aceita:
+        # número, label exato, "N Label", "N. Label", emoji keycap,
+        # prefixo, substring, handle_id, accent-insensitive.
+        from apps.chatbot.builder.services.menu_matcher import match_menu_choice
         options = data.get("options") or []
-        # Aceita: número 1-indexed, label literal (case-insensitive), prefixo curto
-        try:
-            idx = int(text) - 1
-            if 0 <= idx < len(options):
-                return {
-                    "error": False,
-                    "handle_id": options[idx].get("handle_id"),
-                    "normalized_value": options[idx].get("label"),
-                }
-        except (ValueError, TypeError):
-            pass
-        text_low = text.lower()
-        for opt in options:
-            label_low = (opt.get("label") or "").lower()
-            value_low = (opt.get("value") or "").lower()
-            if text_low == label_low or text_low == value_low:
-                return {
-                    "error": False,
-                    "handle_id": opt.get("handle_id"),
-                    "normalized_value": opt.get("label"),
-                }
-        # Prefixo >= 3 chars
-        if len(text_low) >= 3:
-            for opt in options:
-                label_low = (opt.get("label") or "").lower()
-                if label_low.startswith(text_low):
-                    return {
-                        "error": False,
-                        "handle_id": opt.get("handle_id"),
-                        "normalized_value": opt.get("label"),
-                    }
+        m = match_menu_choice(options, text)
+        if m is not None:
+            return {
+                "error": False,
+                "handle_id": m.handle_id,
+                "normalized_value": m.label,
+            }
         labels = ", ".join(o.get("label", "?") for o in options)
         return {"error": True, "message": f"Não entendi. Escolha uma das opções: {labels}"}
 

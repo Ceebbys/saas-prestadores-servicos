@@ -233,16 +233,17 @@ def _validate_user_input_sim(node: dict, user_response: str) -> dict:
         return {"error": False, "normalized_value": text}
 
     if ntype == "menu":
+        # RV06 — usa matcher unificado que aceita: número, label exato,
+        # "N Label", "N. Label", emoji keycap, prefixo, substring, handle_id.
+        from apps.chatbot.builder.services.menu_matcher import match_menu_choice
         options = data.get("options") or []
-        try:
-            idx = int(text) - 1
-            if 0 <= idx < len(options):
-                return {"error": False, "handle_id": options[idx].get("handle_id"), "normalized_value": options[idx].get("label")}
-        except (ValueError, TypeError):
-            pass
-        for opt in options:
-            if text.lower() == (opt.get("label") or "").lower():
-                return {"error": False, "handle_id": opt.get("handle_id"), "normalized_value": opt.get("label")}
+        m = match_menu_choice(options, text)
+        if m is not None:
+            return {
+                "error": False,
+                "handle_id": m.handle_id,
+                "normalized_value": m.label,
+            }
         labels = ", ".join(o.get("label", "?") for o in options)
         return {"error": True, "message": f"Não entendi. Opções: {labels}"}
 
