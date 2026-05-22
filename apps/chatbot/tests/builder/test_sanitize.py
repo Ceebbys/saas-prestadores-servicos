@@ -158,6 +158,68 @@ class ValidatorAcceptsSanitizedGraphTests(TestCase):
         )
 
 
+class LongEdgeIdAcceptedTests(TestCase):
+    """RV06 Hotfix #2 — React Flow gera edge IDs concatenando source+target
+    como 'xy-edge__{source}{sourceHandle}-{target}{targetHandle}'. Quando
+    node_ids têm timestamp (n_menu_1778706798646_4), esses IDs facilmente
+    passam de 64 chars. Schema antigo limitava a 64 → 12 erros 'too long'
+    no fluxo do cliente. Agora maxLength=200."""
+
+    def test_long_react_flow_edge_id_passes_schema(self):
+        # ID real reportado pelo cliente (~76 chars)
+        long_id = "xy-edge__n_menu_1778706798646_4opt_1778706814043_5-n_menu_1778706903389_5in"
+        self.assertGreater(len(long_id), 64)
+        self.assertLess(len(long_id), 200)
+
+        graph = {
+            "schema_version": 1,
+            "viewport": {"x": 0, "y": 0, "zoom": 1},
+            "metadata": {},
+            "nodes": [
+                {
+                    "id": "n_menu_1778706798646_4",
+                    "type": "menu",
+                    "position": {"x": 0, "y": 0},
+                    "data": {
+                        "label": "Menu",
+                        "prompt": "Escolha:",
+                        "options": [
+                            {"label": "A", "handle_id": "opt_1778706814043_5"},
+                            {"label": "B", "handle_id": "opt_2"},
+                        ],
+                    },
+                },
+                {
+                    "id": "n_menu_1778706903389_5",
+                    "type": "menu",
+                    "position": {"x": 400, "y": 0},
+                    "data": {
+                        "label": "Sub-menu",
+                        "prompt": "Mais opções:",
+                        "options": [
+                            {"label": "X", "handle_id": "opt_x"},
+                            {"label": "Y", "handle_id": "opt_y"},
+                        ],
+                    },
+                },
+            ],
+            "edges": [
+                {
+                    "id": long_id,
+                    "source": "n_menu_1778706798646_4",
+                    "target": "n_menu_1778706903389_5",
+                    "sourceHandle": "opt_1778706814043_5",
+                },
+            ],
+        }
+        result = validate_graph(graph)
+        schema_errors = [e for e in result["errors"] if e["code"] == "SCHEMA_VIOLATION"]
+        self.assertEqual(
+            schema_errors, [],
+            f"Edge ID longo ({len(long_id)} chars) deveria passar: {schema_errors}",
+        )
+
+
 class SaveEndpointSanitizesTests(TestCase):
     """End-to-end: POST /save/ com lixo do React Flow deve persistir limpo."""
 

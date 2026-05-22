@@ -92,12 +92,12 @@
           "id": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 64
+            "maxLength": 200
           },
           "source": {"type": "string", "maxLength": 64},
           "target": {"type": "string", "maxLength": 64},
-          "sourceHandle": {"type": ["string", "null"]},
-          "targetHandle": {"type": ["string", "null"]},
+          "sourceHandle": {"type": ["string", "null"], "maxLength": 64},
+          "targetHandle": {"type": ["string", "null"], "maxLength": 64},
           "label": {"type": ["string", "null"], "maxLength": 200},
           "type": {"type": "string"},
           "animated": {"type": "boolean"},
