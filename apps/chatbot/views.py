@@ -314,14 +314,29 @@ class StepChoicesEditView(EmpresaMixin, View):
     template_name = "chatbot/partials/_choice_form.html"
 
     def _get_form_kwargs_for_choices(self, formset, flow, step):
-        """Injeta `flow` e `exclude_step` em cada form do formset."""
+        """Injeta `flow` e `exclude_step` em cada form do formset.
+
+        RV06 Hotfix — também popula o queryset de `servico` (estava
+        vazio porque o ChatbotChoiceForm.__init__ recebe `flow` mas o
+        formset instanciado aqui não passa esse kwarg).
+        """
+        from apps.operations.models import ServiceType
+
+        next_step_qs = (
+            ChatbotStep.objects.filter(flow=flow).order_by("order").exclude(pk=step.pk)
+        )
+        servico_qs = ServiceType.objects.filter(
+            empresa=flow.empresa, is_active=True,
+        ).order_by("name")
         for form in formset.forms:
-            # Hack para passar params extras: setamos no field queryset diretamente.
-            qs = ChatbotStep.objects.filter(flow=flow).order_by("order")
-            qs = qs.exclude(pk=step.pk)
-            form.fields["next_step"].queryset = qs
+            form.fields["next_step"].queryset = next_step_qs
             form.fields["next_step"].required = False
             form.fields["next_step"].empty_label = "(linear — próximo na ordem)"
+            # Bug reportado: dropdown 'Serviço associado' vazio mesmo com
+            # ServiceType cadastrados. Popular queryset aqui.
+            form.fields["servico"].queryset = servico_qs
+            form.fields["servico"].required = False
+            form.fields["servico"].empty_label = "— Sem serviço associado —"
 
     def get(self, request, pk, step_pk):
         flow = get_object_or_404(ChatbotFlow, pk=pk, empresa=request.empresa)
