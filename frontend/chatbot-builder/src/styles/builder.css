@@ -264,6 +264,35 @@ body {
 }
 .rf-node__option-label { font-size: 11px; flex: 1; }
 .rf-node__empty { font-size: 10px; color: var(--slate-400); font-style: italic; margin: 0; }
+
+/* RV06 — Opção sem conexão (handle órfão) */
+.rf-node__option--unconnected {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  border-style: dashed;
+}
+.rf-node__option--unconnected .rf-node__option-label {
+  color: #991b1b;
+  font-weight: 500;
+}
+.rf-node__option-icon {
+  font-size: 10px;
+  color: #dc2626;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.rf-handle--unconnected {
+  background: #dc2626 !important;
+  border-color: #fca5a5 !important;
+}
+.rf-node__warning-badge {
+  background: rgba(255, 255, 255, 0.25);
+  color: white;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 700;
+}
 .rf-node__branches { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .rf-node__branch {
   display: flex;
