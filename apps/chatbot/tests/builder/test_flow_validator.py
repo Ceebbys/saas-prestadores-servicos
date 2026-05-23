@@ -381,3 +381,122 @@ class LimitTests(SimpleTestCase):
         self.assertFalse(result["valid"])
         codes = [e["code"] for e in result["errors"]]
         self.assertIn("FIELD_TOO_LONG", codes)
+
+
+class LeadFieldCollisionTests(SimpleTestCase):
+    """RV06 Refinamento — collision de lead_field só vale se mesmo caminho.
+
+    Bifurcação CNPJ→PJ vs CPF→PF do cliente NÃO deveria avisar — apenas
+    UM ramo executa por sessão.
+    """
+
+    def test_collision_in_sequential_path_warns(self):
+        """name coletado em 2 blocos SEQUENCIAIS → avisa (segundo sobrescreve)."""
+        graph = _graph([
+            _node("s1", "start"),
+            _node("c1", "collect_data", prompt="Nome 1?", lead_field="name"),
+            _node("c2", "collect_data", prompt="Nome 2?", lead_field="name"),
+            _node("e1", "end"),
+        ], [
+            _edge("e1", "s1", "c1"),
+            _edge("e2", "c1", "c2"),
+            _edge("e3", "c2", "e1"),
+        ])
+        result = validate_graph(graph)
+        codes = [w["code"] for w in result["warnings"]]
+        self.assertIn("LEAD_FIELD_COLLISION", codes,
+            "Caminho linear com 2 collect_data do mesmo lead_field deve avisar")
+
+    def test_collision_in_exclusive_branches_silent(self):
+        """name coletado em 2 ramos exclusivos de condition → SEM aviso.
+
+        Cenário do cliente: condition CNPJ → PJ (coleta nome) | NÃO (coleta nome PF).
+        Os ramos são mutuamente exclusivos — só um executa por sessão.
+        """
+        graph = _graph([
+            _node("s1", "start"),
+            _node("cond1", "condition", field="cnpj", operator="exists"),
+            _node("c_pj", "collect_data", prompt="Nome PJ?", lead_field="name"),
+            _node("c_pf", "collect_data", prompt="Nome PF?", lead_field="name"),
+            _node("e1", "end"),
+            _node("e2", "end"),
+        ], [
+            _edge("e1", "s1", "cond1"),
+            _edge("e2", "cond1", "c_pj", sourceHandle="true"),
+            _edge("e3", "cond1", "c_pf", sourceHandle="false"),
+            _edge("e4", "c_pj", "e1"),
+            _edge("e5", "c_pf", "e2"),
+        ])
+        result = validate_graph(graph)
+        codes = [w["code"] for w in result["warnings"]]
+        self.assertNotIn("LEAD_FIELD_COLLISION", codes,
+            f"Bifurcação não deve avisar. Warnings: {result['warnings']}")
+
+    def test_collision_in_exclusive_menu_branches_silent(self):
+        """Mesmo cenário mas via Menu em vez de Condition."""
+        graph = _graph([
+            _node("s1", "start"),
+            _node("m1", "menu", prompt="Tipo?", options=[
+                {"label": "PJ", "handle_id": "opt_pj"},
+                {"label": "PF", "handle_id": "opt_pf"},
+            ]),
+            _node("c_pj", "collect_data", prompt="CNPJ?", lead_field="cpf_cnpj"),
+            _node("c_pf", "collect_data", prompt="CPF?", lead_field="cpf_cnpj"),
+            _node("e1", "end"),
+            _node("e2", "end"),
+        ], [
+            _edge("e1", "s1", "m1"),
+            _edge("e2", "m1", "c_pj", sourceHandle="opt_pj"),
+            _edge("e3", "m1", "c_pf", sourceHandle="opt_pf"),
+            _edge("e4", "c_pj", "e1"),
+            _edge("e5", "c_pf", "e2"),
+        ])
+        result = validate_graph(graph)
+        codes = [w["code"] for w in result["warnings"]]
+        self.assertNotIn("LEAD_FIELD_COLLISION", codes)
+
+    def test_collision_when_branches_converge_warns(self):
+        """Bifurcação que converge depois e ambos ramos coletam o mesmo
+        campo: o nó pós-convergência receberá DOIS valores em ordem
+        determinada. Aqui o aviso é justo se a coleta acontece nos 2
+        ramos E há sequencial depois — mas como os 2 nodes NÃO se
+        alcançam, ainda é exclusivo. Confirmamos: não avisa."""
+        graph = _graph([
+            _node("s1", "start"),
+            _node("m1", "menu", prompt="?", options=[
+                {"label": "A", "handle_id": "opt_a"},
+                {"label": "B", "handle_id": "opt_b"},
+            ]),
+            _node("c_a", "collect_data", prompt="A nome?", lead_field="name"),
+            _node("c_b", "collect_data", prompt="B nome?", lead_field="name"),
+            _node("merge", "message", text="Obrigado"),
+            _node("e1", "end"),
+        ], [
+            _edge("e1", "s1", "m1"),
+            _edge("e2", "m1", "c_a", sourceHandle="opt_a"),
+            _edge("e3", "m1", "c_b", sourceHandle="opt_b"),
+            _edge("e4", "c_a", "merge"),
+            _edge("e5", "c_b", "merge"),
+            _edge("e6", "merge", "e1"),
+        ])
+        result = validate_graph(graph)
+        codes = [w["code"] for w in result["warnings"]]
+        # c_a e c_b NÃO se alcançam (convergência sai do merge, não volta)
+        # logo: continuam exclusivos → sem aviso
+        self.assertNotIn("LEAD_FIELD_COLLISION", codes)
+
+    def test_collision_with_unrelated_fields_silent(self):
+        """name e email são campos diferentes → sem colisão."""
+        graph = _graph([
+            _node("s1", "start"),
+            _node("c1", "collect_data", prompt="Nome?", lead_field="name"),
+            _node("c2", "collect_data", prompt="Email?", lead_field="email"),
+            _node("e1", "end"),
+        ], [
+            _edge("e1", "s1", "c1"),
+            _edge("e2", "c1", "c2"),
+            _edge("e3", "c2", "e1"),
+        ])
+        result = validate_graph(graph)
+        codes = [w["code"] for w in result["warnings"]]
+        self.assertNotIn("LEAD_FIELD_COLLISION", codes)

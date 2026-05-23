@@ -132,7 +132,7 @@ def validate_graph(graph: dict, *, flow: "ChatbotFlow | None" = None) -> dict:
     _check_text_sanity(nodes, warnings)
 
     # `lead_field` reutilizado em múltiplos nós → warning
-    _check_lead_field_collisions(nodes, warnings)
+    _check_lead_field_collisions(nodes, warnings, graph=graph)
 
     return {
         "valid": len(errors) == 0,
@@ -393,21 +393,76 @@ def _check_text_sanity(nodes: list[dict], warnings: list) -> None:
                         break
 
 
-def _check_lead_field_collisions(nodes: list[dict], warnings: list) -> None:
-    """Aviso se múltiplos nodes gravam no mesmo lead_field (último ganha)."""
-    seen: dict[str, str] = {}
+def _check_lead_field_collisions(
+    nodes: list[dict], warnings: list, graph: dict | None = None,
+) -> None:
+    """Aviso se múltiplos nodes gravam no mesmo lead_field NO MESMO CAMINHO
+    de execução. Bifurcações exclusivas (ramos de menu/condition) são
+    silenciosamente ignoradas — apenas UM ramo executa por sessão.
+
+    RV06 Refinamento: o cliente desenhou um fluxo com bifurcação CNPJ/CPF
+    onde os ramos PJ e PF coletam ambos `name` e `cpf_cnpj`. Como apenas
+    UM ramo executa por sessão (mutuamente exclusivos), não há colisão
+    real. Antes o validator acusava falso-positivo. Agora só emite o
+    aviso quando NodeA pode alcançar NodeB (ou vice-versa) — ou seja,
+    ambos podem executar na mesma sessão.
+
+    Algoritmo:
+    1. Agrupa nodes por lead_field
+    2. Para cada par (A, B) no mesmo grupo:
+       - Se A pode alcançar B OU B pode alcançar A → AVISO (sequencial)
+       - Senão → SILENCIOSO (ramos exclusivos)
+    """
+    by_lead_field: dict[str, list[dict]] = {}
     for n in nodes:
         lf = (n.get("data") or {}).get("lead_field")
-        if not lf:
-            continue
-        if lf in seen and seen[lf] != n["id"]:
-            warnings.append(_warn(
-                n["id"], "data.lead_field",
-                f"O campo '{lf}' também é usado pelo bloco {seen[lf]} — o último a executar prevalece.",
-                "LEAD_FIELD_COLLISION",
-            ))
-        else:
-            seen[lf] = n["id"]
+        if lf:
+            by_lead_field.setdefault(lf, []).append(n)
+
+    # Sem grupo com >= 2 nodes: não há nada pra checar
+    candidate_fields = {lf: ns for lf, ns in by_lead_field.items() if len(ns) >= 2}
+    if not candidate_fields:
+        return
+
+    # Sem graph (chamado em test antigo / código legacy): fallback no comportamento simples
+    if graph is None:
+        for lf, ns in candidate_fields.items():
+            for n in ns[1:]:
+                warnings.append(_warn(
+                    n["id"], "data.lead_field",
+                    f"O campo '{lf}' também é usado pelo bloco {ns[0]['id']} — o último a executar prevalece.",
+                    "LEAD_FIELD_COLLISION",
+                ))
+        return
+
+    # Para cada lead_field, verifica pares com reachability
+    for lf, ns in candidate_fields.items():
+        # Pré-computa reachability de cada node candidato (cache)
+        reach_cache: dict[str, set[str]] = {}
+        for node in ns:
+            reach_cache[node["id"]] = graph_utils.reachable_from(graph, node["id"])
+
+        already_warned: set[str] = set()
+        # Para cada par (i < j), checa se um alcança o outro
+        for i, a in enumerate(ns):
+            for b in ns[i + 1:]:
+                a_id, b_id = a["id"], b["id"]
+                # A → B  ou  B → A  significa execução sequencial possível
+                can_a_reach_b = b_id in reach_cache[a_id]
+                can_b_reach_a = a_id in reach_cache[b_id]
+                if can_a_reach_b or can_b_reach_a:
+                    # Emite aviso no SEGUNDO bloco (o que sobrescreve)
+                    target = b if can_a_reach_b else a
+                    source = a if can_a_reach_b else b
+                    if target["id"] not in already_warned:
+                        warnings.append(_warn(
+                            target["id"], "data.lead_field",
+                            f"O campo '{lf}' também é coletado pelo bloco "
+                            f"{source['id']} no mesmo caminho de execução — "
+                            f"o último a executar prevalece.",
+                            "LEAD_FIELD_COLLISION",
+                        ))
+                        already_warned.add(target["id"])
 
 
 def _err(node_id: str | None, field: str | None, message: str, code: str) -> dict:
