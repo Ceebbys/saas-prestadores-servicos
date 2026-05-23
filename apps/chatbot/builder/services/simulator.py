@@ -88,7 +88,19 @@ def process_simulation(draft_graph: dict, state: dict, user_response: str) -> di
     logger.info("simulator validation result: %r", validation)
     if validation.get("error"):
         msg = validation.get("message", "Resposta inválida.")
-        state["messages"].append({"direction": "outbound", "content": msg, "node_id": current_id})
+        # RV06 Hotfix — debug_info visível no UI quando o matcher falha
+        # Permite diagnosticar bytes invisíveis, handle_ids errados, etc.
+        debug = _build_debug_info(draft_graph, current, user_response, validation)
+        state["messages"].append({
+            "direction": "outbound",
+            "content": msg,
+            "node_id": current_id,
+        })
+        state["messages"].append({
+            "direction": "system",
+            "content": f"🔧 DEBUG (envie este texto ao desenvolvedor):\n{debug}",
+            "node_id": current_id,
+        })
         return {**state, "is_complete": False, "message": msg, "current_node_id": current_id, "error": False}
 
     # Stora resposta em lead_data
@@ -100,8 +112,48 @@ def process_simulation(draft_graph: dict, state: dict, user_response: str) -> di
     # Avança
     next_node = _advance_from_sim(draft_graph, current, state, validation=validation)
     if next_node is None:
-        return _complete_sim(state, current_id, reason="end_of_flow")
+        # RV06 — debug quando o matcher casou mas não há edge correspondente
+        handle = validation.get("handle_id") or "next"
+        outbound = graph_utils.outbound_handles_of(draft_graph, current_id)
+        debug = (
+            f"node={current_id} | match_handle={handle!r} | "
+            f"handles_disponíveis={sorted(outbound)!r}"
+        )
+        state["messages"].append({
+            "direction": "system",
+            "content": (
+                f"🔧 DEBUG: matcher achou a opção '{handle}' mas NÃO existe "
+                f"conexão saindo desse handle. Volte ao canvas, arraste a opção "
+                f"correta para o próximo bloco.\n{debug}"
+            ),
+            "node_id": current_id,
+        })
+        return _complete_sim(state, current_id, reason="no_edge_for_match")
     return _step_through(draft_graph, state, start_node=next_node)
+
+
+def _build_debug_info(graph, current, user_response, validation) -> str:
+    """Monta string de debug humana com bytes do input + opções + edges.
+
+    Aparece no UI quando o matcher falha — ajuda a diagnosticar bytes
+    invisíveis, handles duplicados, edges faltando.
+    """
+    current_id = current["id"]
+    data = current.get("data") or {}
+    options = data.get("options") or []
+    outbound = graph_utils.outbound_handles_of(graph, current_id)
+    options_repr = [
+        f"  • {opt.get('label')!r} (handle={opt.get('handle_id')!r})"
+        for opt in options
+    ]
+    return (
+        f"node_id={current_id}\n"
+        f"user_response={user_response!r}\n"
+        f"len(user_response)={len(user_response or '')}\n"
+        f"opções:\n" + "\n".join(options_repr) + "\n"
+        f"edges_saindo={sorted(outbound)!r}\n"
+        f"validation={validation!r}"
+    )
 
 
 def _step_through(graph: dict, state: dict, *, start_node: dict) -> dict:
