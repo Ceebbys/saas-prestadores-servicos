@@ -569,6 +569,18 @@ class ChatbotSession(TimestampedModel):
         blank=True,
         db_index=True,
     )
+    # RV06 — Lembrete por bloco: marca timestamp quando o reminder foi
+    # enviado para o current_node atual. Resetado para None quando
+    # current_node_id muda (cliente respondeu e fluxo avançou).
+    reminder_sent_at = models.DateTimeField(
+        "Lembrete enviado em",
+        null=True,
+        blank=True,
+        help_text=(
+            "Quando foi enviado o último 'Você está aí?' para o nó atual. "
+            "Resetado quando o cliente responde."
+        ),
+    )
 
     class Meta:
         verbose_name = "Sessão do Chatbot"

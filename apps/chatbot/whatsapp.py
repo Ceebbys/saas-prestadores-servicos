@@ -441,9 +441,14 @@ def _process_evolution_message(flow, sender_id, message_text):
         _mirror_to_inbox(flow, sender_id, message_text, reply, session=new_session)
         return reply, choices, False, None
 
-    # RV06 — Sessão ativa não expirada: atualiza last_activity_at
+    # RV06 — Sessão ativa não expirada: atualiza last_activity_at +
+    # limpa reminder_sent_at (cliente respondeu, próximo nó pode ter
+    # reminder próprio que será enviado se ficar idle de novo).
     session.last_activity_at = timezone.now()
-    session.save(update_fields=["last_activity_at", "updated_at"])
+    session.reminder_sent_at = None
+    session.save(update_fields=[
+        "last_activity_at", "reminder_sent_at", "updated_at",
+    ])
 
     # Processar resposta na sessão existente
     if not message_text:

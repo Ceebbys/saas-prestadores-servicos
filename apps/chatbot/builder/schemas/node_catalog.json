@@ -58,7 +58,12 @@
          "options": ["", "name", "email", "phone", "company", "cpf_cnpj", "notes"],
          "help": "Campo do lead onde gravar a resposta (opcional)."},
         {"name": "validator", "type": "enum", "required": false, "default": "free_text",
-         "options": ["free_text", "name", "company"]}
+         "options": ["free_text", "name", "company"]},
+        {"name": "reminder_minutes", "type": "integer", "required": false, "default": 0, "min": 0, "max": 1440,
+         "help": "⏰ Lembrete: se o cliente não responder em X minutos, manda a mensagem abaixo. 0 = sem lembrete. (Reset total do fluxo é configurado no flow inteiro.)"},
+        {"name": "reminder_message", "type": "text", "required": false, "max_length": 1000,
+         "default": "Você ainda está aí? Me responde quando puder 👋",
+         "help": "Mensagem do lembrete. Só envia quando 'Lembrete' > 0."}
       ]
     },
     {
@@ -79,7 +84,12 @@
            "value": {"type": "string", "required": false, "max_length": 80},
            "handle_id": {"type": "string", "required": true, "max_length": 32}
          },
-         "help": "Cada opção gera um handle de saída único (handle_id)."}
+         "help": "Cada opção gera um handle de saída único (handle_id)."},
+        {"name": "reminder_minutes", "type": "integer", "required": false, "default": 0, "min": 0, "max": 1440,
+         "help": "⏰ Lembrete: se não escolher em X minutos, manda 'Vc está aí?'. 0 = sem lembrete."},
+        {"name": "reminder_message", "type": "text", "required": false, "max_length": 1000,
+         "default": "Você ainda está aí? Me responde quando puder 👋",
+         "help": "Mensagem do lembrete."}
       ]
     },
     {
@@ -104,7 +114,12 @@
          "help": "Mensagem quando o cliente responder algo diferente de sim/não — pergunta de novo."},
         {"name": "default_branch", "type": "enum", "required": false, "default": "ask_again",
          "options": ["ask_again", "yes", "no"],
-         "help": "Se o cliente responder algo confuso depois de 1 tentativa: pergunta de novo, assume SIM ou assume NÃO."}
+         "help": "Se o cliente responder algo confuso depois de 1 tentativa: pergunta de novo, assume SIM ou assume NÃO."},
+        {"name": "reminder_minutes", "type": "integer", "required": false, "default": 0, "min": 0, "max": 1440,
+         "help": "⏰ Lembrete: se não responder em X minutos, manda 'Vc está aí?'. 0 = sem lembrete."},
+        {"name": "reminder_message", "type": "text", "required": false, "max_length": 1000,
+         "default": "Você ainda está aí? Me responde quando puder 👋",
+         "help": "Mensagem do lembrete."}
       ]
     },
     {
@@ -145,7 +160,12 @@
          "options": ["email", "phone", "cpf_cnpj", "name"],
          "help": "Tipo de dado a coletar (define o validador)."},
         {"name": "validator_strict", "type": "boolean", "required": false, "default": true,
-         "help": "Rejeitar resposta se formato inválido (vs. aceitar e marcar warning)."}
+         "help": "Rejeitar resposta se formato inválido (vs. aceitar e marcar warning)."},
+        {"name": "reminder_minutes", "type": "integer", "required": false, "default": 0, "min": 0, "max": 1440,
+         "help": "⏰ Lembrete: se não responder em X minutos, manda mensagem. 0 = sem lembrete."},
+        {"name": "reminder_message", "type": "text", "required": false, "max_length": 1000,
+         "default": "Você ainda está aí? Me responde quando puder 👋",
+         "help": "Mensagem do lembrete."}
       ]
     },
     {
