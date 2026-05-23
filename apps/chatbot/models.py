@@ -99,6 +99,25 @@ class ChatbotFlow(TenantOwnedModel):
         help_text="Quando ativo, bloqueia outros fluxos enquanto este estiver em andamento.",
     )
 
+    # RV06 — Timeout de sessão (feedback do usuário)
+    session_timeout_minutes = models.PositiveIntegerField(
+        "Timeout de sessão (minutos)",
+        default=30,
+        help_text=(
+            "Tempo sem resposta para expirar a sessão. Na próxima mensagem o "
+            "fluxo recomeça do início. 0 = nunca expira."
+        ),
+    )
+    session_timeout_message = models.TextField(
+        "Mensagem ao recomeçar após timeout",
+        blank=True,
+        default="",
+        help_text=(
+            "Opcional: enviada quando o cliente volta a falar depois de muito "
+            "tempo. Ex.: 'Olá de novo! Vamos recomeçar do início.'"
+        ),
+    )
+
     # RV06 — Builder visual (React Flow). Quando True, executor lê graph_json
     # da versão publicada (motor v2). Setado automaticamente no primeiro
     # publish bem-sucedido da FlowVersion.
@@ -541,6 +560,15 @@ class ChatbotSession(TimestampedModel):
         related_name="chatbot_sessions",
         verbose_name="Lead criado",
     )
+    # RV06 — Timeout: tracking de última atividade para detectar expiração.
+    # Atualizado a cada turn (inbound do cliente). Comparado contra
+    # flow.session_timeout_minutes.
+    last_activity_at = models.DateTimeField(
+        "Última atividade",
+        null=True,
+        blank=True,
+        db_index=True,
+    )
 
     class Meta:
         verbose_name = "Sessão do Chatbot"
@@ -549,10 +577,26 @@ class ChatbotSession(TimestampedModel):
         indexes = [
             models.Index(fields=["flow", "status"]),
             models.Index(fields=["session_key"]),
+            models.Index(fields=["status", "last_activity_at"]),
         ]
 
     def __str__(self):
         return f"Session {self.session_key} ({self.status})"
+
+    @property
+    def is_expired(self) -> bool:
+        """RV06 — True se a sessão passou do timeout do flow."""
+        if self.status != self.Status.ACTIVE:
+            return False
+        timeout = getattr(self.flow, "session_timeout_minutes", 0) or 0
+        if timeout <= 0:
+            return False  # 0 = nunca expira
+        from django.utils import timezone
+        from datetime import timedelta
+        ref = self.last_activity_at or self.updated_at
+        if ref is None:
+            return False
+        return timezone.now() - ref > timedelta(minutes=timeout)
 
 
 class WhatsAppConfig(TimestampedModel):

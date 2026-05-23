@@ -361,15 +361,32 @@ def _process_evolution_message(flow, sender_id, message_text):
     Side-effect: registra inbound + outbound em `apps.communications`
     quando há lead associado (humano vê na inbox unificada).
     """
+    from django.utils import timezone
+
     # Buscar sessão ativa para este sender
     session = ChatbotSession.objects.filter(
         flow=flow, sender_id=sender_id, status=ChatbotSession.Status.ACTIVE,
     ).first()
 
+    # RV06 — Timeout: se a sessão ativa expirou, marca como EXPIRED e força criar nova
+    timeout_prefix = ""
+    if session and session.is_expired:
+        logger.info(
+            "session %s expirou (timeout=%smin) — recomeçando fluxo",
+            session.session_key, flow.session_timeout_minutes,
+        )
+        session.status = ChatbotSession.Status.EXPIRED
+        session.save(update_fields=["status", "updated_at"])
+        # Prefixo opcional configurado pelo admin
+        msg = (flow.session_timeout_message or "").strip()
+        if msg:
+            timeout_prefix = msg + "\n\n"
+        session = None  # força fluxo de "sem sessão" abaixo
+
     if not session:
         # Iniciar nova sessão
         result = start_session(flow, channel="whatsapp", sender_id=sender_id)
-        reply = result["welcome_message"]
+        reply = timeout_prefix + result["welcome_message"]
         choices = []
         if result.get("step"):
             reply += "\n\n" + result["step"]["question"]
@@ -379,8 +396,15 @@ def _process_evolution_message(flow, sender_id, message_text):
         new_session = ChatbotSession.objects.filter(
             flow=flow, sender_id=sender_id, status=ChatbotSession.Status.ACTIVE,
         ).order_by("-created_at").first()
+        if new_session:
+            new_session.last_activity_at = timezone.now()
+            new_session.save(update_fields=["last_activity_at", "updated_at"])
         _mirror_to_inbox(flow, sender_id, message_text, reply, session=new_session)
         return reply, choices, False, None
+
+    # RV06 — Sessão ativa não expirada: atualiza last_activity_at
+    session.last_activity_at = timezone.now()
+    session.save(update_fields=["last_activity_at", "updated_at"])
 
     # Processar resposta na sessão existente
     if not message_text:
