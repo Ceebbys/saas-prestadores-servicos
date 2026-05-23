@@ -8,7 +8,7 @@
  *   - Tipo `select` com options carregadas via /api/chatbot/options/<source>/
  *   - Campos condicionais por `action_type` (data_fields_per_action_type)
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useBuilderStore } from "../store/builderStore";
 import { useGraphAPI } from "../hooks/useGraphAPI";
 import { MenuOptionsEditor } from "./MenuOptionsEditor";
@@ -180,17 +180,12 @@ function FieldEditor({
 
   if (field.type === "text") {
     return (
-      <div className="field">
-        <label htmlFor={id}>{labelize(field)}</label>
-        <textarea
-          id={id}
-          rows={3}
-          maxLength={field.max_length ?? 5000}
-          value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value)}
-        />
-        {field.help && <p className="field__help">{field.help}</p>}
-      </div>
+      <TextFieldWithVariables
+        id={id}
+        field={field}
+        value={value}
+        onChange={onChange}
+      />
     );
   }
 
@@ -477,6 +472,124 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
 function humanizeEnumOption(fieldName: string, value: string): string {
   const inner = ENUM_LABELS[fieldName];
   return inner?.[value] ?? value;
+}
+
+
+/**
+ * RV06 — Textarea com botão "🪄 Inserir variável".
+ *
+ * Cliente pediu: poder inserir {{ servico.name }}, {{ lead.name }} etc.
+ * nas mensagens. Botão abre dropdown com lista de variáveis disponíveis
+ * (carregada do backend via /api/chatbot/options/template_vars/).
+ * Click numa variável insere `{{ path }}` na posição do cursor.
+ */
+function TextFieldWithVariables({
+  id, field, value, onChange,
+}: {
+  id: string;
+  field: NodeCatalogField;
+  value: unknown;
+  onChange: (v: unknown) => void;
+}) {
+  const { fetchOptions } = useGraphAPI();
+  const [vars, setVars] = useState<OptionItem[]>([]);
+  const [varsLoaded, setVarsLoaded] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!showPicker || varsLoaded) return;
+    fetchOptions("template_vars")
+      .then((list) => {
+        setVars(list);
+        setVarsLoaded(true);
+      })
+      .catch(() => setVarsLoaded(true));
+  }, [showPicker, varsLoaded, fetchOptions]);
+
+  function insertVariable(snippet: string) {
+    const ta = textareaRef.current;
+    const current = (value as string) || "";
+    if (!ta) {
+      onChange(current + snippet);
+      setShowPicker(false);
+      return;
+    }
+    const start = ta.selectionStart ?? current.length;
+    const end = ta.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + snippet + current.slice(end);
+    onChange(next);
+    setShowPicker(false);
+    // Reposiciona cursor após o snippet inserido (próximo tick)
+    setTimeout(() => {
+      ta.focus();
+      const pos = start + snippet.length;
+      ta.setSelectionRange(pos, pos);
+    }, 0);
+  }
+
+  return (
+    <div className="field field--text-with-vars">
+      <div className="field__header">
+        <label htmlFor={id}>{labelize(field)}</label>
+        <button
+          type="button"
+          className="field__var-button"
+          onClick={() => setShowPicker((v) => !v)}
+          title="Inserir variável (lead, serviço, empresa…)"
+        >
+          🪄 Inserir variável
+        </button>
+      </div>
+      <textarea
+        ref={textareaRef}
+        id={id}
+        rows={3}
+        maxLength={field.max_length ?? 5000}
+        value={(value as string) ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {showPicker && (
+        <div className="var-picker">
+          <div className="var-picker__header">
+            <strong>Variáveis disponíveis</strong>
+            <button
+              type="button"
+              className="var-picker__close"
+              onClick={() => setShowPicker(false)}
+            >
+              ×
+            </button>
+          </div>
+          {!varsLoaded && <p className="var-picker__loading">Carregando…</p>}
+          {varsLoaded && vars.length === 0 && (
+            <p className="var-picker__empty">Nenhuma variável disponível.</p>
+          )}
+          <ul className="var-picker__list">
+            {vars.map((v) => (
+              <li
+                key={v.value}
+                className="var-picker__item"
+                onClick={() => insertVariable(v.value)}
+                title={`Inserir: ${v.value}`}
+              >
+                <div className="var-picker__label">{v.label}</div>
+                <div className="var-picker__path">
+                  <code>{v.value}</code>
+                  {(v.extra as any)?.example && (
+                    <span className="var-picker__example">
+                      → ex.: {(v.extra as any).example}
+                    </span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {field.help && <p className="field__help">{field.help}</p>}
+    </div>
+  );
 }
 
 

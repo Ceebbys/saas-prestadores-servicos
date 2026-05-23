@@ -873,6 +873,101 @@ body {
 .validation-trigger--has-errors { border-color: #fecaca; color: #991b1b; }
 .validation-trigger--has-warnings { color: #92400e; }
 
+/* -------- RV06 — Textarea com inserir variável -------- */
+.field--text-with-vars { position: relative; }
+.field__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.field__var-button {
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 1px solid var(--indigo-300, #c7d2fe);
+  background: #eef2ff;
+  color: #4338ca;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.1s;
+}
+.field__var-button:hover { background: #e0e7ff; }
+.var-picker {
+  margin-top: 6px;
+  border: 1px solid var(--slate-300);
+  border-radius: 6px;
+  background: white;
+  max-height: 320px;
+  overflow-y: auto;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
+}
+.var-picker__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: var(--slate-50);
+  border-bottom: 1px solid var(--slate-200);
+  font-size: 12px;
+  color: var(--slate-700);
+  position: sticky;
+  top: 0;
+}
+.var-picker__close {
+  background: transparent;
+  border: 0;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--slate-500);
+}
+.var-picker__close:hover { color: var(--slate-900); }
+.var-picker__loading,
+.var-picker__empty {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--slate-500);
+  text-align: center;
+}
+.var-picker__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.var-picker__item {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.var-picker__item:hover { background: #eef2ff; }
+.var-picker__item:last-child { border-bottom: 0; }
+.var-picker__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--slate-900);
+  margin-bottom: 2px;
+}
+.var-picker__path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+.var-picker__path code {
+  background: var(--slate-100);
+  color: #4338ca;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: ui-monospace, monospace;
+}
+.var-picker__example {
+  color: var(--slate-500);
+  font-style: italic;
+}
+
 /* -------- RV06 — Banner explicativo na Condição -------- */
 .condition-help {
   margin: 8px 14px 14px;

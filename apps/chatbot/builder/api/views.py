@@ -528,10 +528,25 @@ def _opts_tags(empresa) -> list[dict]:
     return [{"value": name, "label": name} for name in qs[:100]]
 
 
+def _opts_template_vars(empresa) -> list[dict]:
+    """RV06 — Lista de variáveis disponíveis para interpolar em mensagens
+    do bot. Usado pelo dropdown 'Inserir variável' no PropertiesPanel."""
+    from apps.chatbot.builder.services.text_renderer import AVAILABLE_VARIABLES
+    return [
+        {
+            "value": "{{ " + v["path"] + " }}",
+            "label": v["label"],
+            "extra": {"path": v["path"], "example": v.get("example", "")},
+        }
+        for v in AVAILABLE_VARIABLES
+    ]
+
+
 _OPTIONS_LOADERS = {
     "services": _opts_services,
     "pipeline_stages": _opts_pipeline_stages,
     "proposal_templates": _opts_proposal_templates,
     "contract_templates": _opts_contract_templates,
     "tags": _opts_tags,
+    "template_vars": _opts_template_vars,
 }

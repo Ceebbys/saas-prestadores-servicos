@@ -108,6 +108,8 @@ def process_simulation(draft_graph: dict, state: dict, user_response: str) -> di
 def _step_through(graph: dict, state: dict, *, start_node: dict) -> dict:
     """Caminha pelos nós sem-input (start/message/condition/api_call MOCK)
     até parar em um await ou terminal."""
+    from apps.chatbot.builder.services.text_renderer import render_chatbot_text
+
     nodes_by_id = graph_utils.index_nodes(graph)
     node = start_node
     safety = 50  # evita loop infinito em simulação
@@ -126,7 +128,7 @@ def _step_through(graph: dict, state: dict, *, start_node: dict) -> dict:
             continue
 
         if ntype == "message":
-            text = data.get("text", "")
+            text = render_chatbot_text(data.get("text", ""), state)
             if text:
                 state["messages"].append({"direction": "outbound", "content": text, "node_id": node["id"]})
             nxt = _advance_from_sim(graph, node, state)
@@ -162,7 +164,7 @@ def _step_through(graph: dict, state: dict, *, start_node: dict) -> dict:
 
         if ntype in ("question", "menu", "collect_data", "yes_no"):
             # Para aqui — aguarda input
-            prompt = data.get("prompt", "")
+            prompt = render_chatbot_text(data.get("prompt", ""), state)
             if prompt:
                 state["messages"].append({"direction": "outbound", "content": prompt, "node_id": node["id"]})
             # yes_no oferece quick-replies SIM/NÃO no simulador
@@ -190,7 +192,7 @@ def _step_through(graph: dict, state: dict, *, start_node: dict) -> dict:
             }
 
         if ntype == "handoff":
-            msg = data.get("message_to_user", "")
+            msg = render_chatbot_text(data.get("message_to_user", ""), state)
             if msg:
                 state["messages"].append({"direction": "outbound", "content": msg, "node_id": node["id"]})
             return _complete_sim(state, node["id"], reason="handoff")

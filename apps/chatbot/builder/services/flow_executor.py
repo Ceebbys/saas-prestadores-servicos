@@ -228,10 +228,13 @@ def _enter_node(graph: dict, node: dict, session: ChatbotSession) -> dict:
 
     # Nodes que enviam mensagem mas não aguardam input → seguir em frente
     NO_INPUT_TYPES = {"start", "message", "condition"}
-    AWAIT_INPUT_TYPES = {"question", "menu", "collect_data"}
+    AWAIT_INPUT_TYPES = {"question", "menu", "collect_data", "yes_no"}
+
+    # RV06 — Render Jinja2 nas mensagens de saída (lead, servico, empresa)
+    from apps.chatbot.builder.services.text_renderer import render_chatbot_text
 
     if ntype == "message":
-        text = data.get("text", "")
+        text = render_chatbot_text(data.get("text", ""), session)
         if text:
             _msg_out(session, node["id"], text)
         # Atualiza current e segue
@@ -254,7 +257,7 @@ def _enter_node(graph: dict, node: dict, session: ChatbotSession) -> dict:
         # Aguarda input → salva estado e retorna prompt
         session.current_node_id = node["id"]
         session.save(update_fields=["current_node_id", "updated_at"])
-        prompt = data.get("prompt", "")
+        prompt = render_chatbot_text(data.get("prompt", ""), session)
         if prompt:
             _msg_out(session, node["id"], prompt)
         return {
@@ -265,7 +268,7 @@ def _enter_node(graph: dict, node: dict, session: ChatbotSession) -> dict:
         }
 
     if ntype == "handoff":
-        msg = data.get("message_to_user", "")
+        msg = render_chatbot_text(data.get("message_to_user", ""), session)
         if msg:
             _msg_out(session, node["id"], msg)
         session.current_node_id = node["id"]
@@ -488,6 +491,7 @@ def _complete(session: ChatbotSession, graph: dict, reason: str, node_id: str = 
     session.save(update_fields=["status", "current_node_id", "updated_at"])
 
     # Mensagem de encerramento, se o último end node tinha completion_message
+    from apps.chatbot.builder.services.text_renderer import render_chatbot_text
     final_msg = ""
     if node_id:
         nodes_by_id = graph_utils.index_nodes(graph)
@@ -495,6 +499,8 @@ def _complete(session: ChatbotSession, graph: dict, reason: str, node_id: str = 
         final_msg = (last_node.get("data") or {}).get("completion_message", "")
     if not final_msg and session.flow.send_completion_message:
         final_msg = session.flow.completion_message or ""
+    # RV06 — Render Jinja2
+    final_msg = render_chatbot_text(final_msg, session)
 
     if final_msg:
         _msg_out(session, node_id or "system", final_msg)
