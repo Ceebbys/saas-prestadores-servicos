@@ -135,7 +135,14 @@ def match_menu_choice(options: list[dict], text: str) -> MatchResult | None:
     for opt in options:
         label_norm = _normalize_for_compare(opt.get("label") or "")
         value_norm = _normalize_for_compare(opt.get("value") or "")
-        if text_norm and (text_norm == label_norm or text_norm == value_norm):
+        # Também aceita label SEM o prefixo numérico (ex: user digita
+        # "Solicitar orçamento" e o label é "1️⃣ Solicitar orçamento")
+        label_norm_no_prefix = _strip_num_prefix(label_norm)
+        if text_norm and (
+            text_norm == label_norm
+            or text_norm == value_norm
+            or text_norm == label_norm_no_prefix
+        ):
             return MatchResult(
                 handle_id=opt.get("handle_id") or "",
                 label=opt.get("label") or "",
@@ -146,7 +153,8 @@ def match_menu_choice(options: list[dict], text: str) -> MatchResult | None:
     if len(text_norm) >= 3:
         for opt in options:
             label_norm = _normalize_for_compare(opt.get("label") or "")
-            if label_norm.startswith(text_norm):
+            label_norm_no_prefix = _strip_num_prefix(label_norm)
+            if label_norm.startswith(text_norm) or label_norm_no_prefix.startswith(text_norm):
                 return MatchResult(
                     handle_id=opt.get("handle_id") or "",
                     label=opt.get("label") or "",
@@ -169,13 +177,36 @@ def match_menu_choice(options: list[dict], text: str) -> MatchResult | None:
 
 
 def _normalize_for_compare(text: str) -> str:
-    """Lowercase + remove acentos + normaliza whitespace para comparação tolerante."""
+    """Lowercase + remove acentos + normaliza whitespace + substitui keycap emojis.
+
+    RV06 — Aplicar substituição de keycap (1️⃣→1) em AMBOS os lados (input
+    E label). Antes, só fazia no input — então label '1️⃣ Solicitar' nunca
+    casava com '1 Solicitar' do user normalizado.
+    """
     if not text:
         return ""
-    cleaned = _clean_whitespace(text.lower())
+    # Substitui TODOS os keycaps por dígito + espaço (não só no início)
+    out = text
+    for keycap, digit in _KEYCAP_TO_DIGIT.items():
+        out = out.replace(keycap, digit + " ")
+    cleaned = _clean_whitespace(out.lower())
     # Remove acentos (NFD decompõe; filtra combining chars)
     nfkd = unicodedata.normalize("NFD", cleaned)
     return "".join(c for c in nfkd if not unicodedata.combining(c)).strip()
+
+
+def _strip_num_prefix(text: str) -> str:
+    """Remove prefixo numérico opcional do label normalizado.
+
+    'solicitar orcamento'        -> 'solicitar orcamento' (sem mudança)
+    '1 solicitar orcamento'      -> 'solicitar orcamento'
+    '1. solicitar orcamento'     -> 'solicitar orcamento'
+    '1) solicitar orcamento'     -> 'solicitar orcamento'
+    """
+    m = _NUM_PREFIX_RE.match(text)
+    if m:
+        return m.group("rest").strip()
+    return text
 
 
 def _clean_whitespace(text: str) -> str:

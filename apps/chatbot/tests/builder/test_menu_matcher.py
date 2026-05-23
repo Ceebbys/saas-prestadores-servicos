@@ -182,3 +182,52 @@ class MenuMatcherTests(TestCase):
         """Múltiplos espaços viram um só."""
         m = match_menu_choice(_OPTIONS, "1    Solicitar   orçamento")
         self.assertEqual(m.handle_id, "opt_1")
+
+    # ---- Cenário REAL do cliente (commit 929a0b8 debug revelou) ----
+
+    def test_client_real_scenario_keycap_in_label_and_input(self):
+        """Bug reportado: labels do cliente têm 1️⃣ no LABEL e quick-reply
+        envia 1️⃣ no input. Matcher precisa normalizar AMBOS lados."""
+        opts = [
+            {"label": "1️⃣ Solicitar orçamento ", "handle_id": "opt_1778706695580_1"},
+            {"label": "2️⃣ Ver serviços e preços  ", "handle_id": "opt_1778706734156_2"},
+            {"label": "3️⃣ Acompanhar serviço ", "handle_id": "opt_1778706739460_3"},
+            {"label": "4️⃣ Falar com atendente / suporte  ", "handle_id": "opt_1778706740755_4"},
+        ]
+        # Quick-reply envia opt.label literalmente
+        m = match_menu_choice(opts, "1️⃣ Solicitar orçamento")
+        self.assertIsNotNone(m, "Cenário real do cliente deve casar")
+        self.assertEqual(m.handle_id, "opt_1778706695580_1")
+        # Outras opções também
+        m2 = match_menu_choice(opts, "2️⃣ Ver serviços e preços")
+        self.assertEqual(m2.handle_id, "opt_1778706734156_2")
+        m4 = match_menu_choice(opts, "4️⃣ Falar com atendente / suporte")
+        self.assertEqual(m4.handle_id, "opt_1778706740755_4")
+
+    def test_client_real_scenario_user_types_without_keycap(self):
+        """Cliente com label '1️⃣ Solicitar' — user digita só 'Solicitar
+        orçamento' sem o emoji. Deve casar via _strip_num_prefix."""
+        opts = [
+            {"label": "1️⃣ Solicitar orçamento", "handle_id": "opt_a"},
+            {"label": "2️⃣ Ver serviços", "handle_id": "opt_b"},
+        ]
+        m = match_menu_choice(opts, "Solicitar orçamento")
+        self.assertIsNotNone(m)
+        self.assertEqual(m.handle_id, "opt_a")
+
+    def test_label_with_keycap_match_by_just_number(self):
+        """Label tem keycap, user digita só '1'."""
+        opts = [
+            {"label": "1️⃣ Solicitar orçamento", "handle_id": "opt_a"},
+            {"label": "2️⃣ Ver serviços", "handle_id": "opt_b"},
+        ]
+        m = match_menu_choice(opts, "1")
+        self.assertEqual(m.handle_id, "opt_a")
+        m2 = match_menu_choice(opts, "2")
+        self.assertEqual(m2.handle_id, "opt_b")
+
+    def test_label_with_trailing_spaces(self):
+        """Labels com espaços extras no fim — strip deve cuidar."""
+        opts = [{"label": "Solicitar orçamento   ", "handle_id": "opt_a"}]
+        m = match_menu_choice(opts, "Solicitar orçamento")
+        self.assertEqual(m.handle_id, "opt_a")
