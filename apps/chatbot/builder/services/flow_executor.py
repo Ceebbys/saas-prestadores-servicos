@@ -540,11 +540,22 @@ def _validate_user_input(node: dict, user_response: str) -> dict:
         options = data.get("options") or []
         m = match_menu_choice(options, text)
         if m is not None:
-            return {
+            # RV06 — Vincular serviço por opção. Se a option escolhida
+            # tem servico_id, retorna no validation para o executor gravar
+            # no lead_data + atualizar lead.servico.
+            chosen_opt = next(
+                (o for o in options if o.get("handle_id") == m.handle_id),
+                None,
+            )
+            servico_id = (chosen_opt or {}).get("servico_id")
+            result = {
                 "error": False,
                 "handle_id": m.handle_id,
                 "normalized_value": m.label,
             }
+            if servico_id:
+                result["servico_id"] = servico_id
+            return result
         labels = ", ".join(o.get("label", "?") for o in options)
         return {"error": True, "message": f"Não entendi. Escolha uma das opções: {labels}"}
 
@@ -601,12 +612,68 @@ def _store_lead_data(node: dict, user_response: str, validation: dict, session: 
     """Grava em session.lead_data conforme node + validação."""
     data = node.get("data") or {}
     lead_field = data.get("lead_field")
-    if not lead_field:
-        return
+    changed_lead = False
     if not session.lead_data:
         session.lead_data = {}
-    session.lead_data[lead_field] = validation.get("normalized_value") or user_response
-    session.save(update_fields=["lead_data", "updated_at"])
+    if lead_field:
+        session.lead_data[lead_field] = validation.get("normalized_value") or user_response
+        changed_lead = True
+    # RV06 — Menu options podem ter servico_id vinculado. Se a opção
+    # escolhida tem serviço, grava em lead_data + atualiza Lead.servico
+    # imediato (igual ao bloco link_servico).
+    servico_id = validation.get("servico_id")
+    if servico_id:
+        _apply_menu_option_servico(session, servico_id)
+        changed_lead = True
+    if changed_lead:
+        session.save(update_fields=["lead_data", "updated_at"])
+
+
+def _apply_menu_option_servico(session: ChatbotSession, servico_id) -> None:
+    """RV06 — Vincula serviço escolhido em option de menu (igual link_servico).
+
+    Grava em session.lead_data + atualiza Lead.servico_id se Lead já existe.
+    Best-effort: erro não interrompe fluxo.
+    """
+    try:
+        sid = int(servico_id)
+    except (TypeError, ValueError):
+        return
+    try:
+        from apps.operations.models import ServiceType
+        servico = ServiceType.objects.filter(
+            pk=sid, empresa=session.flow.empresa, is_active=True,
+        ).first()
+        if servico is None:
+            return
+        ld = dict(session.lead_data or {})
+        ld["servico_id"] = servico.pk
+        ld["servico_snapshot"] = {
+            "id": servico.pk,
+            "name": servico.name,
+            "description": servico.description or "",
+            "default_description": servico.default_description or "",
+            "default_price": str(servico.default_price),
+            "default_prazo_dias": servico.default_prazo_dias,
+            "default_proposal_template_id": servico.default_proposal_template_id,
+            "default_contract_template_id": servico.default_contract_template_id,
+            "default_pipeline_id": servico.default_pipeline_id,
+            "default_stage_id": servico.default_stage_id,
+        }
+        session.lead_data = ld
+        # Se Lead já criado, atualiza FK direto
+        if session.lead_id and session.lead.servico_id != servico.pk:
+            session.lead.servico = servico
+            if servico.default_stage_id and not session.lead.pipeline_stage_id:
+                session.lead.pipeline_stage_id = servico.default_stage_id
+            session.lead.save(update_fields=[
+                "servico", "pipeline_stage", "updated_at",
+            ])
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).exception(
+            "Erro ao aplicar menu option servico (session=%s)", session.pk,
+        )
 
 
 def _evaluate_condition(node: dict, session: ChatbotSession) -> bool:

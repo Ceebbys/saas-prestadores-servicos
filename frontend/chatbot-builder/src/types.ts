@@ -29,6 +29,10 @@ export interface MenuOption {
   label: string;
   value?: string;
   handle_id: string;
+  // RV06 — vincular serviço pré-fixado por opção (igual ao editor legacy).
+  // Quando o cliente escolhe esta opção, o lead.servico é setado para
+  // este ServiceType automaticamente (não precisa de bloco link_servico).
+  servico_id?: string | number | null;
 }
 
 export interface NodeData {

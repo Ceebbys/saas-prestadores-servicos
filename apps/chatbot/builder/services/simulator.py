@@ -93,6 +93,10 @@ def process_simulation(draft_graph: dict, state: dict, user_response: str) -> di
     lead_field = data.get("lead_field")
     if lead_field:
         state["lead_data"][lead_field] = validation.get("normalized_value") or user_response
+    # RV06 — Menu options podem ter servico_id vinculado. Grava no
+    # lead_data simulado (sem hit no DB porque é sandbox).
+    if validation.get("servico_id"):
+        state["lead_data"]["servico_id"] = validation["servico_id"]
 
     # Avança
     next_node = _advance_from_sim(draft_graph, current, state, validation=validation)
@@ -255,11 +259,19 @@ def _validate_user_input_sim(node: dict, user_response: str) -> dict:
         options = data.get("options") or []
         m = match_menu_choice(options, text)
         if m is not None:
-            return {
+            chosen_opt = next(
+                (o for o in options if o.get("handle_id") == m.handle_id),
+                None,
+            )
+            servico_id = (chosen_opt or {}).get("servico_id")
+            result = {
                 "error": False,
                 "handle_id": m.handle_id,
                 "normalized_value": m.label,
             }
+            if servico_id:
+                result["servico_id"] = servico_id
+            return result
         labels = ", ".join(o.get("label", "?") for o in options)
         return {"error": True, "message": f"Não entendi. Opções: {labels}"}
 
