@@ -87,6 +87,72 @@ def _get_or_create_draft(flow: ChatbotFlow, user) -> ChatbotFlowVersion:
 
 
 # ---------------------------------------------------------------------------
+# GET /api/chatbot/flows/<pk>/export/  — RV06: download JSON
+# ---------------------------------------------------------------------------
+
+
+class GraphExportView(BuilderAPIView):
+    """RV06 — Download do fluxo como JSON.
+
+    Cliente pediu: 'coloca uma opção de exportar o fluxo, pq quando a gente
+    for ensinar a galera eles podem pegar esse fluxo mais complexo'.
+
+    Retorna o graph_json do draft (ou da versão PUBLISHED se houver) com
+    metadados de export: schema_version, nome, descrição, data, versão do
+    SaaS. Servido como download (Content-Disposition: attachment) com nome
+    'fluxo_<slug>.json'.
+    """
+
+    def get(self, request: HttpRequest, pk: int):
+        from django.utils.text import slugify
+        from datetime import datetime as _dt
+
+        # Prefere PUBLISHED; senão usa DRAFT
+        version = self.flow.current_published_version
+        source = "published"
+        if version is None:
+            version = (
+                ChatbotFlowVersion.objects
+                .filter(flow=self.flow, status=ChatbotFlowVersion.Status.DRAFT)
+                .order_by("-numero")
+                .first()
+            )
+            source = "draft" if version else "empty"
+
+        graph = (version.graph_json if version else _EMPTY_GRAPH) or _EMPTY_GRAPH
+        export_payload = {
+            "_export": {
+                "format": "servicopro-chatbot-flow",
+                "schema_version": 1,
+                "exported_at": _dt.utcnow().isoformat() + "Z",
+                "source": source,  # 'published' | 'draft' | 'empty'
+                "flow": {
+                    "name": self.flow.name,
+                    "description": self.flow.description or "",
+                    "channel": self.flow.channel,
+                    "welcome_message": self.flow.welcome_message,
+                    "fallback_message": self.flow.fallback_message,
+                    "completion_message": self.flow.completion_message,
+                    "send_completion_message": self.flow.send_completion_message,
+                    "session_timeout_minutes": self.flow.session_timeout_minutes,
+                },
+            },
+            "graph": graph,
+        }
+
+        slug = slugify(self.flow.name) or f"flow-{self.flow.pk}"
+        filename = f"fluxo_{slug}.json"
+
+        import json as _json
+        response = HttpResponse(
+            _json.dumps(export_payload, ensure_ascii=False, indent=2),
+            content_type="application/json; charset=utf-8",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+# ---------------------------------------------------------------------------
 # GET /api/chatbot/flows/<pk>/graph/
 # ---------------------------------------------------------------------------
 

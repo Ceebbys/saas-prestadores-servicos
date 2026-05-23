@@ -421,7 +421,7 @@ class ChatbotAction(TimestampedModel):
         CREATE_LEAD = "create_lead", "Criar lead"
         UPDATE_PIPELINE = "update_pipeline", "Atualizar pipeline"
         APPLY_TAG = "apply_tag", "Aplicar tag"
-        LINK_SERVICO = "link_servico", "Vincular serviço pré-fixado"
+        LINK_SERVICO = "link_servico", "Vincular serviço cadastrado"
         REGISTER_EVENT = "register_event", "Registrar evento"
         SEND_EMAIL = "send_email", "Enviar e-mail"
         SEND_WHATSAPP = "send_whatsapp", "Enviar WhatsApp"

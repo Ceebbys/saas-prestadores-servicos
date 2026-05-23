@@ -39,6 +39,12 @@ urlpatterns = [
         views.BuilderInitView.as_view(),
         name="builder_init",
     ),
+    # RV06 — Download do fluxo (JSON com graph + metadados)
+    path(
+        "flows/<int:pk>/export/",
+        views.GraphExportView.as_view(),
+        name="builder_export",
+    ),
     # V2B — Simulador inline
     path(
         "flows/<int:pk>/simulator/start/",

@@ -100,8 +100,8 @@ class ServiceType(TenantOwnedModel):
     is_active = models.BooleanField("Ativo", default=True)
 
     class Meta:
-        verbose_name = "Serviço Pré-Fixado"
-        verbose_name_plural = "Serviços Pré-Fixados"
+        verbose_name = "Serviço Cadastrado"
+        verbose_name_plural = "Serviços Cadastrados"
         ordering = ["name"]
         indexes = [
             models.Index(fields=["empresa", "category"]),

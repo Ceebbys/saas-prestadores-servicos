@@ -238,7 +238,7 @@
         "link_servico": [
           {"name": "servico_id", "type": "select", "required": true,
            "source": "services",
-           "help": "Serviço pré-fixado a vincular ao lead. Carrega nome, valor, descrição, prazo e modelos de proposta/contrato."}
+           "help": "Serviço cadastrado a vincular ao lead. Carrega nome, valor, descrição, prazo e modelos de proposta/contrato."}
         ],
         "send_email": [
           {"name": "to", "type": "enum", "required": true, "default": "lead",

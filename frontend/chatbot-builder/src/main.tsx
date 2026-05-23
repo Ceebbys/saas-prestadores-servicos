@@ -29,6 +29,7 @@ function readConfig(root: HTMLElement): BuilderConfig {
       simulatorStep: ds.simulatorStepEndpoint ?? "",
       flowTemplates: ds.flowTemplatesEndpoint ?? "",
       applyTemplate: ds.applyTemplateEndpoint ?? "",
+      export: ds.exportEndpoint ?? "",
     },
     flowListUrl: ds.flowListUrl ?? "/",
     flowEditUrl: ds.flowEditUrl ?? "",

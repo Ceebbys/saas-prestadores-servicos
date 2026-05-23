@@ -65,7 +65,7 @@ class ServiceTypeViewTests(TestCase):
         resp = self.client.get(url)
         self.assertEqual(resp.status_code, 200)
         self.assertIn(b"Levantamento", resp.content)
-        self.assertIn(b"Servi\xc3\xa7os Pr\xc3\xa9-Fixados", resp.content)
+        self.assertIn(b"Servi\xc3\xa7os Cadastrados", resp.content)
 
     def test_other_tenant_isolation(self):
         outra = create_test_empresa(name="Outra", slug="outra")

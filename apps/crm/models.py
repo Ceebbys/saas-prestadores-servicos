@@ -65,7 +65,7 @@ class Lead(SoftDeletableModel, TenantOwnedModel):
         null=True,
         blank=True,
         related_name="leads",
-        verbose_name="Serviço Pré-Fixado",
+        verbose_name="Serviço Cadastrado",
     )
     # RV06 — Valor estimado do negócio. Usado quando Lead vai para etapa
     # de ganho (is_won=True) e não há proposta aceita ainda. Cria

@@ -147,7 +147,7 @@ class Proposal(SoftDeletableModel, TenantOwnedModel):
         null=True,
         blank=True,
         related_name="proposals",
-        verbose_name="Serviço Pré-Fixado",
+        verbose_name="Serviço Cadastrado",
     )
     title = models.CharField("Título", max_length=255)
     header_image = models.ImageField(

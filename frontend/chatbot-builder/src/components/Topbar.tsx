@@ -34,6 +34,31 @@ function TemplatesButton() {
 }
 
 
+/**
+ * RV06 — Botão "Exportar" baixa o fluxo como JSON.
+ *
+ * Cliente pediu: 'coloca uma opção de exportar o fluxo, pq quando a
+ * gente for ensinar a galera eles podem pegar esse fluxo mais complexo'.
+ *
+ * Aciona o endpoint /api/chatbot/flows/<pk>/export/ que retorna o
+ * graph_json + metadados como download attachment.
+ */
+function ExportButton() {
+  const exportUrl = useBuilderStore((s) => s.config?.endpoints.export);
+  if (!exportUrl) return null;
+  return (
+    <a
+      href={exportUrl}
+      className="btn btn--ghost"
+      title="Baixar este fluxo como arquivo JSON"
+      download
+    >
+      ⬇ Exportar
+    </a>
+  );
+}
+
+
 function SaveIndicator() {
   const saveState = useBuilderStore((s) => s.saveState);
   const lastSavedAt = useBuilderStore((s) => s.lastSavedAt);
@@ -138,6 +163,7 @@ export function Topbar() {
       <div className="topbar__right">
         {publishMsg && <span className="topbar__published-msg">{publishMsg}</span>}
         <TemplatesButton />
+        <ExportButton />
         <SimulatorToggle />
         <button
           className={`btn btn--ghost validation-trigger ${

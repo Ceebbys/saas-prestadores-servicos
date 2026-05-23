@@ -63,6 +63,7 @@
      data-simulator-step-endpoint="{% url 'chatbot:builder_simulator_step' flow.pk %}"
      data-flow-templates-endpoint="{% url 'chatbot:flow_templates' %}"
      data-apply-template-endpoint="{% url 'chatbot:builder_apply_template' flow.pk %}"
+     data-export-endpoint="{% url 'chatbot:builder_export' flow.pk %}"
      data-flow-list-url="{% url 'chatbot:flow_list' %}"
      data-flow-edit-url="{% url 'chatbot:flow_update' flow.pk %}"
      data-has-published="{{ has_published|yesno:'true,false' }}"

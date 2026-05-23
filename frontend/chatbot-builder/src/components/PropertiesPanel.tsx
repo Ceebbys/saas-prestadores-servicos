@@ -395,7 +395,7 @@ function labelize(field: NodeCatalogField): string {
     order: "Ordem de execução",
     is_active: "Ativa",
     // RV06 — campos extras por action_type
-    servico_id: "Serviço pré-fixado",
+    servico_id: "Serviço cadastrado",
     pipeline_stage_id: "Etapa do pipeline",
     tag_name: "Tag",
     event_name: "Nome do evento",
@@ -418,7 +418,7 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
     create_lead: "Criar lead",
     update_pipeline: "Atualizar pipeline",
     apply_tag: "Aplicar tag",
-    link_servico: "Vincular serviço pré-fixado",
+    link_servico: "Vincular serviço cadastrado",
     register_event: "Registrar evento",
     send_email: "Enviar e-mail",
     send_whatsapp: "Enviar WhatsApp",

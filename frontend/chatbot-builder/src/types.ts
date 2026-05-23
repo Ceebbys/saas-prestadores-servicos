@@ -115,6 +115,7 @@ export interface BuilderConfig {
     simulatorStep: string;
     flowTemplates: string;
     applyTemplate: string;
+    export: string;
   };
   flowListUrl: string;
   flowEditUrl: string;
