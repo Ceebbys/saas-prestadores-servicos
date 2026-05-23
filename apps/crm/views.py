@@ -484,3 +484,127 @@ class OpportunityMoveView(EmpresaMixin, View):
             return HttpResponse(html)
 
         return redirect("crm:pipeline_board")
+
+
+# ---------------------------------------------------------------------------
+# RV06 — CRUD de PipelineStage (configurar etapas + ganho/perda)
+# ---------------------------------------------------------------------------
+
+
+class PipelineSettingsView(EmpresaMixin, TemplateView):
+    """Editor visual das etapas do pipeline.
+
+    Lista todas as stages do pipeline default da empresa. Permite criar,
+    editar, reordenar, marcar como ganho/perda e excluir.
+    """
+    template_name = "crm/pipeline_settings.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        pipeline = Pipeline.objects.filter(
+            empresa=self.request.empresa, is_default=True,
+        ).first()
+        if pipeline is None:
+            pipeline = Pipeline.objects.filter(
+                empresa=self.request.empresa,
+            ).first()
+        ctx["pipeline"] = pipeline
+        ctx["stages"] = (
+            pipeline.stages.annotate(lead_count=Count("leads")).order_by("order")
+            if pipeline else []
+        )
+        return ctx
+
+
+class PipelineStageCreateView(EmpresaMixin, View):
+    """POST inline para criar nova stage."""
+
+    def post(self, request):
+        pipeline = Pipeline.objects.filter(
+            empresa=request.empresa, is_default=True,
+        ).first()
+        if pipeline is None:
+            messages.error(request, "Sem pipeline cadastrado.")
+            return redirect("crm:pipeline_settings")
+        name = (request.POST.get("name") or "").strip()
+        if not name:
+            messages.error(request, "Nome obrigatório.")
+            return redirect("crm:pipeline_settings")
+        # Próximo order = max + 10
+        last_order = (
+            pipeline.stages.order_by("-order").values_list("order", flat=True).first() or 0
+        )
+        PipelineStage.objects.create(
+            pipeline=pipeline,
+            name=name[:100],
+            order=last_order + 10,
+            color=(request.POST.get("color") or "#6366F1")[:7],
+            is_won=request.POST.get("is_won") == "on",
+            is_lost=request.POST.get("is_lost") == "on",
+        )
+        messages.success(request, f"Etapa '{name}' criada.")
+        return redirect("crm:pipeline_settings")
+
+
+class PipelineStageUpdateView(EmpresaMixin, View):
+    """POST inline para editar uma stage."""
+
+    def post(self, request, pk):
+        stage = get_object_or_404(
+            PipelineStage, pk=pk, pipeline__empresa=request.empresa,
+        )
+        name = (request.POST.get("name") or "").strip()
+        if name:
+            stage.name = name[:100]
+        color = (request.POST.get("color") or "").strip()
+        if color:
+            stage.color = color[:7]
+        # Checkboxes: defaults False quando não enviados
+        stage.is_won = request.POST.get("is_won") == "on"
+        stage.is_lost = request.POST.get("is_lost") == "on"
+        # is_won e is_lost são mutuamente exclusivos
+        if stage.is_won and stage.is_lost:
+            stage.is_lost = False
+        stage.save()
+        messages.success(request, f"Etapa '{stage.name}' atualizada.")
+        return redirect("crm:pipeline_settings")
+
+
+class PipelineStageDeleteView(EmpresaMixin, View):
+    """POST para deletar uma stage. O signal pre_delete cuida dos leads órfãos."""
+
+    def post(self, request, pk):
+        stage = get_object_or_404(
+            PipelineStage, pk=pk, pipeline__empresa=request.empresa,
+        )
+        # Bloqueia delete se for a única stage do pipeline
+        if stage.pipeline.stages.count() <= 1:
+            messages.error(
+                request, "Não é possível excluir a única etapa do pipeline.",
+            )
+            return redirect("crm:pipeline_settings")
+        name = stage.name
+        stage.delete()
+        messages.success(request, f"Etapa '{name}' excluída.")
+        return redirect("crm:pipeline_settings")
+
+
+class PipelineStageReorderView(EmpresaMixin, View):
+    """POST para mover stage 1 posição (up/down). Reordena swap simples."""
+
+    def post(self, request, pk):
+        direction = request.POST.get("direction", "down")
+        stage = get_object_or_404(
+            PipelineStage, pk=pk, pipeline__empresa=request.empresa,
+        )
+        siblings = list(stage.pipeline.stages.order_by("order"))
+        idx = next((i for i, s in enumerate(siblings) if s.pk == stage.pk), None)
+        if idx is None:
+            return redirect("crm:pipeline_settings")
+        swap_idx = idx - 1 if direction == "up" else idx + 1
+        if 0 <= swap_idx < len(siblings):
+            other = siblings[swap_idx]
+            stage.order, other.order = other.order, stage.order
+            stage.save(update_fields=["order", "updated_at"])
+            other.save(update_fields=["order", "updated_at"])
+        return redirect("crm:pipeline_settings")

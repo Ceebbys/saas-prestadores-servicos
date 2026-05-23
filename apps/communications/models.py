@@ -312,6 +312,7 @@ class Notification(TimestampedModel):
         MESSAGE_INBOUND = "message_inbound", "Nova mensagem recebida"
         CONVERSATION_ASSIGNED = "conversation_assigned", "Conversa atribuída a você"
         LEAD_NEW = "lead_new", "Novo lead"
+        LEAD_WON = "lead_won", "Lead ganho"  # RV06
         PROPOSAL_ACCEPTED = "proposal_accepted", "Proposta aceita"
         CONTRACT_SIGNED = "contract_signed", "Contrato assinado"
         SYSTEM = "system", "Sistema"

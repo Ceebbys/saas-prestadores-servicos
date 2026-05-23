@@ -29,6 +29,32 @@ urlpatterns = [
     ),
     # Pipeline
     path("pipeline/", views.PipelineBoardView.as_view(), name="pipeline_board"),
+    # RV06 — Configurar etapas (CRUD + flags ganho/perda)
+    path(
+        "pipeline/settings/",
+        views.PipelineSettingsView.as_view(),
+        name="pipeline_settings",
+    ),
+    path(
+        "pipeline/stages/create/",
+        views.PipelineStageCreateView.as_view(),
+        name="pipeline_stage_create",
+    ),
+    path(
+        "pipeline/stages/<int:pk>/edit/",
+        views.PipelineStageUpdateView.as_view(),
+        name="pipeline_stage_update",
+    ),
+    path(
+        "pipeline/stages/<int:pk>/delete/",
+        views.PipelineStageDeleteView.as_view(),
+        name="pipeline_stage_delete",
+    ),
+    path(
+        "pipeline/stages/<int:pk>/reorder/",
+        views.PipelineStageReorderView.as_view(),
+        name="pipeline_stage_reorder",
+    ),
     # Opportunities
     path(
         "opportunities/create/",

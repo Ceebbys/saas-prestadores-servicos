@@ -1,0 +1,172 @@
+{% extends "layouts/authenticated.html" %}
+{% load ui_tags %}
+
+{% block title %}Configurar etapas do pipeline — ServiçoPro{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm text-slate-500 mb-4">
+    <a href="{% url 'crm:lead_list' %}" class="hover:text-indigo-600">CRM</a>
+    {% icon "chevron-right" "w-3 h-3" %}
+    <a href="{% url 'crm:pipeline_board' %}" class="hover:text-indigo-600">Pipeline</a>
+    {% icon "chevron-right" "w-3 h-3" %}
+    <span class="text-slate-900 font-medium">Configurar etapas</span>
+</nav>
+{% endblock %}
+
+{% block page_header %}
+<div class="mb-6">
+    <h1 class="text-2xl font-bold text-slate-900">Configurar Etapas do Pipeline</h1>
+    <p class="mt-1 text-sm text-slate-500">
+        Organize as etapas do seu funil. Marque "Etapa de ganho" para que
+        leads movidos para ela gerem automaticamente uma entrada futura no
+        financeiro. "Etapa de perda" registra apenas como negócio perdido.
+    </p>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if not pipeline %}
+<div class="bg-amber-50 border border-amber-200 rounded-xl p-6">
+    <p class="text-amber-900 font-medium">Nenhum pipeline cadastrado.</p>
+    <p class="text-amber-800 text-sm mt-1">
+        Crie um pipeline primeiro no admin para começar a configurar etapas.
+    </p>
+</div>
+{% else %}
+<div class="max-w-4xl space-y-6">
+    <!-- Lista de etapas -->
+    <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+            <div>
+                <h2 class="text-base font-semibold text-slate-900">Etapas atuais</h2>
+                <p class="text-xs text-slate-500 mt-0.5">{{ pipeline.name }}</p>
+            </div>
+            <span class="text-xs text-slate-500">{{ stages|length }} etapa{{ stages|length|pluralize:"s" }}</span>
+        </div>
+
+        {% if stages %}
+        <ul class="divide-y divide-slate-100">
+            {% for stage in stages %}
+            <li class="px-6 py-4 hover:bg-slate-50/50 transition-colors">
+                <form method="post"
+                      action="{% url 'crm:pipeline_stage_update' stage.pk %}"
+                      class="flex flex-wrap items-center gap-3">
+                    {% csrf_token %}
+                    <!-- Cor + ordem -->
+                    <div class="flex items-center gap-2">
+                        <span class="inline-block w-3 h-8 rounded-sm"
+                              style="background-color: {{ stage.color }}"></span>
+                        <span class="text-xs text-slate-400 font-mono w-6">{{ stage.order }}</span>
+                    </div>
+                    <!-- Nome -->
+                    <input type="text" name="name" value="{{ stage.name }}"
+                           class="flex-1 min-w-[180px] rounded-lg border-slate-300 text-sm px-3 py-2 focus:border-indigo-500 focus:ring-indigo-500"
+                           required>
+                    <!-- Cor -->
+                    <input type="color" name="color" value="{{ stage.color }}"
+                           class="h-9 w-12 cursor-pointer rounded border border-slate-300"
+                           title="Cor da etapa">
+                    <!-- Checkboxes -->
+                    <label class="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 cursor-pointer select-none">
+                        <input type="checkbox" name="is_won" {% if stage.is_won %}checked{% endif %}
+                               class="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
+                        ✓ Ganho
+                    </label>
+                    <label class="inline-flex items-center gap-1.5 text-xs font-medium text-rose-700 cursor-pointer select-none">
+                        <input type="checkbox" name="is_lost" {% if stage.is_lost %}checked{% endif %}
+                               class="rounded border-slate-300 text-rose-600 focus:ring-rose-500">
+                        ✗ Perda
+                    </label>
+                    <!-- Leads count -->
+                    <span class="text-xs text-slate-500 px-2 py-1 rounded bg-slate-100">
+                        {{ stage.lead_count }} lead{{ stage.lead_count|pluralize:"s" }}
+                    </span>
+                    <!-- Ações -->
+                    <div class="flex items-center gap-1">
+                        <button type="submit"
+                                class="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded hover:bg-indigo-700 transition-colors">
+                            Salvar
+                        </button>
+                    </div>
+                </form>
+                <!-- Botões de reorder/delete fora do form principal -->
+                <div class="flex items-center gap-1 mt-2 ml-12">
+                    {% if not forloop.first %}
+                    <form method="post" action="{% url 'crm:pipeline_stage_reorder' stage.pk %}" class="inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="direction" value="up">
+                        <button type="submit" class="text-xs text-slate-500 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100" title="Mover para cima">↑</button>
+                    </form>
+                    {% endif %}
+                    {% if not forloop.last %}
+                    <form method="post" action="{% url 'crm:pipeline_stage_reorder' stage.pk %}" class="inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="direction" value="down">
+                        <button type="submit" class="text-xs text-slate-500 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100" title="Mover para baixo">↓</button>
+                    </form>
+                    {% endif %}
+                    <form method="post" action="{% url 'crm:pipeline_stage_delete' stage.pk %}" class="inline"
+                          onsubmit="return confirm('Excluir etapa &quot;{{ stage.name }}&quot;?\n\n{{ stage.lead_count }} lead(s) serão movidos para a etapa anterior.');">
+                        {% csrf_token %}
+                        <button type="submit" class="text-xs text-rose-500 hover:text-rose-700 px-2 py-1 rounded hover:bg-rose-50">
+                            Excluir
+                        </button>
+                    </form>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <div class="px-6 py-12 text-center text-sm text-slate-500">
+            Nenhuma etapa cadastrada. Crie a primeira abaixo.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Criar nova etapa -->
+    <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6">
+        <h2 class="text-base font-semibold text-slate-900 mb-3">Adicionar nova etapa</h2>
+        <form method="post" action="{% url 'crm:pipeline_stage_create' %}"
+              class="flex flex-wrap items-center gap-3">
+            {% csrf_token %}
+            <input type="text" name="name" placeholder="Nome da etapa (ex: Em negociação)"
+                   class="flex-1 min-w-[260px] rounded-lg border-slate-300 text-sm px-3 py-2 focus:border-indigo-500 focus:ring-indigo-500"
+                   required>
+            <input type="color" name="color" value="#6366F1"
+                   class="h-9 w-12 cursor-pointer rounded border border-slate-300"
+                   title="Cor">
+            <label class="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 cursor-pointer select-none">
+                <input type="checkbox" name="is_won"
+                       class="rounded border-slate-300 text-emerald-600">
+                ✓ É etapa de ganho
+            </label>
+            <label class="inline-flex items-center gap-1.5 text-xs font-medium text-rose-700 cursor-pointer select-none">
+                <input type="checkbox" name="is_lost"
+                       class="rounded border-slate-300 text-rose-600">
+                ✗ É etapa de perda
+            </label>
+            <button type="submit"
+                    class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
+                {% icon "plus" "w-4 h-4 inline -mt-0.5 mr-1" %}
+                Adicionar
+            </button>
+        </form>
+    </div>
+
+    <!-- Explicação -->
+    <div class="bg-blue-50 border border-blue-200 rounded-xl p-5 text-sm text-blue-900">
+        <p class="font-semibold mb-2">💡 Como funciona</p>
+        <ul class="space-y-1.5 text-blue-800">
+            <li>• <strong>Etapa de ganho</strong>: quando você arrasta um lead para esta etapa,
+                o sistema cria automaticamente uma <strong>entrada pendente</strong> no
+                Financeiro com o valor estimado do lead (ou do serviço vinculado).
+            </li>
+            <li>• <strong>Etapa de perda</strong>: registra o lead como perdido. Não gera
+                entrada financeira.
+            </li>
+            <li>• Etapas comuns: <em>Novo, Em contato, Em proposta, Negociação, Ganho, Perdido</em>.</li>
+        </ul>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -180,7 +180,74 @@ def generate_entry_from_lead_won(lead, *, first_due_date=None):
             f"Gerado automaticamente — Lead movido para etapa de ganho.{notes_extra}"
         ),
     )
+    # RV06 — Notifica responsável (best-effort, não bloqueia)
+    _notify_lead_won(lead, entry)
     return entry
+
+
+def _notify_lead_won(lead, entry):
+    """RV06 — Notifica responsável (lead.assigned_to) ou todos os membros
+    ativos da empresa quando um Lead vai para WON.
+
+    Notification.Type.LEAD_WON com deep-link para o entry no Financeiro.
+    Best-effort — qualquer erro é apenas logado.
+    """
+    try:
+        from apps.communications.models import Notification
+        from apps.communications.notifications import notify
+        from django.urls import reverse
+
+        try:
+            url = reverse("finance:entry_update", args=[entry.pk])
+        except Exception:  # noqa: BLE001
+            url = ""
+
+        amount_fmt = f"R$ {entry.amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        title = f"🎉 Negócio fechado: {lead.name}"
+        body = (
+            f"Lead movido para etapa de ganho. Entrada de {amount_fmt} criada "
+            f"como pendente no Financeiro (vencimento {entry.date.strftime('%d/%m/%Y')})."
+        )
+        if entry.amount <= 0:
+            body += "\n⚠ Valor não definido — edite o lançamento para ajustar."
+
+        payload = {
+            "lead_id": lead.pk,
+            "entry_id": entry.pk,
+            "amount": str(entry.amount),
+        }
+
+        # Destinatários: assigned_to OU todos os membros ativos
+        recipients = []
+        if lead.assigned_to_id:
+            recipients.append(lead.assigned_to)
+        else:
+            from apps.accounts.models import Membership
+            recipient_ids = (
+                Membership.objects.filter(empresa=lead.empresa, is_active=True)
+                .values_list("user_id", flat=True)
+            )
+            from django.contrib.auth import get_user_model
+            recipients = list(
+                get_user_model().objects.filter(pk__in=recipient_ids, is_active=True)
+            )
+
+        for user in recipients:
+            notify(
+                user,
+                type=Notification.Type.LEAD_WON,
+                title=title,
+                body=body,
+                url=url,
+                icon="trophy",
+                empresa=lead.empresa,
+                payload=payload,
+            )
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception(
+            "Erro ao notificar lead_won (lead=%s)", getattr(lead, "pk", None),
+        )
 
 
 @transaction.atomic

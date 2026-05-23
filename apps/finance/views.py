@@ -76,6 +76,10 @@ class FinanceOverviewView(EmpresaMixin, HtmxResponseMixin, TemplateView):
             empresa=empresa, is_active=True
         )
 
+        # RV06 — Previsão de receita: agrupa entries pendentes (auto-geradas
+        # OU manuais com type=INCOME) por mês de vencimento. Últimos 6 meses.
+        forecast = _compute_revenue_forecast(empresa, today, months=6)
+
         context.update(
             {
                 "total_income": total_income,
@@ -86,9 +90,79 @@ class FinanceOverviewView(EmpresaMixin, HtmxResponseMixin, TemplateView):
                 "recent_entries": recent_entries,
                 "current_month": today,
                 "bank_accounts": bank_accounts,
+                "forecast_months": forecast["months"],
+                "forecast_total": forecast["total"],
+                "forecast_max": forecast["max"],
             }
         )
         return context
+
+
+def _compute_revenue_forecast(empresa, today, *, months: int = 6) -> dict:
+    """RV06 — Previsão de receita (FinancialEntry pendente) por mês.
+
+    Considera APENAS type=INCOME e status in (PENDING, OVERDUE) —
+    receitas confirmadas (PAID) já estão no caixa. Inclui auto-gerados
+    de propostas/leads E lançamentos manuais.
+
+    Args:
+        empresa: tenant
+        today: data de referência (geralmente hoje)
+        months: quantos meses à frente (default 6)
+
+    Returns:
+        {
+            "months": [{"label": "Maio/26", "year": 2026, "month": 5, "total": Decimal, "count": int}, ...],
+            "total": Decimal (soma de todos os meses),
+            "max": Decimal (maior mês — usado pra escalar gráfico),
+        }
+    """
+    from datetime import date as _date
+    from decimal import Decimal
+
+    # Constrói lista de (ano, mês) dos próximos N meses, começando do mês atual
+    pairs: list[tuple[int, int]] = []
+    y, m = today.year, today.month
+    for _ in range(months):
+        pairs.append((y, m))
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+
+    qs = FinancialEntry.objects.filter(
+        empresa=empresa,
+        type=FinancialEntry.Type.INCOME,
+        status__in=(
+            FinancialEntry.Status.PENDING,
+            FinancialEntry.Status.OVERDUE,
+        ),
+    )
+
+    pt_months = [
+        "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
+        "Jul", "Ago", "Set", "Out", "Nov", "Dez",
+    ]
+    months_out: list[dict] = []
+    total = Decimal("0.00")
+    max_val = Decimal("0.00")
+    for (year, month) in pairs:
+        month_total = (
+            qs.filter(date__year=year, date__month=month)
+            .aggregate(total=Sum("amount"))["total"]
+        ) or Decimal("0.00")
+        count = qs.filter(date__year=year, date__month=month).count()
+        months_out.append({
+            "label": f"{pt_months[month - 1]}/{year % 100:02d}",
+            "year": year,
+            "month": month,
+            "total": month_total,
+            "count": count,
+        })
+        total += month_total
+        if month_total > max_val:
+            max_val = month_total
+    return {"months": months_out, "total": total, "max": max_val}
 
 
 # ---------------------------------------------------------------------------

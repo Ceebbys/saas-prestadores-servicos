@@ -36,6 +36,58 @@
 </div>
 {% endif %}
 
+<!-- RV06 — Previsão de Receita (próximos 6 meses) -->
+{% if forecast_total > 0 %}
+<div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6 mb-6">
+    <div class="flex items-start justify-between mb-4 gap-4">
+        <div>
+            <h2 class="text-base font-semibold text-slate-900 flex items-center gap-2">
+                📈 Previsão de receita
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">
+                Lançamentos pendentes (propostas + leads ganhos + manuais) agrupados por mês de vencimento
+            </p>
+        </div>
+        <div class="text-right">
+            <p class="text-xs text-slate-500 uppercase tracking-wider">Total previsto</p>
+            <p class="text-2xl font-bold text-emerald-600">R$ {{ forecast_total|floatformat:2|stringformat:"s" }}</p>
+        </div>
+    </div>
+
+    <!-- Gráfico simples (barras horizontais escaladas pelo max) -->
+    <div class="space-y-2">
+        {% for m in forecast_months %}
+        <div class="flex items-center gap-3 text-xs">
+            <div class="w-16 text-right text-slate-600 font-medium">{{ m.label }}</div>
+            <div class="flex-1 h-7 bg-slate-100 rounded-md overflow-hidden relative">
+                {% if forecast_max > 0 and m.total > 0 %}
+                {% widthratio m.total forecast_max 100 as pct %}
+                <div class="absolute inset-y-0 left-0 bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-md flex items-center px-2"
+                     style="width: {{ pct }}%; min-width: 4px;">
+                    <span class="text-white text-[10px] font-semibold whitespace-nowrap">
+                        R$ {{ m.total|floatformat:2 }}
+                    </span>
+                </div>
+                {% else %}
+                <span class="absolute inset-y-0 left-2 flex items-center text-slate-400 text-[10px]">—</span>
+                {% endif %}
+            </div>
+            <div class="w-20 text-right">
+                {% if m.count > 0 %}
+                <a href="{% url 'finance:entry_list' %}?year={{ m.year }}&month={{ m.month }}&status=pending"
+                   class="text-indigo-600 hover:underline">
+                    {{ m.count }} lanç.
+                </a>
+                {% else %}
+                <span class="text-slate-400">0 lanç.</span>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
 <!-- Overdue Alert -->
 {% if overdue_count > 0 %}
 <div class="mb-6 rounded-xl bg-rose-50 ring-1 ring-rose-200/60 p-4">

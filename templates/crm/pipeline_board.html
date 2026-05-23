@@ -17,11 +17,18 @@
         <h1 class="text-2xl font-bold text-slate-900">Pipeline</h1>
         <p class="mt-1 text-sm text-slate-500">{{ pipeline.name|default:"Pipeline Principal" }}</p>
     </div>
-    <a href="{% url 'crm:opportunity_create' %}"
-       class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm">
-        {% icon "plus" "w-4 h-4" %}
-        Nova Oportunidade
-    </a>
+    <div class="flex items-center gap-2">
+        <a href="{% url 'crm:pipeline_settings' %}"
+           class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-slate-700 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-50 transition-colors">
+            {% icon "cog-8-tooth" "w-4 h-4" %}
+            Configurar etapas
+        </a>
+        <a href="{% url 'crm:opportunity_create' %}"
+           class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm">
+            {% icon "plus" "w-4 h-4" %}
+            Nova Oportunidade
+        </a>
+    </div>
 </div>
 {% endblock %}
 
