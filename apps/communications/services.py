@@ -110,7 +110,40 @@ def send_whatsapp(
         channel=ConversationMessage.Channel.WHATSAPP,
         content=content,
     )
+    # RV06 — Atendente humano enviou: pausar o bot nessa conversa
+    if sender_user and not conversation.bot_paused:
+        _pause_bot(conversation, sender_user)
     return msg
+
+
+def _pause_bot(conversation: Conversation, user) -> None:
+    """RV06 — Marca conversation com bot_paused=True.
+
+    Chamado automaticamente quando atendente envia 1ª msg manual via
+    send_whatsapp/send_email. O webhook do chatbot respeita essa flag
+    e não responde mais até admin clicar 'Devolver ao bot'.
+    """
+    conversation.bot_paused = True
+    conversation.bot_paused_at = timezone.now()
+    conversation.bot_paused_by = user
+    conversation.save(update_fields=[
+        "bot_paused", "bot_paused_at", "bot_paused_by", "updated_at",
+    ])
+    logger.info(
+        "comm: bot pausado em conversation=%s por user=%s",
+        conversation.pk, getattr(user, "pk", None),
+    )
+
+
+def resume_bot(conversation: Conversation) -> None:
+    """RV06 — Reativa o bot na conversation (admin clicou 'Devolver ao bot')."""
+    conversation.bot_paused = False
+    conversation.bot_paused_at = None
+    conversation.bot_paused_by = None
+    conversation.save(update_fields=[
+        "bot_paused", "bot_paused_at", "bot_paused_by", "updated_at",
+    ])
+    logger.info("comm: bot reativado em conversation=%s", conversation.pk)
 
 
 def send_email(
@@ -192,6 +225,9 @@ def send_email(
         channel=ConversationMessage.Channel.EMAIL,
         content=content,
     )
+    # RV06 — Atendente enviou e-mail manual: pausa o bot
+    if sender_user and not conversation.bot_paused:
+        _pause_bot(conversation, sender_user)
     return msg
 
 

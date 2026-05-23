@@ -92,6 +92,31 @@ class Conversation(TenantOwnedModel):
         help_text="Inbounds desde o último readall.",
     )
 
+    # RV06 — Pausa do bot quando atendente humano assume (feedback usuário)
+    bot_paused = models.BooleanField(
+        "Bot pausado",
+        default=False,
+        help_text=(
+            "Quando True, o chatbot NÃO responde mais nesta conversa. Setado "
+            "automaticamente quando um atendente envia mensagem manual. Pode "
+            "ser revertido via botão 'Devolver ao bot'."
+        ),
+    )
+    bot_paused_at = models.DateTimeField(
+        "Bot pausado em",
+        null=True,
+        blank=True,
+        help_text="Timestamp em que o atendente assumiu o controle.",
+    )
+    bot_paused_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="paused_conversations",
+        verbose_name="Pausado por",
+    )
+
     class Meta:
         verbose_name = "Conversa"
         verbose_name_plural = "Conversas"

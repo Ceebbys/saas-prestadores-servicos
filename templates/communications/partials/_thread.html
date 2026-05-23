@@ -27,6 +27,29 @@
     </div>
 </div>
 
+{# RV06 — Banner quando bot está pausado (atendente assumiu) #}
+{% if active_conversation.bot_paused %}
+<div class="px-4 py-2 bg-amber-50 border-b border-amber-200 flex items-center justify-between gap-3 flex-shrink-0">
+    <div class="flex items-center gap-2 text-xs text-amber-900 min-w-0">
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-200 text-amber-900 font-semibold">
+            🤖 BOT PAUSADO
+        </span>
+        <span class="truncate">
+            O chatbot não está respondendo aqui — você assumiu o atendimento
+            {% if active_conversation.bot_paused_by %}({{ active_conversation.bot_paused_by.get_full_name|default:active_conversation.bot_paused_by.username }}){% endif %}.
+        </span>
+    </div>
+    <form method="post" action="{% url 'communications:resume_bot' active_conversation.pk %}" class="inline-flex flex-shrink-0">
+        {% csrf_token %}
+        <button type="submit"
+                class="text-xs font-medium px-3 py-1 rounded bg-white border border-amber-300 text-amber-900 hover:bg-amber-100 transition-colors"
+                onclick="return confirm('Devolver esta conversa ao bot?\n\nA próxima mensagem do cliente será respondida pelo chatbot automaticamente.');">
+            ↩ Devolver ao bot
+        </button>
+    </form>
+</div>
+{% endif %}
+
 {# Mensagens — refresh por polling + WS event filtrado pela conversa atual #}
 <div class="inbox-thread-scroll"
      id="thread-{{ active_conversation.pk }}"

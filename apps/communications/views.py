@@ -380,3 +380,30 @@ class MarkReadView(EmpresaMixin, View):
         if request.htmx:
             return HttpResponse(status=204)
         return redirect("communications:detail", pk=conv.pk)
+
+
+class ResumeBotView(EmpresaMixin, View):
+    """RV06 — Devolve o controle da conversa ao chatbot.
+
+    Quando atendente envia 1ª mensagem manual, send_whatsapp/send_email
+    automaticamente seta `bot_paused=True`. Este endpoint reverte:
+    seta bot_paused=False, limpa timestamp/user. Próxima mensagem do
+    cliente vai ser processada pelo bot novamente.
+    """
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        from apps.communications.services import resume_bot
+        conv = get_object_or_404(Conversation, pk=pk, empresa=request.empresa)
+        if conv.bot_paused:
+            resume_bot(conv)
+            messages.success(
+                request,
+                "Bot reativado nesta conversa. A próxima mensagem do cliente "
+                "será respondida automaticamente."
+            )
+        else:
+            messages.info(request, "O bot já está ativo nesta conversa.")
+        if request.htmx:
+            return redirect("communications:detail", pk=conv.pk)
+        return redirect("communications:detail", pk=conv.pk)

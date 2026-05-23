@@ -15,6 +15,8 @@ urlpatterns = [
     path("<int:pk>/assign/", views.AssignView.as_view(), name="assign"),
     path("<int:pk>/quick-action/", views.QuickActionView.as_view(), name="quick_action"),
     path("<int:pk>/mark-read/", views.MarkReadView.as_view(), name="mark_read"),
+    # RV06 — Devolver controle da conversa ao bot
+    path("<int:pk>/resume-bot/", views.ResumeBotView.as_view(), name="resume_bot"),
     # Notificações (Fase 4)
     path(
         "notifications/", views_notifications.NotificationListView.as_view(),

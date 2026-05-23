@@ -355,6 +355,34 @@ class EvolutionAPIClient:
 # Views do webhook Evolution API
 # ---------------------------------------------------------------------------
 
+def _is_bot_paused_for_sender(empresa, sender_id: str) -> bool:
+    """RV06 — Verifica se há uma Conversation no Inbox com bot_paused=True
+    para este sender (matched via lead.phone ou contato.whatsapp).
+
+    Returns False (não pausa) se: sem matching, conversation sem bot_paused,
+    ou erro em qualquer step (não pode bloquear bot por erro de query).
+    """
+    try:
+        from apps.communications.models import Conversation
+        phone_digits = "".join(c for c in (sender_id or "") if c.isdigit())
+        if not phone_digits:
+            return False
+        # Match via contato.whatsapp ou lead.phone (icontains pra tolerar
+        # variações de formato +55 etc)
+        from django.db.models import Q
+        return Conversation.objects.filter(
+            empresa=empresa,
+            bot_paused=True,
+        ).filter(
+            Q(contato__whatsapp__icontains=phone_digits)
+            | Q(contato__phone__icontains=phone_digits)
+            | Q(lead__phone__icontains=phone_digits)
+        ).exists()
+    except Exception:  # noqa: BLE001
+        logger.exception("_is_bot_paused_for_sender: erro consultando")
+        return False
+
+
 def _process_evolution_message(flow, sender_id, message_text):
     """Lógica compartilhada: processa mensagem e retorna (reply_text, choices, is_complete, lead_id).
 
@@ -362,6 +390,17 @@ def _process_evolution_message(flow, sender_id, message_text):
     quando há lead associado (humano vê na inbox unificada).
     """
     from django.utils import timezone
+
+    # RV06 — Pausa do bot quando atendente humano assumiu (feedback usuário).
+    # Se existe Conversation no Inbox para esse sender_id com bot_paused=True,
+    # não responde — só registra a mensagem inbound na inbox para o humano ver.
+    if _is_bot_paused_for_sender(flow.empresa, sender_id):
+        logger.info(
+            "bot pausado para sender=%s (empresa=%s) — não responde, só registra inbound",
+            sender_id, flow.empresa_id,
+        )
+        _mirror_to_inbox(flow, sender_id, message_text, "", session=None)
+        return "", [], False, None
 
     # Buscar sessão ativa para este sender
     session = ChatbotSession.objects.filter(
