@@ -61,7 +61,8 @@ def match_menu_choice(options: list[dict], text: str) -> MatchResult | None:
     if not options:
         return None
 
-    raw = (text or "").strip()
+    # Normaliza whitespace: NBSP (\xa0), ZWSP (​), tab → espaço normal
+    raw = _clean_whitespace(text or "").strip()
     if not raw:
         return None
 
@@ -168,9 +169,28 @@ def match_menu_choice(options: list[dict], text: str) -> MatchResult | None:
 
 
 def _normalize_for_compare(text: str) -> str:
-    """Lowercase + remove acentos para comparação tolerante."""
+    """Lowercase + remove acentos + normaliza whitespace para comparação tolerante."""
     if not text:
         return ""
+    cleaned = _clean_whitespace(text.lower())
     # Remove acentos (NFD decompõe; filtra combining chars)
-    nfkd = unicodedata.normalize("NFD", text.lower())
+    nfkd = unicodedata.normalize("NFD", cleaned)
     return "".join(c for c in nfkd if not unicodedata.combining(c)).strip()
+
+
+def _clean_whitespace(text: str) -> str:
+    """Substitui caracteres invisíveis problemáticos por espaço normal.
+
+    Cobre: NBSP (\\xa0), ZWSP (\\u200b), zero-width non-joiner (\\u200c),
+    zero-width joiner (\\u200d), word joiner (\\u2060), em space (\\u2003),
+    tabs, etc. Sem isso, "1 Solicitar orçamento" copiado de Word ou de
+    alguns navegadores tem NBSP entre o "1" e o resto, e falha o match.
+    """
+    if not text:
+        return ""
+    INVISIBLE = "\xa0​‌‍⁠     　"
+    for ch in INVISIBLE:
+        text = text.replace(ch, " ")
+    # Normaliza tabs e múltiplos espaços para 1 só
+    text = re.sub(r"[\t ]+", " ", text)
+    return text

@@ -74,11 +74,18 @@ def process_simulation(draft_graph: dict, state: dict, user_response: str) -> di
     if current is None:
         return {**state, "error": True, "message": "Nó atual inválido."}
 
+    # RV06 — Log temporário para diagnosticar bug do simulador em prod
+    logger.info(
+        "simulator process_simulation: node=%s type=%s user_response=%r",
+        current_id, current.get("type"), user_response,
+    )
+
     # Inbound message
     state["messages"].append({"direction": "inbound", "content": user_response, "node_id": current_id})
 
     # Valida input
     validation = _validate_user_input_sim(current, user_response)
+    logger.info("simulator validation result: %r", validation)
     if validation.get("error"):
         msg = validation.get("message", "Resposta inválida.")
         state["messages"].append({"direction": "outbound", "content": msg, "node_id": current_id})

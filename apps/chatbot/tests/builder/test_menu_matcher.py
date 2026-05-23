@@ -157,3 +157,28 @@ class MenuMatcherTests(TestCase):
         # Só número
         m = match_menu_choice(custom, "1")
         self.assertEqual(m.handle_id, "opt_a")
+
+    # ---- Whitespace invisível (NBSP, ZWSP) — bug de copy-paste ----
+
+    def test_nbsp_between_words(self):
+        """NBSP entre número e palavra — comum em copy-paste do Word."""
+        m = match_menu_choice(_OPTIONS, "1\xa0Solicitar orçamento")
+        self.assertIsNotNone(m, "NBSP deveria ser tratado como espaço normal")
+        self.assertEqual(m.handle_id, "opt_1")
+
+    def test_zwsp_in_text(self):
+        """Zero-width space (\\u200b) — vem de alguns navegadores/sites."""
+        m = match_menu_choice(_OPTIONS, "1​Solicitar orçamento")
+        self.assertIsNotNone(m)
+        self.assertEqual(m.handle_id, "opt_1")
+
+    def test_nbsp_in_label_real(self):
+        """Label real com NBSP dentro."""
+        m = match_menu_choice(_OPTIONS, "Solicitar\xa0orçamento")
+        self.assertIsNotNone(m)
+        self.assertEqual(m.handle_id, "opt_1")
+
+    def test_multiple_spaces_collapsed(self):
+        """Múltiplos espaços viram um só."""
+        m = match_menu_choice(_OPTIONS, "1    Solicitar   orçamento")
+        self.assertEqual(m.handle_id, "opt_1")
