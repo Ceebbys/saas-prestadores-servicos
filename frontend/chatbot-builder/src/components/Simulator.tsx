@@ -86,11 +86,15 @@ export function Simulator({ open, onClose }: Props) {
     }
   }, [allMessages]);
 
-  function send() {
-    if (!config || !input.trim() || loading || state.is_complete) return;
-    const userMsg: Message = { direction: "inbound", content: input };
+  function send(textOverride?: string) {
+    // RV06 Bug: usar `input` direto causava stale closure quando o
+    // botão de quick-reply chamava setInput(opt.label) + setTimeout(send).
+    // O `send` do render anterior lia `input` antigo. Agora aceita
+    // texto direto via parâmetro.
+    const text = (textOverride ?? input).trim();
+    if (!config || !text || loading || state.is_complete) return;
+    const userMsg: Message = { direction: "inbound", content: text };
     setAllMessages((prev) => [...prev, userMsg]);
-    const responseText = input;
     setInput("");
     setLoading(true);
 
@@ -101,7 +105,7 @@ export function Simulator({ open, onClose }: Props) {
         "Content-Type": "application/json",
         "X-CSRFToken": config.csrfToken,
       },
-      body: JSON.stringify({ state, response: responseText }),
+      body: JSON.stringify({ state, response: text }),
     })
       .then((r) => r.json())
       .then((result: SimState) => {
@@ -201,10 +205,7 @@ export function Simulator({ open, onClose }: Props) {
             <button
               key={opt.value}
               className="btn btn--secondary btn--small"
-              onClick={() => {
-                setInput(opt.label);
-                setTimeout(send, 0);
-              }}
+              onClick={() => send(opt.label)}
               disabled={loading}
             >
               {opt.label}
@@ -226,7 +227,7 @@ export function Simulator({ open, onClose }: Props) {
         />
         <button
           className="btn btn--primary btn--small"
-          onClick={send}
+          onClick={() => send()}
           disabled={loading || state.is_complete || !input.trim()}
         >
           Enviar
