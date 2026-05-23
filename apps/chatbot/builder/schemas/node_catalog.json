@@ -83,47 +83,50 @@
       ]
     },
     {
-      "type": "condition",
-      "label": "Condição (avançada)",
-      "description": "Avalia uma variável já coletada e ramifica em verdadeiro/falso. Para perguntar SIM/NÃO use 'Pergunta SIM/NÃO'.",
-      "category": "logic",
-      "icon": "git-branch",
-      "color": "#f59e0b",
-      "status": "active",
-      "handles": {"in": true, "out": ["true", "false"]},
-      "data_fields": [
-        {"name": "label", "type": "string", "required": false, "default": "Condição", "max_length": 80},
-        {"name": "field", "type": "string", "required": true, "max_length": 80,
-         "help": "Variável de lead_data a avaliar (ex.: 'email')."},
-        {"name": "operator", "type": "enum", "required": true,
-         "options": ["eq", "neq", "contains", "starts_with", "in", "regex", "exists", "not_exists"]},
-        {"name": "value", "type": "string", "required": false, "max_length": 500,
-         "help": "Valor de comparação (ignorado se operator for exists/not_exists)."}
-      ]
-    },
-    {
       "type": "yes_no",
       "label": "Pergunta SIM/NÃO",
-      "description": "Pergunta uma decisão SIM/NÃO e ramifica automaticamente. Aceita variações: sim, s, claro, ok, com certeza / não, n, nunca, negativo.",
+      "description": "✓ RECOMENDADO. Pergunta direta com resposta SIM/NÃO. Detecta automaticamente variações (sim, claro, ok / não, n, nunca). O fluxo ramifica em 2 caminhos.",
       "category": "logic",
       "icon": "git-branch",
       "color": "#22c55e",
       "status": "active",
       "handles": {"in": true, "out": ["yes", "no"]},
       "data_fields": [
-        {"name": "label", "type": "string", "required": false, "default": "SIM/NÃO", "max_length": 80},
+        {"name": "label", "type": "string", "required": false, "default": "Pergunta SIM/NÃO", "max_length": 80},
         {"name": "prompt", "type": "text", "required": true, "max_length": 5000,
-         "help": "Pergunta exibida ao usuário (ex.: 'Você é pessoa jurídica?')."},
+         "help": "A pergunta que o bot vai fazer. Ex: 'Você é pessoa jurídica?' ou 'Já é nosso cliente?'"},
         {"name": "lead_field", "type": "enum", "required": false,
          "options": ["", "notes"],
-         "help": "Campo opcional onde gravar 'sim' ou 'não' (em lead_data)."},
+         "help": "Opcional: grava 'sim' ou 'não' no cadastro do lead."},
         {"name": "fallback_message", "type": "string", "required": false,
          "default": "Não entendi. Responda SIM ou NÃO.",
          "max_length": 200,
-         "help": "Mensagem quando a resposta não for reconhecida — pergunta de novo."},
+         "help": "Mensagem quando o cliente responder algo diferente de sim/não — pergunta de novo."},
         {"name": "default_branch", "type": "enum", "required": false, "default": "ask_again",
          "options": ["ask_again", "yes", "no"],
-         "help": "Quando o sistema NÃO reconhece sim/não: refazer pergunta, assumir SIM ou assumir NÃO."}
+         "help": "Se o cliente responder algo confuso depois de 1 tentativa: pergunta de novo, assume SIM ou assume NÃO."}
+      ]
+    },
+    {
+      "type": "condition",
+      "label": "Condição avançada",
+      "description": "⚙️ AVANÇADO. Compara um dado JÁ COLETADO (ex: e-mail, telefone) com um valor. Para perguntar direto SIM/NÃO, use o bloco verde 'Pergunta SIM/NÃO'.",
+      "category": "logic",
+      "icon": "git-branch",
+      "color": "#f59e0b",
+      "status": "active",
+      "handles": {"in": true, "out": ["true", "false"]},
+      "data_fields": [
+        {"name": "label", "type": "string", "required": false, "default": "Condição", "max_length": 80,
+         "help": "Nome interno deste bloco (aparece no canvas)."},
+        {"name": "field", "type": "enum", "required": true,
+         "options": ["email", "phone", "name", "company", "cpf_cnpj", "notes", "servico_id"],
+         "help": "QUAL dado verificar? Deve ter sido coletado em algum bloco anterior do fluxo. Exemplo: se você usou 'Coletar dado → e-mail' antes, pode escolher 'email' aqui."},
+        {"name": "operator", "type": "enum", "required": true,
+         "options": ["exists", "not_exists", "eq", "neq", "contains", "starts_with", "in", "regex"],
+         "help": "COMO comparar? 'existe' = só verifica se o campo foi preenchido (sem precisar de valor). 'contém' = checa se o texto contém uma palavra."},
+        {"name": "value", "type": "string", "required": false, "max_length": 500,
+         "help": "O QUE comparar? Só preencha se você escolheu '=', '≠', 'contém', 'começa com', 'está em' ou 'regex'. Ex: 'gmail.com' (para email contém gmail.com)."}
       ]
     },
     {

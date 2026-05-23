@@ -60,6 +60,11 @@ export function PropertiesPanel() {
         </div>
       )}
 
+      {/* RV06 — Banner explicativo para Condition (bloco confuso para leigo) */}
+      {node.type === "condition" && (
+        <ConditionHelpBanner />
+      )}
+
       <div className="properties-panel__fields">
         {entry.data_fields.map((field) => (
           <FieldEditor
@@ -377,9 +382,9 @@ function labelize(field: NodeCatalogField): string {
     validator: "Validador",
     validator_strict: "Rejeitar formato inválido",
     options: "Opções",
-    field: "Variável",
-    operator: "Operador",
-    value: "Valor de comparação",
+    field: "Qual dado verificar?",
+    operator: "Como comparar?",
+    value: "Comparar com qual valor?",
     delay_ms: "Atraso (ms)",
     welcome_message: "Mensagem de boas-vindas",
     completion_message: "Mensagem final",
@@ -432,14 +437,23 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
     custom: "E-mail customizado",
   },
   operator: {
-    eq: "= (igual a)",
-    neq: "≠ (diferente de)",
-    contains: "contém",
-    starts_with: "começa com",
-    in: "está em (lista CSV)",
-    regex: "regex",
-    exists: "existe (campo preenchido)",
-    not_exists: "não existe",
+    exists: "✓ Existe (campo foi preenchido)",
+    not_exists: "✗ Não existe (campo está vazio)",
+    eq: "= Igual a",
+    neq: "≠ Diferente de",
+    contains: "Contém o texto",
+    starts_with: "Começa com",
+    in: "Está na lista (separe por vírgula)",
+    regex: "Combina com regex (avançado)",
+  },
+  field: {
+    email: "E-mail do lead",
+    phone: "Telefone do lead",
+    name: "Nome do lead",
+    company: "Empresa do lead",
+    cpf_cnpj: "CPF / CNPJ",
+    notes: "Observações",
+    servico_id: "Serviço vinculado",
   },
   method: {
     GET: "GET", POST: "POST", PUT: "PUT", PATCH: "PATCH", DELETE: "DELETE",
@@ -463,4 +477,65 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
 function humanizeEnumOption(fieldName: string, value: string): string {
   const inner = ENUM_LABELS[fieldName];
   return inner?.[value] ?? value;
+}
+
+
+/**
+ * Banner explicativo no Condition. Cliente reportou: 'essa parada
+ * variavel num entendi'. Mostra exemplos práticos + sugere yes_no
+ * como alternativa mais simples para perguntas SIM/NÃO.
+ */
+function ConditionHelpBanner() {
+  return (
+    <div className="condition-help">
+      <div className="condition-help__suggestion">
+        <strong>💡 Dica</strong>: se você quer apenas perguntar SIM/NÃO,
+        use o bloco verde <strong>"Pergunta SIM/NÃO"</strong> — é bem mais
+        simples. Esta "Condição avançada" só serve para verificar dados
+        <em> já coletados</em> antes no fluxo.
+      </div>
+      <details className="condition-help__details">
+        <summary>Como funciona esta Condição? (clique para ver exemplos)</summary>
+        <div className="condition-help__body">
+          <p>São 3 passos:</p>
+          <ol>
+            <li>
+              <strong>Qual dado verificar?</strong> Escolha um dado que o bot
+              já coletou em um bloco anterior (e-mail, telefone, nome...).
+            </li>
+            <li>
+              <strong>Como comparar?</strong>
+              <ul>
+                <li><code>✓ Existe</code> — o campo foi preenchido?</li>
+                <li><code>Contém</code> — o texto inclui uma palavra?</li>
+                <li><code>= Igual a</code> — o texto é exatamente este?</li>
+              </ul>
+            </li>
+            <li>
+              <strong>Comparar com qual valor?</strong> Só preenche se você
+              escolheu = / ≠ / contém / começa com.
+            </li>
+          </ol>
+          <p className="condition-help__examples">
+            <strong>Exemplos práticos:</strong>
+          </p>
+          <ul>
+            <li>
+              <em>"Cliente tem e-mail cadastrado?"</em> →
+              dado: <code>E-mail</code>, comparar: <code>Existe</code>,
+              valor: vazio.
+            </li>
+            <li>
+              <em>"Usa Gmail?"</em> → dado: <code>E-mail</code>,
+              comparar: <code>Contém</code>, valor: <code>gmail.com</code>.
+            </li>
+            <li>
+              <em>"Empresa é específica?"</em> → dado: <code>Empresa</code>,
+              comparar: <code>= Igual a</code>, valor: <code>Petrobras</code>.
+            </li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  );
 }
