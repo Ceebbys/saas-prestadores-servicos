@@ -112,6 +112,78 @@ def _default_account(empresa):
 
 
 @transaction.atomic
+def generate_entry_from_lead_won(lead, *, first_due_date=None):
+    """RV06 — Gera FinancialEntry quando Lead vai para etapa de ganho.
+
+    Cenário: negócio fechado direto via WhatsApp/conversa, SEM proposta
+    ou contrato formal. Cliente pediu que isso também contabilize como
+    entrada futura no financeiro.
+
+    Comportamento:
+    - Valor: lead.estimated_value OR lead.servico.default_price OR 0
+    - Status: PENDING (cliente edita depois se quiser marcar como pago)
+    - Date: hoje + 30 dias (padrão; cliente edita)
+    - Idempotência DUPLA:
+      a) Se já existe FinancialEntry(related_lead=lead, auto_generated=True)
+         retorna existente
+      b) Se lead tem proposta aceita com entries auto-geradas, NÃO duplica
+         (porque generate_entries_from_proposal já cuidou disso)
+    - Valor 0 OK: cria entry vazia para o user editar manualmente
+    """
+    existing = list(
+        FinancialEntry.objects.filter(
+            related_lead=lead, auto_generated=True,
+        )
+    )
+    if existing:
+        return existing[0]
+
+    # Se há entries auto-geradas vinculadas a propostas DESTE lead, não duplica
+    from apps.proposals.models import Proposal
+    proposal_with_entries = (
+        Proposal.objects.filter(
+            lead=lead,
+            financial_entries__auto_generated=True,
+        ).exists()
+    )
+    if proposal_with_entries:
+        return None  # proposta já cuidou disso
+
+    # Resolve valor
+    amount = lead.estimated_value
+    if (amount is None or amount <= 0) and lead.servico_id:
+        amount = lead.servico.default_price or Decimal("0.00")
+    if amount is None:
+        amount = Decimal("0.00")
+
+    base_date = first_due_date or (timezone.now().date() + timedelta(days=30))
+    default_account = _default_account(lead.empresa)
+
+    notes_extra = ""
+    if amount <= 0:
+        notes_extra = (
+            "\n\n⚠ Valor não definido — edite este lançamento e informe o "
+            "valor real do negócio fechado."
+        )
+
+    entry = FinancialEntry.objects.create(
+        empresa=lead.empresa,
+        type=FinancialEntry.Type.INCOME,
+        description=f"Lead - {lead.name}",
+        amount=amount,
+        date=base_date,
+        status=FinancialEntry.Status.PENDING,
+        related_lead=lead,
+        bank_account=default_account,
+        auto_generated=True,
+        notes=(
+            f"Gerado automaticamente — Lead movido para etapa de ganho.{notes_extra}"
+        ),
+    )
+    return entry
+
+
+@transaction.atomic
 def generate_entries_from_proposal(
     proposal,
     *,

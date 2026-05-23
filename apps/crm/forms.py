@@ -56,11 +56,19 @@ class LeadForm(TailwindFormMixin, forms.ModelForm):
     class Meta:
         model = Lead
         # Não inclui campos legados (cpf/cnpj/email/phone/company) — vêm do Contato
-        fields = ["name", "source", "pipeline_stage", "assigned_to", "notes"]
+        fields = [
+            "name", "source", "pipeline_stage", "assigned_to",
+            "estimated_value",  # RV06 — para fechamento sem proposta
+            "notes",
+        ]
         widgets = {
             "notes": forms.Textarea(attrs={"rows": 3}),
             "name": forms.TextInput(attrs={
                 "placeholder": "ex.: Regularização Lote Bairro X",
+            }),
+            "estimated_value": forms.NumberInput(attrs={
+                "step": "0.01", "min": "0",
+                "placeholder": "ex.: 2500.00",
             }),
         }
 

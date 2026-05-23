@@ -37,6 +37,11 @@ def _get_default_first_stage(empresa) -> PipelineStage | None:
 def lead_post_save(sender, instance: Lead, created: bool, **kwargs):
     """On create: ensure stage + auto-create Opportunity.
     On update: if pipeline_stage changed, sync Opportunities.
+
+    RV06 — Sempre que o Lead estiver em uma stage com is_won=True,
+    dispara generate_entry_from_lead_won (idempotente — só cria 1 entry).
+    Cobre o caso de negócio fechado SEM proposta/contrato formal
+    (ex.: acordo via WhatsApp), pedido do cliente.
     """
     if created:
         if instance.pipeline_stage_id is None:
@@ -55,6 +60,8 @@ def lead_post_save(sender, instance: Lead, created: bool, **kwargs):
                 value=0,
                 assigned_to=instance.assigned_to,
             )
+        # Lead criado já em stage de ganho? gera entry mesmo assim
+        _maybe_generate_finance_entry(instance)
         return
 
     # Update: sync downstream opportunities if stage changed
@@ -62,6 +69,31 @@ def lead_post_save(sender, instance: Lead, created: bool, **kwargs):
         instance.opportunities.exclude(
             current_stage_id=instance.pipeline_stage_id
         ).update(current_stage_id=instance.pipeline_stage_id)
+
+    # RV06 — Gera entry financeira se virou WON (idempotente)
+    _maybe_generate_finance_entry(instance)
+
+
+def _maybe_generate_finance_entry(lead: Lead) -> None:
+    """Cria FinancialEntry se o Lead está em stage is_won=True.
+
+    Idempotente: o helper generate_entry_from_lead_won não duplica.
+    Erros são logados mas não propagam (não bloqueia o save do Lead).
+    """
+    try:
+        if not lead.pipeline_stage_id:
+            return
+        # Carrega stage com is_won (evita query extra se já estiver na FK)
+        stage = lead.pipeline_stage
+        if not stage or not stage.is_won:
+            return
+        from apps.finance.services import generate_entry_from_lead_won
+        generate_entry_from_lead_won(lead)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "Erro ao gerar FinancialEntry para Lead %s (won-stage trigger)",
+            lead.pk,
+        )
 
 
 @receiver(post_save, sender=Opportunity)

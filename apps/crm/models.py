@@ -67,6 +67,21 @@ class Lead(SoftDeletableModel, TenantOwnedModel):
         related_name="leads",
         verbose_name="Serviço Pré-Fixado",
     )
+    # RV06 — Valor estimado do negócio. Usado quando Lead vai para etapa
+    # de ganho (is_won=True) e não há proposta aceita ainda. Cria
+    # FinancialEntry pendente com esse valor (ou cai em servico.default_price).
+    estimated_value = models.DecimalField(
+        "Valor estimado",
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=(
+            "Valor previsto do negócio. Usado para gerar entrada financeira "
+            "automática quando o lead vai para uma etapa de ganho sem proposta "
+            "aceita. Se vazio, usa o valor padrão do serviço vinculado."
+        ),
+    )
     notes = models.TextField("Observações", blank=True)
     external_ref = models.CharField(
         "Referência Externa",

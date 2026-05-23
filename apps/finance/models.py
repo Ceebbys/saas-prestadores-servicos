@@ -151,6 +151,17 @@ class FinancialEntry(TenantOwnedModel):
         related_name="financial_entries",
         verbose_name="Ordem de Serviço",
     )
+    # RV06 — Vínculo direto com Lead quando negócio fecha SEM proposta/contrato
+    # (ex.: fechamento via WhatsApp). Criado por signal quando Lead vai para
+    # PipelineStage.is_won=True.
+    related_lead = models.ForeignKey(
+        "crm.Lead",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="financial_entries",
+        verbose_name="Lead",
+    )
     bank_account = models.ForeignKey(
         BankAccount,
         on_delete=models.SET_NULL,
