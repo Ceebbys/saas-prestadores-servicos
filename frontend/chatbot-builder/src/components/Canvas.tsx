@@ -27,6 +27,7 @@ import { useAutosave } from "../hooks/useAutosave";
 import { GenericNode } from "./nodes/GenericNode";
 import { MenuNode } from "./nodes/MenuNode";
 import { ConditionNode } from "./nodes/ConditionNode";
+import { YesNoNode } from "./nodes/YesNoNode";
 import type { GraphEdge, GraphNode } from "../types";
 
 // Tipos customizados de node registrados no React Flow
@@ -36,6 +37,7 @@ const nodeTypes = {
   question: GenericNode,
   menu: MenuNode,
   condition: ConditionNode,
+  yes_no: YesNoNode,
   collect_data: GenericNode,
   api_call: GenericNode,
   action: GenericNode,

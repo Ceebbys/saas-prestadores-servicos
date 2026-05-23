@@ -15,6 +15,7 @@ export const KNOWN_NODE_TYPES = [
   "question",
   "menu",
   "condition",
+  "yes_no",
   "collect_data",
   "api_call",
   "action",

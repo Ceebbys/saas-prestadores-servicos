@@ -165,6 +165,10 @@ def _advance_from(graph: dict, node: dict, session: ChatbotSession, validation: 
         ok = _evaluate_condition(node, session)
         handle = "true" if ok else "false"
         _log(session, node["id"], "node_exited", "info", {"branch": handle})
+    elif ntype == "yes_no" and validation:
+        # RV06 — validation.get("yes_no_value") = "yes" | "no" | "unknown"
+        handle = validation.get("yes_no_value", "no")
+        _log(session, node["id"], "node_exited", "info", {"branch": handle})
     else:
         handle = "next"
 
@@ -543,6 +547,28 @@ def _validate_user_input(node: dict, user_response: str) -> dict:
             }
         labels = ", ".join(o.get("label", "?") for o in options)
         return {"error": True, "message": f"Não entendi. Escolha uma das opções: {labels}"}
+
+    if ntype == "yes_no":
+        # RV06 — bloco Pergunta SIM/NÃO
+        from apps.chatbot.builder.services.yes_no_matcher import detect_yes_no
+        result = detect_yes_no(text)
+        if result.value in ("yes", "no"):
+            return {
+                "error": False,
+                "yes_no_value": result.value,
+                "normalized_value": "sim" if result.value == "yes" else "não",
+            }
+        # Não reconhecido — decisão por config
+        default_branch = (data.get("default_branch") or "ask_again").strip()
+        if default_branch == "ask_again":
+            msg = (data.get("fallback_message") or "Não entendi. Responda SIM ou NÃO.").strip()
+            return {"error": True, "message": msg}
+        # default_branch == "yes" ou "no" → assume essa rota
+        return {
+            "error": False,
+            "yes_no_value": default_branch,
+            "normalized_value": "sim" if default_branch == "yes" else "não",
+        }
 
     if ntype == "collect_data":
         lead_field = data.get("lead_field")

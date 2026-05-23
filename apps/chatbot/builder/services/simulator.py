@@ -156,11 +156,23 @@ def _step_through(graph: dict, state: dict, *, start_node: dict) -> dict:
             node = nxt
             continue
 
-        if ntype in ("question", "menu", "collect_data"):
+        if ntype in ("question", "menu", "collect_data", "yes_no"):
             # Para aqui — aguarda input
             prompt = data.get("prompt", "")
             if prompt:
                 state["messages"].append({"direction": "outbound", "content": prompt, "node_id": node["id"]})
+            # yes_no oferece quick-replies SIM/NÃO no simulador
+            options_for_ui = None
+            if ntype == "menu":
+                options_for_ui = [
+                    {"label": o.get("label"), "value": o.get("handle_id")}
+                    for o in (data.get("options") or [])
+                ]
+            elif ntype == "yes_no":
+                options_for_ui = [
+                    {"label": "Sim", "value": "yes"},
+                    {"label": "Não", "value": "no"},
+                ]
             return {
                 **state,
                 "is_complete": False,
@@ -168,10 +180,7 @@ def _step_through(graph: dict, state: dict, *, start_node: dict) -> dict:
                     "id": node["id"],
                     "type": ntype,
                     "prompt": prompt,
-                    "options": [
-                        {"label": o.get("label"), "value": o.get("handle_id")}
-                        for o in (data.get("options") or [])
-                    ] if ntype == "menu" else None,
+                    "options": options_for_ui,
                 },
                 "error": False,
             }
@@ -203,11 +212,14 @@ def _complete_sim(state: dict, node_id: str, reason: str) -> dict:
 
 
 def _advance_from_sim(graph: dict, node: dict, state: dict, validation: dict | None = None) -> dict | None:
-    """Segue 'next' OU handle de menu (quando validation traz handle_id)."""
+    """Segue 'next' OU handle de menu (quando validation traz handle_id)
+    OU handle 'yes'/'no' para yes_no nodes."""
     ntype = node.get("type")
     handle = "next"
     if ntype == "menu" and validation:
         handle = validation.get("handle_id") or "next"
+    elif ntype == "yes_no" and validation:
+        handle = validation.get("yes_no_value", "no")
     return _advance_from_handle_sim(graph, node, handle)
 
 
@@ -250,6 +262,33 @@ def _validate_user_input_sim(node: dict, user_response: str) -> dict:
             }
         labels = ", ".join(o.get("label", "?") for o in options)
         return {"error": True, "message": f"Não entendi. Opções: {labels}"}
+
+    if ntype == "yes_no":
+        # RV06 — bloco Pergunta SIM/NÃO
+        from apps.chatbot.builder.services.yes_no_matcher import detect_yes_no
+        # Frontend simulator pode enviar "yes"/"no" direto via quick-reply
+        if text.lower() in ("yes", "no"):
+            return {
+                "error": False,
+                "yes_no_value": text.lower(),
+                "normalized_value": "sim" if text.lower() == "yes" else "não",
+            }
+        result = detect_yes_no(text)
+        if result.value in ("yes", "no"):
+            return {
+                "error": False,
+                "yes_no_value": result.value,
+                "normalized_value": "sim" if result.value == "yes" else "não",
+            }
+        default_branch = (data.get("default_branch") or "ask_again").strip()
+        if default_branch == "ask_again":
+            msg = (data.get("fallback_message") or "Não entendi. Responda SIM ou NÃO.").strip()
+            return {"error": True, "message": msg}
+        return {
+            "error": False,
+            "yes_no_value": default_branch,
+            "normalized_value": "sim" if default_branch == "yes" else "não",
+        }
 
     if ntype == "collect_data":
         lead_field = data.get("lead_field")
