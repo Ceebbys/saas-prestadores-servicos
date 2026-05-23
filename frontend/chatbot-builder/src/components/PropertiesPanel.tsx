@@ -483,6 +483,17 @@ function humanizeEnumOption(fieldName: string, value: string): string {
  * (carregada do backend via /api/chatbot/options/template_vars/).
  * Click numa variável insere `{{ path }}` na posição do cursor.
  */
+type PickerTab = "dynamic" | "registered";
+type RegisteredCategory = "services" | "proposal_templates" | "contract_templates" | "pipeline_stages";
+
+const REGISTERED_CATEGORIES: { key: RegisteredCategory; label: string; icon: string }[] = [
+  { key: "services", label: "Serviços cadastrados", icon: "🛠️" },
+  { key: "pipeline_stages", label: "Etapas do pipeline", icon: "📍" },
+  { key: "proposal_templates", label: "Templates de proposta", icon: "📄" },
+  { key: "contract_templates", label: "Templates de contrato", icon: "📑" },
+];
+
+
 function TextFieldWithVariables({
   id, field, value, onChange,
 }: {
@@ -495,6 +506,11 @@ function TextFieldWithVariables({
   const [vars, setVars] = useState<OptionItem[]>([]);
   const [varsLoaded, setVarsLoaded] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  const [tab, setTab] = useState<PickerTab>("dynamic");
+  const [registered, setRegistered] = useState<Record<RegisteredCategory, OptionItem[]>>({
+    services: [], pipeline_stages: [], proposal_templates: [], contract_templates: [],
+  });
+  const [registeredLoaded, setRegisteredLoaded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -506,6 +522,21 @@ function TextFieldWithVariables({
       })
       .catch(() => setVarsLoaded(true));
   }, [showPicker, varsLoaded, fetchOptions]);
+
+  useEffect(() => {
+    if (!showPicker || tab !== "registered" || registeredLoaded) return;
+    // Carrega as 4 categorias em paralelo
+    Promise.all(
+      REGISTERED_CATEGORIES.map((c) =>
+        fetchOptions(c.key).catch(() => [] as OptionItem[]),
+      ),
+    ).then((results) => {
+      const next: any = {};
+      REGISTERED_CATEGORIES.forEach((c, i) => { next[c.key] = results[i]; });
+      setRegistered(next);
+      setRegisteredLoaded(true);
+    });
+  }, [showPicker, tab, registeredLoaded, fetchOptions]);
 
   function insertVariable(snippet: string) {
     const ta = textareaRef.current;
@@ -520,7 +551,6 @@ function TextFieldWithVariables({
     const next = current.slice(0, start) + snippet + current.slice(end);
     onChange(next);
     setShowPicker(false);
-    // Reposiciona cursor após o snippet inserido (próximo tick)
     setTimeout(() => {
       ta.focus();
       const pos = start + snippet.length;
@@ -536,7 +566,7 @@ function TextFieldWithVariables({
           type="button"
           className="field__var-button"
           onClick={() => setShowPicker((v) => !v)}
-          title="Inserir variável (lead, serviço, empresa…)"
+          title="Inserir variável dinâmica OU nome de algo cadastrado"
         >
           🪄 Inserir variável
         </button>
@@ -552,39 +582,115 @@ function TextFieldWithVariables({
       {showPicker && (
         <div className="var-picker">
           <div className="var-picker__header">
-            <strong>Variáveis disponíveis</strong>
+            <strong>Inserir no texto</strong>
             <button
               type="button"
               className="var-picker__close"
               onClick={() => setShowPicker(false)}
+              title="Fechar"
             >
               ×
             </button>
           </div>
-          {!varsLoaded && <p className="var-picker__loading">Carregando…</p>}
-          {varsLoaded && vars.length === 0 && (
-            <p className="var-picker__empty">Nenhuma variável disponível.</p>
+          {/* Abas: Dinâmica (placeholders) vs Cadastrados (nome literal) */}
+          <div className="var-picker__tabs">
+            <button
+              type="button"
+              className={`var-picker__tab ${tab === "dynamic" ? "is-active" : ""}`}
+              onClick={() => setTab("dynamic")}
+            >
+              🔄 Variáveis dinâmicas
+            </button>
+            <button
+              type="button"
+              className={`var-picker__tab ${tab === "registered" ? "is-active" : ""}`}
+              onClick={() => setTab("registered")}
+            >
+              📋 Cadastrados
+            </button>
+          </div>
+
+          {tab === "dynamic" && (
+            <>
+              <p className="var-picker__hint">
+                Variáveis substituídas <strong>na hora do envio</strong> pelo
+                valor real (ex: serviço que o cliente escolheu).
+              </p>
+              {!varsLoaded && <p className="var-picker__loading">Carregando…</p>}
+              {varsLoaded && vars.length === 0 && (
+                <p className="var-picker__empty">Nenhuma variável disponível.</p>
+              )}
+              <ul className="var-picker__list">
+                {vars.map((v) => (
+                  <li
+                    key={v.value}
+                    className="var-picker__item"
+                    onClick={() => insertVariable(v.value)}
+                    title={`Inserir: ${v.value}`}
+                  >
+                    <div className="var-picker__label">{v.label}</div>
+                    <div className="var-picker__path">
+                      <code>{v.value}</code>
+                      {(v.extra as any)?.example && (
+                        <span className="var-picker__example">
+                          → ex.: {(v.extra as any).example}
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
-          <ul className="var-picker__list">
-            {vars.map((v) => (
-              <li
-                key={v.value}
-                className="var-picker__item"
-                onClick={() => insertVariable(v.value)}
-                title={`Inserir: ${v.value}`}
-              >
-                <div className="var-picker__label">{v.label}</div>
-                <div className="var-picker__path">
-                  <code>{v.value}</code>
-                  {(v.extra as any)?.example && (
-                    <span className="var-picker__example">
-                      → ex.: {(v.extra as any).example}
-                    </span>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
+
+          {tab === "registered" && (
+            <>
+              <p className="var-picker__hint">
+                Insere o <strong>nome literal</strong> de algo já cadastrado
+                no sistema (serviço, etapa, template). Útil para mencionar
+                itens específicos no texto.
+              </p>
+              {!registeredLoaded && <p className="var-picker__loading">Carregando…</p>}
+              {registeredLoaded && (
+                REGISTERED_CATEGORIES.every((c) => registered[c.key].length === 0) ? (
+                  <p className="var-picker__empty">
+                    Nada cadastrado ainda. Crie em Serviços, Pipelines ou Templates.
+                  </p>
+                ) : (
+                  <div className="var-picker__categories">
+                    {REGISTERED_CATEGORIES.map((c) => {
+                      const items = registered[c.key];
+                      if (!items || items.length === 0) return null;
+                      return (
+                        <details key={c.key} className="var-picker__category" open>
+                          <summary>
+                            {c.icon} {c.label} <span className="var-picker__count">({items.length})</span>
+                          </summary>
+                          <ul className="var-picker__list">
+                            {items.map((item) => (
+                              <li
+                                key={item.value}
+                                className="var-picker__item"
+                                onClick={() => insertVariable(item.label)}
+                                title={`Inserir o nome: ${item.label}`}
+                              >
+                                <div className="var-picker__label">{item.label}</div>
+                                <div className="var-picker__path">
+                                  <span className="var-picker__example">
+                                    Insere: <strong>{item.label}</strong>
+                                  </span>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      );
+                    })}
+                  </div>
+                )
+              )}
+            </>
+          )}
         </div>
       )}
       {field.help && <p className="field__help">{field.help}</p>}
