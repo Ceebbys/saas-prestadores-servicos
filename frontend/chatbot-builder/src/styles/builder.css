@@ -1171,3 +1171,154 @@ body {
   color: var(--slate-900);
   word-break: break-word;
 }
+
+
+/* -------- RV08 — Editor de ações inline em cada bloco -------- */
+.inline-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.inline-actions__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.inline-actions__empty {
+  margin: 0;
+  padding: 12px;
+  background: var(--slate-50);
+  border: 1px dashed var(--slate-300);
+  border-radius: 6px;
+  color: var(--slate-500);
+  font-size: 12px;
+  text-align: center;
+}
+.inline-actions__item {
+  border: 1px solid var(--slate-200);
+  border-radius: 6px;
+  background: white;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.inline-actions__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.inline-actions__type-select {
+  flex: 1;
+  min-width: 160px;
+  padding: 6px 8px;
+  border: 1px solid var(--slate-300);
+  border-radius: 4px;
+  font-size: 12px;
+  background: white;
+}
+.inline-actions__active {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--slate-600);
+  cursor: pointer;
+  user-select: none;
+}
+.inline-actions__active input {
+  margin: 0;
+  cursor: pointer;
+}
+.inline-actions__buttons {
+  display: flex;
+  gap: 4px;
+}
+.inline-actions__buttons button {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--slate-300);
+  background: white;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--slate-600);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.1s;
+}
+.inline-actions__buttons button:hover:not(:disabled) {
+  background: var(--slate-100);
+  border-color: var(--slate-400);
+}
+.inline-actions__buttons button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.inline-actions__remove {
+  color: #b91c1c !important;
+  font-weight: 700;
+}
+.inline-actions__remove:hover:not(:disabled) {
+  background: #fee2e2 !important;
+  border-color: #fca5a5 !important;
+}
+.inline-actions__extras {
+  padding: 10px;
+  background: var(--slate-50);
+  border-top: 1px solid var(--slate-200);
+  border-radius: 0 0 4px 4px;
+  margin: -10px;
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.inline-actions__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.inline-actions__field label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--slate-700);
+}
+.inline-actions__field input,
+.inline-actions__field textarea,
+.inline-actions__field select {
+  padding: 6px 8px;
+  border: 1px solid var(--slate-300);
+  border-radius: 4px;
+  font-size: 12px;
+  background: white;
+  font-family: inherit;
+}
+.inline-actions__field textarea {
+  resize: vertical;
+  min-height: 40px;
+}
+.inline-actions__field-bool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--slate-700);
+  cursor: pointer;
+  user-select: none;
+}
+.inline-actions__field-bool input {
+  margin: 0;
+}
+.inline-actions__field-help {
+  margin: 0;
+  font-size: 10px;
+  color: var(--slate-500);
+  line-height: 1.4;
+}

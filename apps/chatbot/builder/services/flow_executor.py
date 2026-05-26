@@ -70,6 +70,11 @@ def start_session_v2(flow: ChatbotFlow, channel: str = "webchat", sender_id: str
         "schema_version": version.schema_version,
     })
 
+    # RV08 — Inline actions no próprio bloco 'start' também disparam (cliente
+    # pediu 'em todos os blocos'). _enter_node não é chamado no start porque
+    # avançamos direto, então precisamos rodar manualmente aqui.
+    _run_inline_actions(start_node, session)
+
     # Mensagem de boas-vindas do start (se houver) — senão usa welcome do flow
     welcome = (start_node.get("data") or {}).get("welcome_message") or flow.welcome_message or ""
 
@@ -226,6 +231,12 @@ def _enter_node(graph: dict, node: dict, session: ChatbotSession) -> dict:
 
     _log(session, node["id"], "node_entered", "info", {"type": ntype})
 
+    # RV08 — Dispara inline_actions configuradas neste bloco (qualquer tipo).
+    # Cliente pediu: 'essa parada de ações tem q ta em todos os blocos tbm'.
+    # Cada bloco pode ter array `inline_actions` em data — disparado ao
+    # entrar no nó (antes de processar a mensagem/input dele).
+    _run_inline_actions(node, session)
+
     # Nodes que enviam mensagem mas não aguardam input → seguir em frente
     NO_INPUT_TYPES = {"start", "message", "condition"}
     AWAIT_INPUT_TYPES = {"question", "menu", "collect_data", "yes_no"}
@@ -326,6 +337,50 @@ def _advance_from_handle(graph: dict, node: dict, session: ChatbotSession, handl
                 continue
             return target
     return None
+
+
+def _run_inline_actions(node: dict, session: ChatbotSession) -> None:
+    """RV08 — Dispara ações inline configuradas neste bloco.
+
+    Cliente pediu: poder configurar ações automáticas DENTRO de qualquer
+    bloco (não só no bloco 'Ação' dedicado). Permite encadear múltiplas
+    ações sem precisar criar nodes separados.
+
+    Cada inline_action é um dict {action_type, config}. O `config` pode
+    ter os mesmos campos que o `data_fields_per_action_type` do action
+    node (servico_id, tag_name, pipeline_stage_id, etc.).
+
+    Erros são logados mas NÃO interrompem o fluxo (dispatch_action captura
+    internamente). Pula entradas inválidas silenciosamente.
+    """
+    inline = (node.get("data") or {}).get("inline_actions")
+    if not inline or not isinstance(inline, list):
+        return
+    from apps.chatbot.action_handlers import dispatch_action
+    for idx, entry in enumerate(inline):
+        if not isinstance(entry, dict):
+            continue
+        action_type = (entry.get("action_type") or "").strip()
+        if not action_type:
+            continue
+        if entry.get("is_active") is False:  # opcional desativar individualmente
+            _log(session, node["id"], "inline_action_skipped", "info", {
+                "action_type": action_type, "index": idx, "reason": "inactive",
+            })
+            continue
+        config = entry.get("config") or entry  # aceita campos no topo OU em config
+        _log(session, node["id"], "inline_action_executing", "info", {
+            "action_type": action_type, "index": idx,
+        })
+        result = dispatch_action(action_type, session, config)
+        level = "info" if result.get("ok") else "warning"
+        _log(session, node["id"], "inline_action_executed", level, {
+            "action_type": action_type,
+            "index": idx,
+            "ok": result.get("ok"),
+            "message": (result.get("message") or "")[:200],
+            **(result.get("extra") or {}),
+        })
 
 
 def _execute_action_node(node: dict, session: ChatbotSession) -> None:

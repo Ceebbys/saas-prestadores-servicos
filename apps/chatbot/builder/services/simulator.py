@@ -119,6 +119,20 @@ def _step_through(graph: dict, state: dict, *, start_node: dict) -> dict:
         data = node.get("data") or {}
         state["current_node_id"] = node["id"]
 
+        # RV08 — Inline actions: simulador apenas LOGA, não executa real
+        # (sandbox não toca banco). Mostra ao usuário no UI o que aconteceria.
+        for idx, entry in enumerate(data.get("inline_actions") or []):
+            if not isinstance(entry, dict):
+                continue
+            at = (entry.get("action_type") or "").strip()
+            if not at or entry.get("is_active") is False:
+                continue
+            state["messages"].append({
+                "direction": "system",
+                "content": f"⚙ [Simulação] ação '{at}' (#{idx + 1}) seria executada aqui.",
+                "node_id": node["id"],
+            })
+
         if ntype == "start":
             # Avança
             nxt = _advance_from_sim(graph, node, state)

@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { useBuilderStore } from "../store/builderStore";
 import { useGraphAPI } from "../hooks/useGraphAPI";
 import { MenuOptionsEditor } from "./MenuOptionsEditor";
+import { InlineActionsEditor } from "./InlineActionsEditor";
 import type { GraphNode, NodeCatalogField, OptionItem } from "../types";
 
 export function PropertiesPanel() {
@@ -752,6 +753,7 @@ const SECTION_ORDER: ReadonlyArray<string> = [
   "main",
   "collect",
   "action_config",
+  "actions",  // RV08 — inline_actions em TODOS os blocos
   "reminder",
   "advanced",
 ];
@@ -761,6 +763,7 @@ const SECTION_META: Record<string, { label: string; icon: string; openByDefault:
   main: { label: "Principal", icon: "📝", openByDefault: true },
   collect: { label: "Coleta de dados", icon: "📊", openByDefault: true },
   action_config: { label: "Configuração da ação", icon: "🔧", openByDefault: true },
+  actions: { label: "Ações automáticas", icon: "🎯", openByDefault: false },
   reminder: { label: "Lembrete e retomada", icon: "⏰", openByDefault: false },
   advanced: { label: "Avançado", icon: "⚙️", openByDefault: false },
 };
@@ -849,9 +852,37 @@ function SectionedFields({ fields, extraFields, node, onChange }: SectionedField
     grouped.action_config = (grouped.action_config || []).concat(extraFields);
   }
 
+  // RV08 — Seção 'actions' (inline_actions) é renderizada com UI especial
+  // (InlineActionsEditor) em TODOS os blocos, mesmo sem campos no catalog.
+  const inlineActions = (node.data as any).inline_actions || [];
+
   return (
     <>
       {SECTION_ORDER.map((sec) => {
+        // RV08 — Seção 'actions' especial: sempre aparece mesmo sem items
+        // no catalog (não tem field declarado; UI é especializada).
+        if (sec === "actions") {
+          const count = Array.isArray(inlineActions) ? inlineActions.length : 0;
+          const meta = SECTION_META.actions;
+          return (
+            <details
+              key={sec}
+              className="properties-panel__section"
+              open={meta.openByDefault || count > 0}
+            >
+              <summary className="properties-panel__section-summary">
+                <span>{meta.icon} {meta.label}</span>
+                <span className="properties-panel__section-count">{count}</span>
+              </summary>
+              <div className="properties-panel__section-body">
+                <InlineActionsEditor
+                  value={inlineActions}
+                  onChange={(v) => onChange("inline_actions", v)}
+                />
+              </div>
+            </details>
+          );
+        }
         const items = grouped[sec];
         if (!items || items.length === 0) return null;
         const meta = SECTION_META[sec] ?? { label: sec, icon: "", openByDefault: false };
