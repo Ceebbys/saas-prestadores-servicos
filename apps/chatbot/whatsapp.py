@@ -355,6 +355,61 @@ class EvolutionAPIClient:
 # Views do webhook Evolution API
 # ---------------------------------------------------------------------------
 
+def _resolve_timeout_decision(session, flow) -> dict:
+    """RV07 — Decide o que fazer quando uma sessão expira.
+
+    Lê config do nó atual (com fallback do flow):
+    - on_return_behavior: 'continue' (retoma) | 'restart' (recomeça) | '' (usa flow)
+    - auto_end_on_timeout: True = encerra (COMPLETED); False = comportamento default
+
+    'continue' só é possível se: (a) flow tem published_version (motor v2);
+    (b) session.current_node_id aponta para nó existente. Senão força 'restart'.
+
+    Returns:
+        {"action": "continue"|"restart"|"end", "auto_end": bool, "on_return_behavior": str}
+    """
+    auto_end = None
+    on_return = ""
+    node_found = False
+    try:
+        published = flow.current_published_version
+        if published and published.graph_json and session.current_node_id:
+            for n in (published.graph_json.get("nodes") or []):
+                if n.get("id") == session.current_node_id:
+                    node_found = True
+                    data = n.get("data") or {}
+                    if data.get("auto_end_on_timeout") is not None:
+                        auto_end = bool(data["auto_end_on_timeout"])
+                    on_return = (data.get("on_return_behavior") or "").strip()
+                    break
+    except Exception:  # noqa: BLE001
+        logger.exception("_resolve_timeout_decision: falha lendo node config")
+
+    # Fallback flow
+    if auto_end is None:
+        auto_end = bool(getattr(flow, "default_auto_end_on_timeout", False))
+    if not on_return:
+        on_return = (
+            getattr(flow, "default_on_return_behavior", None) or "restart"
+        )
+
+    # Determina action
+    if auto_end:
+        action = "end"
+    elif on_return == "continue" and node_found:
+        action = "continue"
+    else:
+        # 'continue' só funciona se temos nó visual válido (motor v2).
+        # Para flow legacy ou nó inexistente, sempre restart.
+        action = "restart"
+
+    return {
+        "action": action,
+        "auto_end": auto_end,
+        "on_return_behavior": on_return,
+    }
+
+
 def _is_bot_paused_for_sender(empresa, sender_id: str) -> bool:
     """RV06 — Verifica se há uma Conversation no Inbox com bot_paused=True
     para este sender (matched via lead.phone ou contato.whatsapp).
@@ -407,20 +462,43 @@ def _process_evolution_message(flow, sender_id, message_text):
         flow=flow, sender_id=sender_id, status=ChatbotSession.Status.ACTIVE,
     ).first()
 
-    # RV06 — Timeout: se a sessão ativa expirou, marca como EXPIRED e força criar nova
+    # RV07 — Timeout: lê config do bloco atual (com fallback para flow):
+    #   - on_return_behavior: 'continue' = retoma onde parou; 'restart' = reinicia
+    #   - auto_end_on_timeout: True = encerra (COMPLETED, próx. msg começa do
+    #     zero criando NOVA sessão); False = comportamento atual (EXPIRED)
     timeout_prefix = ""
     if session and session.is_expired:
+        decision = _resolve_timeout_decision(session, flow)
         logger.info(
-            "session %s expirou (timeout=%smin) — recomeçando fluxo",
-            session.session_key, flow.session_timeout_minutes,
+            "session %s expirou — decisão: %s (auto_end=%s, behavior=%s)",
+            session.session_key, decision["action"],
+            decision["auto_end"], decision["on_return_behavior"],
         )
-        session.status = ChatbotSession.Status.EXPIRED
-        session.save(update_fields=["status", "updated_at"])
-        # Prefixo opcional configurado pelo admin
         msg = (flow.session_timeout_message or "").strip()
         if msg:
             timeout_prefix = msg + "\n\n"
-        session = None  # força fluxo de "sem sessão" abaixo
+        if decision["action"] == "continue":
+            # Mantém current_node_id — apenas atualiza last_activity_at
+            session.last_activity_at = timezone.now()
+            session.reminder_sent_at = None
+            session.save(update_fields=[
+                "last_activity_at", "reminder_sent_at", "updated_at",
+            ])
+            # Não muda status — sessão continua ACTIVE
+            # Fall through para o processamento normal (com timeout_prefix)
+            if timeout_prefix:
+                # Anexa o prefixo na próxima resposta do bot
+                pass  # tratado via prefix abaixo
+        elif decision["action"] == "end":
+            # auto_end_on_timeout=True → marca COMPLETED (limpa)
+            session.status = ChatbotSession.Status.COMPLETED
+            session.save(update_fields=["status", "updated_at"])
+            session = None  # próximo turn cria sessão nova
+        else:
+            # action == "restart": comportamento padrão (EXPIRED + nova sessão)
+            session.status = ChatbotSession.Status.EXPIRED
+            session.save(update_fields=["status", "updated_at"])
+            session = None
 
     if not session:
         # Iniciar nova sessão

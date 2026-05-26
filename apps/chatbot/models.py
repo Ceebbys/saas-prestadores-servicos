@@ -118,6 +118,42 @@ class ChatbotFlow(TenantOwnedModel):
         ),
     )
 
+    # RV07 — Defaults globais de lembrete/retomada (usados como fallback quando
+    # o bloco não define override). Cada bloco de input (question/menu/yes_no/
+    # collect_data) pode sobrescrever individualmente nos seus data_fields.
+    DEFAULT_REMINDER_UNIT_CHOICES = (
+        ("minutes", "Minutos"),
+        ("hours", "Horas"),
+    )
+    DEFAULT_RETURN_BEHAVIOR_CHOICES = (
+        ("continue", "Continuar do ponto onde parou"),
+        ("restart", "Reiniciar fluxo do início"),
+    )
+    default_reminder_value = models.PositiveIntegerField(
+        "Tempo padrão de lembrete",
+        null=True,
+        blank=True,
+        help_text="Quanto tempo aguardar antes do lembrete (fallback p/ blocos sem config própria).",
+    )
+    default_reminder_unit = models.CharField(
+        "Unidade do tempo padrão",
+        max_length=10,
+        choices=DEFAULT_REMINDER_UNIT_CHOICES,
+        default="minutes",
+    )
+    default_on_return_behavior = models.CharField(
+        "Comportamento ao retornar (padrão)",
+        max_length=10,
+        choices=DEFAULT_RETURN_BEHAVIOR_CHOICES,
+        default="continue",
+        help_text="Quando o cliente volta após o lembrete: continua de onde parou ou reinicia.",
+    )
+    default_auto_end_on_timeout = models.BooleanField(
+        "Encerrar automaticamente após inatividade",
+        default=False,
+        help_text="Se True, atingir o timeout marca a sessão como COMPLETED (limpa). Se False, marca EXPIRED (próxima msg reinicia).",
+    )
+
     # RV06 — Builder visual (React Flow). Quando True, executor lê graph_json
     # da versão publicada (motor v2). Setado automaticamente no primeiro
     # publish bem-sucedido da FlowVersion.

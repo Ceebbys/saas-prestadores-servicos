@@ -66,32 +66,12 @@ export function PropertiesPanel() {
       )}
 
       <div className="properties-panel__fields">
-        {entry.data_fields.map((field) => (
-          <FieldEditor
-            key={field.name}
-            field={field}
-            value={(node.data as any)[field.name]}
-            onChange={(v) => updateNodeData(node.id, { [field.name]: v })}
-            node={node}
-          />
-        ))}
-        {/* RV06 — campos extras condicionais (por action_type) */}
-        {extraFields.length > 0 && (
-          <div className="properties-panel__extra-fields">
-            <div className="properties-panel__divider">
-              <span>Configuração da ação</span>
-            </div>
-            {extraFields.map((field) => (
-              <FieldEditor
-                key={`extra-${field.name}`}
-                field={field}
-                value={(node.data as any)[field.name]}
-                onChange={(v) => updateNodeData(node.id, { [field.name]: v })}
-                node={node}
-              />
-            ))}
-          </div>
-        )}
+        <SectionedFields
+          fields={entry.data_fields}
+          extraFields={extraFields}
+          node={node}
+          onChange={(name, v) => updateNodeData(node.id, { [name]: v })}
+        />
       </div>
 
       <div className="properties-panel__footer">
@@ -756,5 +736,149 @@ function ConditionHelpBanner() {
         </div>
       </details>
     </div>
+  );
+}
+
+
+// =============================================================================
+// RV07 — Renderização em seções colapsáveis
+// =============================================================================
+
+/**
+ * Ordem das seções no painel. Section 'main' sempre primeiro e aberta;
+ * 'reminder' e 'advanced' aparecem por último e fechadas por padrão.
+ */
+const SECTION_ORDER: ReadonlyArray<string> = [
+  "main",
+  "collect",
+  "action_config",
+  "reminder",
+  "advanced",
+];
+
+/** Mapeamento label + icon + open-default por seção. */
+const SECTION_META: Record<string, { label: string; icon: string; openByDefault: boolean }> = {
+  main: { label: "Principal", icon: "📝", openByDefault: true },
+  collect: { label: "Coleta de dados", icon: "📊", openByDefault: true },
+  action_config: { label: "Configuração da ação", icon: "🔧", openByDefault: true },
+  reminder: { label: "Lembrete e retomada", icon: "⏰", openByDefault: false },
+  advanced: { label: "Avançado", icon: "⚙️", openByDefault: false },
+};
+
+/**
+ * Fallback: quando o catalog não declara `field.section`, mapeia pelo nome
+ * do campo. Mantém compatibilidade com fluxos legacy + reduz repetição no
+ * JSON do catalog.
+ */
+const FIELD_NAME_TO_SECTION: Record<string, string> = {
+  // main — visíveis primeiro
+  label: "main",
+  text: "main",
+  prompt: "main",
+  options: "main",
+  welcome_message: "main",
+  completion_message: "main",
+  message_to_user: "main",
+  action_type: "main",
+  queue: "main",
+  fallback_message: "main",
+  default_branch: "main",
+  // collect — entrada de dados
+  lead_field: "collect",
+  validator: "collect",
+  validator_strict: "collect",
+  // reminder — lembrete e retomada
+  enable_reminder: "reminder",
+  reminder_value: "reminder",
+  reminder_unit: "reminder",
+  reminder_message: "reminder",
+  on_return_behavior: "reminder",
+  max_inactivity_value: "reminder",
+  max_inactivity_unit: "reminder",
+  auto_end_on_timeout: "reminder",
+  reminder_minutes: "reminder",  // backward compat
+  // advanced — config técnica/secundária
+  field: "advanced",
+  operator: "advanced",
+  value: "advanced",
+  delay_ms: "advanced",
+  payload_template: "advanced",
+  response_var: "advanced",
+  secret_ref: "advanced",
+  method: "advanced",
+  path_template: "advanced",
+  order: "advanced",
+  is_active: "advanced",
+  internal_note: "advanced",
+};
+
+
+function resolveSection(field: NodeCatalogField): string {
+  if (field.section && SECTION_ORDER.includes(field.section)) {
+    return field.section;
+  }
+  return FIELD_NAME_TO_SECTION[field.name] ?? "main";
+}
+
+
+interface SectionedFieldsProps {
+  fields: NodeCatalogField[];
+  extraFields: NodeCatalogField[];
+  node: GraphNode;
+  onChange: (name: string, v: unknown) => void;
+}
+
+/**
+ * Agrupa campos por seção e renderiza cada uma como <details/summary>.
+ *
+ * RV07 — Pedido do cliente: "em todos os blocos vamos ter q colocar seções
+ * das coisas q são configuráveis". Mantém UI consistente, permite collapse,
+ * destaca seção Principal (sempre aberta) e fecha Lembrete por default
+ * (campos avançados que confundem leigo).
+ */
+function SectionedFields({ fields, extraFields, node, onChange }: SectionedFieldsProps) {
+  // Agrupa campos básicos por seção
+  const grouped: Record<string, NodeCatalogField[]> = {};
+  for (const f of fields) {
+    const sec = resolveSection(f);
+    if (!grouped[sec]) grouped[sec] = [];
+    grouped[sec].push(f);
+  }
+  // Campos extras (action_type específicos) vão sempre em 'action_config'
+  if (extraFields.length > 0) {
+    grouped.action_config = (grouped.action_config || []).concat(extraFields);
+  }
+
+  return (
+    <>
+      {SECTION_ORDER.map((sec) => {
+        const items = grouped[sec];
+        if (!items || items.length === 0) return null;
+        const meta = SECTION_META[sec] ?? { label: sec, icon: "", openByDefault: false };
+        return (
+          <details
+            key={sec}
+            className="properties-panel__section"
+            open={meta.openByDefault}
+          >
+            <summary className="properties-panel__section-summary">
+              <span>{meta.icon} {meta.label}</span>
+              <span className="properties-panel__section-count">{items.length}</span>
+            </summary>
+            <div className="properties-panel__section-body">
+              {items.map((field) => (
+                <FieldEditor
+                  key={`${sec}-${field.name}`}
+                  field={field}
+                  value={(node.data as any)[field.name]}
+                  onChange={(v) => onChange(field.name, v)}
+                  node={node}
+                />
+              ))}
+            </div>
+          </details>
+        );
+      })}
+    </>
   );
 }

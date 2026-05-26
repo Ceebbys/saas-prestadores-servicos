@@ -69,6 +69,77 @@ def send_idle_reminders() -> dict:
     return stats
 
 
+def _to_minutes(value, unit: str) -> int:
+    """RV07 — converte (valor, unit) → minutos. unit in {minutes, hours}."""
+    try:
+        v = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    if v <= 0:
+        return 0
+    return v * 60 if (unit or "").lower() == "hours" else v
+
+
+def _resolve_reminder_config(data: dict, flow) -> dict:
+    """RV07 — resolve config de reminder do nó com fallback do flow.
+
+    Retorna dict com:
+    - enabled: bool — ativo?
+    - reminder_minutes: int — threshold em minutos
+    - max_inactivity_minutes: int — timeout total (0 = sem limite no bloco;
+      cai no flow.session_timeout_minutes)
+    - auto_end_on_timeout: bool — encerra (COMPLETED) ou reseta (EXPIRED)
+    - message: str — mensagem do lembrete
+    - on_return_behavior: str — 'continue' | 'restart' | '' (usa flow)
+    """
+    # Compat: campo antigo reminder_minutes (criado em RV06, sem enable explicit)
+    legacy_minutes = data.get("reminder_minutes")
+    has_legacy = legacy_minutes is not None and int(legacy_minutes or 0) > 0
+
+    # enable_reminder explicit (novo); fallback no campo antigo
+    enabled = data.get("enable_reminder")
+    if enabled is None:
+        enabled = has_legacy
+    enabled = bool(enabled)
+
+    # reminder_value + unit (novo); fallback legacy_minutes
+    rem_value = data.get("reminder_value")
+    rem_unit = data.get("reminder_unit") or "minutes"
+    if rem_value is None and has_legacy:
+        reminder_minutes = int(legacy_minutes)
+    else:
+        reminder_minutes = _to_minutes(rem_value or 0, rem_unit)
+
+    # max_inactivity (por bloco) com fallback no flow
+    max_inact_value = data.get("max_inactivity_value", 0)
+    max_inact_unit = data.get("max_inactivity_unit") or "minutes"
+    max_inactivity_minutes = _to_minutes(max_inact_value, max_inact_unit)
+    if max_inactivity_minutes <= 0:
+        max_inactivity_minutes = (
+            getattr(flow, "session_timeout_minutes", 0) or 0
+        )
+
+    auto_end = data.get("auto_end_on_timeout")
+    if auto_end is None:
+        auto_end = getattr(flow, "default_auto_end_on_timeout", False)
+    auto_end = bool(auto_end)
+
+    message = (data.get("reminder_message") or "").strip()
+    if not message:
+        message = "Você ainda está aí? Me responde quando puder 👋"
+
+    on_return = (data.get("on_return_behavior") or "").strip()
+
+    return {
+        "enabled": enabled,
+        "reminder_minutes": reminder_minutes,
+        "max_inactivity_minutes": max_inactivity_minutes,
+        "auto_end_on_timeout": auto_end,
+        "message": message,
+        "on_return_behavior": on_return,
+    }
+
+
 def _process_session_reminder(session: ChatbotSession, now) -> bool:
     """Avalia se a session deve receber reminder agora. Returns True se enviou."""
     # Resolve o nó atual no graph publicado (motor v2) ou current_step (legacy)
@@ -76,30 +147,23 @@ def _process_session_reminder(session: ChatbotSession, now) -> bool:
     if node is None:
         return False
     data = node.get("data") or {}
-    reminder_minutes = data.get("reminder_minutes")
-    try:
-        reminder_minutes = int(reminder_minutes or 0)
-    except (TypeError, ValueError):
-        return False
-    if reminder_minutes <= 0:
+    cfg = _resolve_reminder_config(data, session.flow)
+
+    if not cfg["enabled"] or cfg["reminder_minutes"] <= 0:
         return False
 
     elapsed = now - session.last_activity_at
-    if elapsed < timedelta(minutes=reminder_minutes):
+    if elapsed < timedelta(minutes=cfg["reminder_minutes"]):
         return False  # ainda dentro da janela, não precisa lembrete
 
-    # Verifica também o session_timeout — se já passou do total, NÃO envia
-    # lembrete (a próxima msg do cliente vai resetar o fluxo no
-    # _process_evolution_message). Evita lembrete de sessão "morta".
-    flow_timeout = getattr(session.flow, "session_timeout_minutes", 0) or 0
-    if flow_timeout > 0 and elapsed >= timedelta(minutes=flow_timeout):
+    # Se já passou do tempo máximo, NÃO envia lembrete (fluxo morto
+    # — a próxima msg do cliente reseta no _process_evolution_message,
+    # ou auto_end_on_timeout encerra silenciosamente).
+    max_inact = cfg["max_inactivity_minutes"]
+    if max_inact > 0 and elapsed >= timedelta(minutes=max_inact):
         return False
 
-    message = (data.get("reminder_message") or "").strip()
-    if not message:
-        message = "Você ainda está aí? Me responde quando puder 👋"
-
-    sent = _send_reminder_via_channel(session, message)
+    sent = _send_reminder_via_channel(session, cfg["message"])
     if sent:
         session.reminder_sent_at = now
         session.save(update_fields=["reminder_sent_at", "updated_at"])

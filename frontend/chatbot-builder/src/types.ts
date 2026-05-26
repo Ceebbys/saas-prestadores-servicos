@@ -142,6 +142,10 @@ export interface NodeCatalogField {
   help?: string;
   label?: string;
   item_schema?: Record<string, unknown>;
+  /** RV07 — Agrupamento visual no PropertiesPanel. Quando ausente, fallback
+   *  por field.name. Valores: 'main' | 'collect' | 'action_config' |
+   *  'reminder' | 'advanced'. */
+  section?: string;
 }
 
 export interface NodeCatalogEntry {
