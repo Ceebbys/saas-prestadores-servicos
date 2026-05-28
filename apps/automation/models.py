@@ -5,20 +5,44 @@ from apps.core.models import TenantOwnedModel
 
 
 class PipelineAutomationRule(TenantOwnedModel):
-    """Regra configurável: evento de proposta → mover lead para etapa do pipeline.
+    """Regra configurável: evento do sistema → mover lead para etapa do pipeline.
 
     O usuário (cliente final do SaaS) configura quais eventos disparam quais
     movimentações. Etapas são FK — não há nomes hardcoded ('Negociação',
     'Fechado-Ganho', etc.). Se a etapa for deletada, a regra fica inativa.
+
+    RV10 — Suporta eventos de QUALQUER entidade que tenha lead vinculado:
+    proposta, contrato, ordem de serviço e o próprio lead. Cliente pediu:
+    'quando eu apertar concluir OS teria q mudar na pipeline (para pós-venda)'.
+    A direção é genérica: qualquer transição relevante pode disparar regra.
     """
 
     class Event(models.TextChoices):
+        # --- Proposta (RV03) ---
         PROPOSTA_CRIADA = "proposta_criada", "Proposta criada"
         PROPOSTA_ENVIADA = "proposta_enviada", "Proposta enviada"
         PROPOSTA_ACEITA = "proposta_aceita", "Proposta aceita"
         PROPOSTA_REJEITADA = "proposta_rejeitada", "Proposta rejeitada"
         PROPOSTA_CANCELADA = "proposta_cancelada", "Proposta cancelada"
         PROPOSTA_EXPIRADA = "proposta_expirada", "Proposta expirada"
+        # --- Contrato (RV10) ---
+        CONTRATO_CRIADO = "contrato_criado", "Contrato criado"
+        CONTRATO_ENVIADO = "contrato_enviado", "Contrato enviado"
+        CONTRATO_ASSINADO = "contrato_assinado", "Contrato assinado"
+        CONTRATO_ATIVO = "contrato_ativo", "Contrato ativo"
+        CONTRATO_CONCLUIDO = "contrato_concluido", "Contrato concluído"
+        CONTRATO_CANCELADO = "contrato_cancelado", "Contrato cancelado"
+        # --- Ordem de Serviço (RV10) ---
+        OS_CRIADA = "os_criada", "OS criada"
+        OS_AGENDADA = "os_agendada", "OS agendada"
+        OS_INICIADA = "os_iniciada", "OS iniciada"
+        OS_PAUSADA = "os_pausada", "OS pausada"
+        OS_CONCLUIDA = "os_concluida", "OS concluída"
+        OS_CANCELADA = "os_cancelada", "OS cancelada"
+        # --- Lead (RV10) ---
+        LEAD_CRIADO = "lead_criado", "Lead criado"
+        LEAD_GANHO = "lead_ganho", "Lead ganho (won)"
+        LEAD_PERDIDO = "lead_perdido", "Lead perdido (lost)"
 
     name = models.CharField("Nome", max_length=120)
     event = models.CharField(

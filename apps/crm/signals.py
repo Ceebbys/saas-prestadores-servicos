@@ -16,12 +16,33 @@ from __future__ import annotations
 
 import logging
 
-from django.db.models.signals import post_save, pre_delete
+from django.db import transaction
+from django.db.models.signals import post_save, pre_delete, pre_save
 from django.dispatch import receiver
 
 from .models import Lead, LeadContact, Opportunity, Pipeline, PipelineStage
 
 logger = logging.getLogger(__name__)
+
+
+_LEAD_PREVIOUS_STAGE_ATTR = "_lead_previous_stage_id"
+
+
+@receiver(pre_save, sender=Lead)
+def _lead_capture_previous_stage(sender, instance: Lead, **kwargs) -> None:
+    """RV10 — Lê o pipeline_stage_id anterior para detectar transições.
+
+    Necessário no post_save para decidir se dispara LEAD_GANHO/LEAD_PERDIDO
+    (transições para stage com is_won/is_lost).
+    """
+    if not instance.pk:
+        setattr(instance, _LEAD_PREVIOUS_STAGE_ATTR, None)
+        return
+    try:
+        prev = Lead.objects.only("pipeline_stage_id").get(pk=instance.pk)
+        setattr(instance, _LEAD_PREVIOUS_STAGE_ATTR, prev.pipeline_stage_id)
+    except Lead.DoesNotExist:
+        setattr(instance, _LEAD_PREVIOUS_STAGE_ATTR, None)
 
 
 def _get_default_first_stage(empresa) -> PipelineStage | None:
@@ -62,6 +83,8 @@ def lead_post_save(sender, instance: Lead, created: bool, **kwargs):
             )
         # Lead criado já em stage de ganho? gera entry mesmo assim
         _maybe_generate_finance_entry(instance)
+        # RV10 — dispara automação de pipeline (LEAD_CRIADO + possível LEAD_GANHO)
+        _maybe_dispatch_lead_pipeline_event(instance, created=True, previous_stage_id=None)
         return
 
     # Update: sync downstream opportunities if stage changed
@@ -72,6 +95,68 @@ def lead_post_save(sender, instance: Lead, created: bool, **kwargs):
 
     # RV06 — Gera entry financeira se virou WON (idempotente)
     _maybe_generate_finance_entry(instance)
+    # RV10 — dispara automação de pipeline em update (LEAD_GANHO/LEAD_PERDIDO)
+    previous_stage_id = getattr(instance, _LEAD_PREVIOUS_STAGE_ATTR, None)
+    _maybe_dispatch_lead_pipeline_event(
+        instance, created=False, previous_stage_id=previous_stage_id,
+    )
+
+
+def _maybe_dispatch_lead_pipeline_event(
+    lead: Lead, *, created: bool, previous_stage_id,
+) -> None:
+    """RV10 — Dispara eventos de pipeline para o próprio Lead.
+
+    Eventos:
+    - LEAD_CRIADO: na criação do lead
+    - LEAD_GANHO: ao entrar em stage com is_won=True (transição)
+    - LEAD_PERDIDO: ao entrar em stage com is_lost=True (transição)
+
+    Defesas:
+    - `_suppress_automation` previne loop quando a própria regra mudou o stage
+    - on_commit garante que rollback descarta o dispatch
+    - falhas no fetch da stage_atual NÃO derrubam o save (try/except)
+    """
+    if getattr(lead, "_suppress_automation", False):
+        return
+    try:
+        from apps.automation.models import PipelineAutomationRule
+        from apps.automation.services import execute_lead_event
+    except Exception:  # noqa: BLE001
+        logger.exception("RV10: falha importando services de automação")
+        return
+
+    events_to_fire: list[str] = []
+    if created:
+        events_to_fire.append(PipelineAutomationRule.Event.LEAD_CRIADO)
+
+    # Detecta transição won/lost (vale tanto para create quanto update)
+    stage_changed = (
+        created and lead.pipeline_stage_id is not None
+    ) or (
+        not created and previous_stage_id != lead.pipeline_stage_id
+    )
+    if stage_changed and lead.pipeline_stage_id:
+        try:
+            stage = lead.pipeline_stage
+            if stage and stage.is_won:
+                events_to_fire.append(PipelineAutomationRule.Event.LEAD_GANHO)
+            elif stage and stage.is_lost:
+                events_to_fire.append(PipelineAutomationRule.Event.LEAD_PERDIDO)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "RV10: falha lendo pipeline_stage para detectar won/lost (lead=%s)",
+                lead.pk,
+            )
+
+    if not events_to_fire:
+        return
+
+    def _run():
+        for ev in events_to_fire:
+            execute_lead_event(lead, ev)
+
+    transaction.on_commit(_run)
 
 
 def _maybe_generate_finance_entry(lead: Lead) -> None:

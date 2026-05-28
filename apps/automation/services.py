@@ -26,7 +26,13 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Pipeline triggers (Etapa 7) — eventos de proposta movem leads
+# Pipeline triggers — RV10: eventos de qualquer entidade movem leads
+# ---------------------------------------------------------------------------
+#
+# Cliente pediu (RV10): "vou encerrar um serviço aqui ele vai entrar no
+# pos-venda. então tipo na hr q eu apertar concluir OS teria q mudar na
+# pipeline". O sistema original só cobria eventos de proposta. Agora também
+# Contrato, Ordem de Serviço e o próprio Lead disparam regras.
 # ---------------------------------------------------------------------------
 
 # Mapa: status novo da proposta → evento da regra.
@@ -38,17 +44,93 @@ PROPOSAL_STATUS_TO_EVENT = {
     "expired": PipelineAutomationRule.Event.PROPOSTA_EXPIRADA,
 }
 
+# RV10 — Mapa status de Contrato → evento
+CONTRACT_STATUS_TO_EVENT = {
+    "sent": PipelineAutomationRule.Event.CONTRATO_ENVIADO,
+    "signed": PipelineAutomationRule.Event.CONTRATO_ASSINADO,
+    "active": PipelineAutomationRule.Event.CONTRATO_ATIVO,
+    "completed": PipelineAutomationRule.Event.CONTRATO_CONCLUIDO,
+    "cancelled": PipelineAutomationRule.Event.CONTRATO_CANCELADO,
+}
+
+# RV10 — Mapa status de Ordem de Serviço → evento
+WORK_ORDER_STATUS_TO_EVENT = {
+    "scheduled": PipelineAutomationRule.Event.OS_AGENDADA,
+    "in_progress": PipelineAutomationRule.Event.OS_INICIADA,
+    "on_hold": PipelineAutomationRule.Event.OS_PAUSADA,
+    "completed": PipelineAutomationRule.Event.OS_CONCLUIDA,
+    "cancelled": PipelineAutomationRule.Event.OS_CANCELADA,
+}
+
 
 def execute_proposal_event(proposal, event: str):
-    """Executa todas as regras ativas para o evento.
+    """Executa todas as regras ativas para evento de PROPOSTA.
 
-    Nunca propaga exceções — automação não bloqueia mudança de status.
-    Cada regra é tentada isoladamente; falha numa regra não afeta as outras.
+    Wrapper backward-compat para `execute_pipeline_event` com source='proposal'.
+    """
+    return execute_pipeline_event(
+        source=proposal, event=event, source_label="proposal",
+    )
+
+
+def execute_contract_event(contract, event: str):
+    """RV10 — Executa regras para evento de CONTRATO.
+
+    Lê o lead via `contract.lead` (FK no model contracts.Contract).
+    """
+    return execute_pipeline_event(
+        source=contract, event=event, source_label="contract",
+    )
+
+
+def execute_work_order_event(work_order, event: str):
+    """RV10 — Executa regras para evento de ORDEM DE SERVIÇO.
+
+    Lê o lead via `work_order.lead` (FK no model operations.WorkOrder).
+    Exemplo: ao concluir OS, mover lead para etapa de Pós-Venda.
+    """
+    return execute_pipeline_event(
+        source=work_order, event=event, source_label="work_order",
+    )
+
+
+def execute_lead_event(lead, event: str):
+    """RV10 — Executa regras para evento do PRÓPRIO LEAD.
+
+    Aqui o source É o lead. Usado para eventos como LEAD_CRIADO, LEAD_GANHO,
+    LEAD_PERDIDO. Atenção: se a regra mover o lead para outra etapa, isso
+    re-dispara o signal de Lead — flag `_suppress_automation` previne loop.
+    """
+    return execute_pipeline_event(
+        source=lead, event=event, source_label="lead",
+    )
+
+
+def execute_pipeline_event(source, event: str, source_label: str):
+    """RV10 — Motor genérico: aplica todas as regras ativas para um evento.
+
+    Args:
+        source: instância que disparou o evento. Precisa ter `.empresa` e
+                ou `.lead` (FK pra crm.Lead) OU ser ele próprio um Lead.
+        event: string do enum PipelineAutomationRule.Event
+        source_label: 'proposal'|'contract'|'work_order'|'lead' — usado nos
+                      logs para auditoria.
+
+    Nunca propaga exceções — automação não bloqueia o save do status.
+    Cada regra é tentada isoladamente.
     """
     try:
+        empresa = getattr(source, "empresa", None)
+        if empresa is None:
+            logger.warning(
+                "execute_pipeline_event: source sem empresa (%s, pk=%s)",
+                source_label, getattr(source, "pk", "?"),
+            )
+            return
+
         rules = (
             PipelineAutomationRule.objects.filter(
-                empresa=proposal.empresa,
+                empresa=empresa,
                 event=event,
                 is_active=True,
             )
@@ -56,47 +138,59 @@ def execute_proposal_event(proposal, event: str):
             .order_by("priority", "name")
         )
         for rule in rules:
-            _apply_rule(proposal, rule, event)
+            _apply_rule(source, rule, event, source_label)
     except Exception:  # noqa: BLE001
         logger.exception(
-            "execute_proposal_event outer failure (event=%s, proposal=%s)",
-            event, proposal.pk,
+            "execute_pipeline_event outer failure (event=%s, source=%s, pk=%s)",
+            event, source_label, getattr(source, "pk", "?"),
         )
 
 
-def _apply_rule(proposal, rule, event: str):
-    """Aplica uma única regra. Tudo é logado em AutomationLog.
+def _resolve_lead(source, source_label: str):
+    """RV10 — Resolve o Lead a partir do source.
+
+    - Se source é o próprio Lead (source_label='lead'): retorna ele
+    - Senão tenta `source.lead`
+    """
+    if source_label == "lead":
+        return source
+    return getattr(source, "lead", None)
+
+
+def _apply_rule(source, rule, event: str, source_label: str = "proposal"):
+    """RV10 — Aplica uma única regra. Tudo é logado em AutomationLog.
 
     Defesas:
-    - Lead pode ser nulo (proposta órfã) — pula com log
+    - Lead pode ser nulo (entidade órfã) — pula com log
     - Lead já na etapa-alvo — pula com log informativo
-    - Stage pode ter sido removido (FK PROTECT bloqueia delete, mas mesmo assim)
     - Pipeline mismatch já validado em clean(), mas re-checa em runtime
     """
+    empresa = source.empresa
+    source_id = source.pk
     try:
-        lead = proposal.lead
+        lead = _resolve_lead(source, source_label)
         if not lead:
             AutomationLog.objects.create(
-                empresa=proposal.empresa,
+                empresa=empresa,
                 action=AutomationLog.Action.PROPOSAL_PIPELINE_TRIGGER,
-                entity_type=AutomationLog.EntityType.PROPOSAL,
-                entity_id=proposal.pk,
+                entity_type=_entity_type_for_label(source_label),
+                entity_id=source_id,
                 status=AutomationLog.Status.SUCCESS,
                 metadata={
                     "rule_id": rule.pk, "skipped": "no_lead",
-                    "event": event,
+                    "event": event, "source_type": source_label,
                 },
             )
             return
 
         if lead.pipeline_stage_id == rule.target_stage_id:
             AutomationLog.objects.create(
-                empresa=proposal.empresa,
+                empresa=empresa,
                 action=AutomationLog.Action.PROPOSAL_PIPELINE_TRIGGER,
                 entity_type=AutomationLog.EntityType.LEAD,
                 entity_id=lead.pk,
-                source_entity_type="proposal",
-                source_entity_id=proposal.pk,
+                source_entity_type=source_label,
+                source_entity_id=source_id,
                 status=AutomationLog.Status.SUCCESS,
                 metadata={
                     "rule_id": rule.pk,
@@ -114,12 +208,12 @@ def _apply_rule(proposal, rule, event: str):
         lead.save(update_fields=["pipeline_stage", "updated_at"])
 
         AutomationLog.objects.create(
-            empresa=proposal.empresa,
+            empresa=empresa,
             action=AutomationLog.Action.PROPOSAL_PIPELINE_TRIGGER,
             entity_type=AutomationLog.EntityType.LEAD,
             entity_id=lead.pk,
-            source_entity_type="proposal",
-            source_entity_id=proposal.pk,
+            source_entity_type=source_label,
+            source_entity_id=source_id,
             status=AutomationLog.Status.SUCCESS,
             metadata={
                 "rule_id": rule.pk,
@@ -133,16 +227,29 @@ def _apply_rule(proposal, rule, event: str):
         logger.exception("Falha aplicando regra de automação")
         try:
             AutomationLog.objects.create(
-                empresa=proposal.empresa,
+                empresa=empresa,
                 action=AutomationLog.Action.PROPOSAL_PIPELINE_TRIGGER,
-                entity_type=AutomationLog.EntityType.PROPOSAL,
-                entity_id=proposal.pk,
+                entity_type=_entity_type_for_label(source_label),
+                entity_id=source_id,
                 status=AutomationLog.Status.ERROR,
                 error_message=str(exc),
-                metadata={"rule_id": rule.pk, "event": event},
+                metadata={
+                    "rule_id": rule.pk, "event": event,
+                    "source_type": source_label,
+                },
             )
         except Exception:  # noqa: BLE001
             logger.exception("Falha registrando erro de automação")
+
+
+def _entity_type_for_label(source_label: str):
+    """RV10 — Mapeia rótulo de source para AutomationLog.EntityType."""
+    return {
+        "proposal": AutomationLog.EntityType.PROPOSAL,
+        "contract": AutomationLog.EntityType.CONTRACT,
+        "work_order": AutomationLog.EntityType.WORK_ORDER,
+        "lead": AutomationLog.EntityType.LEAD,
+    }.get(source_label, AutomationLog.EntityType.PROPOSAL)
 
 
 # ---------------------------------------------------------------------------

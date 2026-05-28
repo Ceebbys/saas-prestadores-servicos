@@ -215,6 +215,44 @@ class PipelineAutomationRuleForm(TailwindFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         from apps.crm.models import Pipeline, PipelineStage
 
+        # RV10 — Agrupa os ~21 eventos disponíveis por categoria de origem
+        # (Proposta, Contrato, OS, Lead). Sem isso a select fica enorme e
+        # confunde — com optgroup o usuário escaneia rapidamente.
+        EV = PipelineAutomationRule.Event
+        grouped_choices = [
+            ("", "---------"),
+            ("Proposta", [
+                (EV.PROPOSTA_CRIADA.value, EV.PROPOSTA_CRIADA.label),
+                (EV.PROPOSTA_ENVIADA.value, EV.PROPOSTA_ENVIADA.label),
+                (EV.PROPOSTA_ACEITA.value, EV.PROPOSTA_ACEITA.label),
+                (EV.PROPOSTA_REJEITADA.value, EV.PROPOSTA_REJEITADA.label),
+                (EV.PROPOSTA_CANCELADA.value, EV.PROPOSTA_CANCELADA.label),
+                (EV.PROPOSTA_EXPIRADA.value, EV.PROPOSTA_EXPIRADA.label),
+            ]),
+            ("Contrato", [
+                (EV.CONTRATO_CRIADO.value, EV.CONTRATO_CRIADO.label),
+                (EV.CONTRATO_ENVIADO.value, EV.CONTRATO_ENVIADO.label),
+                (EV.CONTRATO_ASSINADO.value, EV.CONTRATO_ASSINADO.label),
+                (EV.CONTRATO_ATIVO.value, EV.CONTRATO_ATIVO.label),
+                (EV.CONTRATO_CONCLUIDO.value, EV.CONTRATO_CONCLUIDO.label),
+                (EV.CONTRATO_CANCELADO.value, EV.CONTRATO_CANCELADO.label),
+            ]),
+            ("Ordem de Serviço", [
+                (EV.OS_CRIADA.value, EV.OS_CRIADA.label),
+                (EV.OS_AGENDADA.value, EV.OS_AGENDADA.label),
+                (EV.OS_INICIADA.value, EV.OS_INICIADA.label),
+                (EV.OS_PAUSADA.value, EV.OS_PAUSADA.label),
+                (EV.OS_CONCLUIDA.value, EV.OS_CONCLUIDA.label),
+                (EV.OS_CANCELADA.value, EV.OS_CANCELADA.label),
+            ]),
+            ("Lead", [
+                (EV.LEAD_CRIADO.value, EV.LEAD_CRIADO.label),
+                (EV.LEAD_GANHO.value, EV.LEAD_GANHO.label),
+                (EV.LEAD_PERDIDO.value, EV.LEAD_PERDIDO.label),
+            ]),
+        ]
+        self.fields["event"].choices = grouped_choices
+
         if empresa:
             self.fields["target_pipeline"].queryset = Pipeline.objects.filter(
                 empresa=empresa,
