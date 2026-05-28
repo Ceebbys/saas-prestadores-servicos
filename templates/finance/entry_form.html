@@ -33,6 +33,65 @@
             {% form_field form.bank_account %}
         </div>
 
+        {# RV10 — Parcelamento (apenas em criação; edição não suporta) #}
+        {% if not form.instance.pk %}
+        <div class="mt-4 pt-4 border-t border-slate-200"
+             x-data="{
+                isInstallment: {{ form.is_installment.value|default:'false'|yesno:'true,false' }},
+                count: {{ form.installment_count.value|default:'2' }},
+                amount: 0,
+             }"
+             x-init="
+                const a = document.getElementById('id_amount');
+                if (a) {
+                    amount = parseFloat(a.value) || 0;
+                    a.addEventListener('input', e => { amount = parseFloat(e.target.value) || 0; });
+                }
+             ">
+            <label class="flex items-start gap-2 cursor-pointer p-3 rounded-lg border border-slate-200 hover:bg-slate-50"
+                   :class="isInstallment ? 'bg-indigo-50 border-indigo-200' : ''">
+                <input type="checkbox" name="is_installment" value="on"
+                       x-model="isInstallment"
+                       class="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                <div>
+                    <span class="text-sm font-semibold text-slate-800">Pagamento parcelado?</span>
+                    <p class="text-xs text-slate-500 mt-0.5">
+                        Marque para dividir o valor em várias entradas.
+                        Exemplo: R$ 1.500 em 3x gera 3 lançamentos de R$ 500 com vencimentos escalonados.
+                    </p>
+                </div>
+            </label>
+
+            <div x-show="isInstallment" x-transition class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 pl-3">
+                <div>
+                    <label for="id_installment_count" class="block text-xs font-medium text-slate-600 mb-1">
+                        Quantidade de parcelas *
+                    </label>
+                    <input type="number" name="installment_count" id="id_installment_count"
+                           x-model.number="count" min="2" max="60"
+                           class="w-full rounded-lg border-slate-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    <p class="mt-1 text-xs text-slate-500">Entre 2 e 60 parcelas.</p>
+                </div>
+                <div>
+                    <label for="id_installment_interval_days" class="block text-xs font-medium text-slate-600 mb-1">
+                        Intervalo entre parcelas (dias)
+                    </label>
+                    <input type="number" name="installment_interval_days" id="id_installment_interval_days"
+                           value="{{ form.installment_interval_days.value|default:'30' }}" min="1" max="365"
+                           class="w-full rounded-lg border-slate-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    <p class="mt-1 text-xs text-slate-500">Padrão: 30 (mensal).</p>
+                </div>
+            </div>
+
+            <div x-show="isInstallment && count >= 2 && amount > 0" x-transition
+                 class="mt-3 ml-3 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-900">
+                <strong>Pré-visualização:</strong>
+                <span x-text="count + ' parcelas de R$ ' + (Math.floor((amount / count) * 100) / 100).toFixed(2).replace('.', ',')"></span>
+                (a última recebe o restante para somar exatamente o valor total).
+            </div>
+        </div>
+        {% endif %}
+
         <div class="mt-2">
             <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 mt-4">Vínculos (opcional)</p>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">

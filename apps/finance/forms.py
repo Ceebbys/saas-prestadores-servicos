@@ -30,6 +30,40 @@ class BankAccountForm(TailwindFormMixin, forms.ModelForm):
 
 
 class FinancialEntryForm(TailwindFormMixin, forms.ModelForm):
+    # RV10 — Cliente pediu: "quando for fazer um lançamento de uma receita
+    # colocar a condição de pagamento. se foi dividida é de quantas vezes,
+    # e ai ja gera q a quantidade de entradas conforme for configurada no
+    # lançamento. exemplo serviço 1500 de 3 vezes. gera 3 entradas de 500
+    # nos lançamentos"
+    #
+    # Campos extras não-model que controlam o parcelamento na criação. Em
+    # edição esses campos são ignorados (parcelar já-existente não faz
+    # sentido — o user edita parcela por parcela).
+    is_installment = forms.BooleanField(
+        label="Pagamento parcelado?",
+        required=False,
+        help_text=(
+            "Marque para dividir o valor em várias entradas. "
+            "Exemplo: R$ 1.500 em 3x gera 3 lançamentos de R$ 500."
+        ),
+    )
+    installment_count = forms.IntegerField(
+        label="Quantidade de parcelas",
+        required=False,
+        min_value=2,
+        max_value=60,
+        initial=2,
+        help_text="Entre 2 e 60 parcelas.",
+    )
+    installment_interval_days = forms.IntegerField(
+        label="Intervalo entre parcelas (dias)",
+        required=False,
+        min_value=1,
+        max_value=365,
+        initial=30,
+        help_text="Dias entre cada vencimento. Padrão: 30 (mensal).",
+    )
+
     class Meta:
         model = FinancialEntry
         fields = [
@@ -85,6 +119,71 @@ class FinancialEntryForm(TailwindFormMixin, forms.ModelForm):
             self.fields["related_work_order"].queryset = WorkOrder.objects.filter(
                 empresa=empresa
             )
+
+    def clean(self):
+        cleaned = super().clean()
+        is_installment = cleaned.get("is_installment", False)
+        if is_installment:
+            count = cleaned.get("installment_count") or 0
+            if count < 2:
+                self.add_error(
+                    "installment_count",
+                    "Para parcelar, escolha pelo menos 2 parcelas.",
+                )
+            # Default seguro para o intervalo se vazio
+            if not cleaned.get("installment_interval_days"):
+                cleaned["installment_interval_days"] = 30
+        return cleaned
+
+    def save_installments(self, empresa):
+        """RV10 — Cria N entries parceladas (substitui o save() padrão quando
+        is_installment=True).
+
+        Estratégia:
+        - Cada parcela = total / N (Decimal, 2 casas)
+        - Última parcela recebe o restante (evita perda por arredondamento)
+        - Vencimentos: date + i * interval_days
+        - Descrição: "{descrição original} (1/N)", "(2/N)", etc.
+        - Retorna lista de FinancialEntry criadas
+
+        Não toca em `auto_generated` (essas são MANUAIS — user criou de propósito).
+        """
+        from datetime import timedelta
+        from decimal import Decimal
+        cleaned = self.cleaned_data
+        total = Decimal(str(cleaned["amount"]))
+        count = int(cleaned["installment_count"])
+        interval = int(cleaned.get("installment_interval_days") or 30)
+        base_date = cleaned["date"]
+        base_description = cleaned["description"]
+
+        per_installment = (total / count).quantize(Decimal("0.01"))
+        entries: list[FinancialEntry] = []
+        accumulated = Decimal("0.00")
+        for i in range(count):
+            is_last = i == count - 1
+            amount = (total - accumulated) if is_last else per_installment
+            accumulated += amount
+            due_date = base_date + timedelta(days=interval * i)
+            entry = FinancialEntry(
+                empresa=empresa,
+                type=cleaned["type"],
+                description=f"{base_description} ({i + 1}/{count})",
+                amount=amount,
+                category=cleaned.get("category"),
+                date=due_date,
+                paid_date=cleaned.get("paid_date") if i == 0 else None,
+                status=cleaned.get("status") or FinancialEntry.Status.PENDING,
+                bank_account=cleaned.get("bank_account"),
+                related_proposal=cleaned.get("related_proposal"),
+                related_contract=cleaned.get("related_contract"),
+                related_work_order=cleaned.get("related_work_order"),
+                notes=cleaned.get("notes", ""),
+                auto_generated=False,
+            )
+            entry.save()
+            entries.append(entry)
+        return entries
 
 
 class FinancialCategoryForm(TailwindFormMixin, forms.ModelForm):

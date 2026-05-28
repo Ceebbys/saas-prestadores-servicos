@@ -389,6 +389,20 @@ class EntryCreateView(EmpresaMixin, HtmxResponseMixin, CreateView):
         return kwargs
 
     def form_valid(self, form):
+        # RV10 — Se marcado 'parcelar', cria N entries em vez de 1.
+        # Cliente pediu: "exemplo serviço 1500 de 3 vezes. gera 3 entradas
+        # de 500 nos lançamentos".
+        if form.cleaned_data.get("is_installment"):
+            entries = form.save_installments(self.request.empresa)
+            messages.success(
+                self.request,
+                f"{len(entries)} parcelas criadas com sucesso "
+                f"(de {entries[0].date.strftime('%d/%m/%Y')} a "
+                f"{entries[-1].date.strftime('%d/%m/%Y')}).",
+            )
+            from django.shortcuts import redirect
+            return redirect(self.success_url)
+        # Caminho padrão: 1 entry. EmpresaMixin.form_valid seta instance.empresa.
         response = super().form_valid(form)
         messages.success(self.request, "Lançamento criado com sucesso.")
         return response
