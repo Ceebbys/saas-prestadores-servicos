@@ -30,6 +30,12 @@ urlpatterns = [
         views.EntryMarkPaidView.as_view(),
         name="entry_pay",
     ),
+    # RV10 — Excluir lançamento (hard delete)
+    path(
+        "entries/<int:pk>/delete/",
+        views.EntryDeleteView.as_view(),
+        name="entry_delete",
+    ),
     # Categories (settings)
     path(
         "categories/",

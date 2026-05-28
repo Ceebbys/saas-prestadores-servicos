@@ -42,6 +42,37 @@
             </div>
             {% endif %}
 
+            {# RV10 — Mostra lançamentos vinculados e oferece cascata #}
+            {% if pending_entries_count or paid_entries_count %}
+            <div class="mt-4 rounded-lg bg-blue-50 border border-blue-200 px-3 py-3 text-xs text-blue-900">
+                <p class="font-semibold mb-2">🔗 Lançamentos financeiros vinculados</p>
+                {% if pending_entries_count %}
+                <p class="mb-1">{{ pending_entries_count }} pendente{{ pending_entries_count|pluralize:"s" }}:</p>
+                <ul class="list-disc pl-5 mb-2 space-y-0.5">
+                    {% for e in pending_entries|slice:":3" %}
+                    <li>{{ e.description|truncatechars:40 }} — R$ {{ e.amount|floatformat:"2" }} ({{ e.date|date:"d/m/y" }})</li>
+                    {% endfor %}
+                    {% if pending_entries_count > 3 %}
+                    <li class="italic">… e mais {{ pending_entries_count|add:"-3" }}</li>
+                    {% endif %}
+                </ul>
+                <label class="flex items-start gap-2 cursor-pointer mt-2 p-2 rounded bg-white border border-blue-200 hover:bg-blue-50">
+                    <input type="checkbox" name="delete_entries" value="1" form="delete-proposal-form"
+                           class="mt-0.5 rounded border-blue-300 text-red-600 focus:ring-red-500">
+                    <span>
+                        <span class="font-semibold">Também excluir os {{ pending_entries_count }} lançamento{{ pending_entries_count|pluralize:"s" }} pendente{{ pending_entries_count|pluralize:"s" }}</span>
+                        <span class="block text-blue-700 mt-0.5">Marque esta opção se a venda foi cancelada e os pendentes não devem ser cobrados.</span>
+                    </span>
+                </label>
+                {% endif %}
+                {% if paid_entries_count %}
+                <p class="mt-2 text-blue-700 italic">
+                    {{ paid_entries_count }} já pago{{ paid_entries_count|pluralize:"s" }} — esse{{ paid_entries_count|pluralize:"s" }} NÃO {{ paid_entries_count|pluralize:"serão,será" }} excluído{{ paid_entries_count|pluralize:"s" }} (preservam o histórico de caixa).
+                </p>
+                {% endif %}
+            </div>
+            {% endif %}
+
             <div class="mt-4">
                 <label class="block text-xs font-medium text-slate-600 mb-1">
                     Para confirmar, digite <code class="px-1 bg-slate-100 rounded font-mono">{{ proposal.number }}</code>
@@ -59,7 +90,7 @@
                     class="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
                 Cancelar
             </button>
-            <form method="post" action="{% url 'proposals:delete' proposal.pk %}">
+            <form id="delete-proposal-form" method="post" action="{% url 'proposals:delete' proposal.pk %}">
                 {% csrf_token %}
                 <button type="submit"
                         :disabled="!confirmed"

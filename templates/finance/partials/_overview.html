@@ -234,6 +234,15 @@
                                 </button>
                             </form>
                             {% endif %}
+                            <form method="post" action="{% url 'finance:entry_delete' entry.pk %}" class="inline-flex"
+                                  onsubmit="return confirm('Excluir este lançamento? Esta ação não pode ser desfeita.')">
+                                {% csrf_token %}
+                                <button type="submit"
+                                        class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                        title="Excluir">
+                                    {% icon "trash" "w-4 h-4" %}
+                                </button>
+                            </form>
                         </div>
                     </td>
                 </tr>

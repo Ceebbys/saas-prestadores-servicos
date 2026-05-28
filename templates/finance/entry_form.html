@@ -46,16 +46,33 @@
             {% form_field form.notes %}
         </div>
 
-        <div class="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
-            <a href="{% url 'finance:entry_list' %}"
-               class="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
-                Cancelar
-            </a>
-            <button type="submit"
-                    class="px-6 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
-                {% if form.instance.pk %}Salvar{% else %}Criar Lançamento{% endif %}
+        <div class="flex items-center justify-between gap-3 mt-6 pt-4 border-t border-slate-200">
+            {% if form.instance.pk %}
+            <button type="button"
+                    onclick="if (confirm('Excluir este lançamento? Esta ação não pode ser desfeita.')) { document.getElementById('entry-delete-form').submit(); }"
+                    class="px-4 py-2 text-sm font-medium text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
+                Excluir
             </button>
+            {% else %}
+            <span></span>
+            {% endif %}
+            <div class="flex items-center gap-3">
+                <a href="{% url 'finance:entry_list' %}"
+                   class="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
+                    Cancelar
+                </a>
+                <button type="submit"
+                        class="px-6 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
+                    {% if form.instance.pk %}Salvar{% else %}Criar Lançamento{% endif %}
+                </button>
+            </div>
         </div>
     </form>
+    {% if form.instance.pk %}
+    <!-- Form auxiliar para POST de exclusão (botão acima dispara via JS) -->
+    <form id="entry-delete-form" method="post" action="{% url 'finance:entry_delete' form.instance.pk %}" class="hidden">
+        {% csrf_token %}
+    </form>
+    {% endif %}
 </div>
 {% endblock %}

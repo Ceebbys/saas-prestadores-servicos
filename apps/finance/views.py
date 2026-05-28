@@ -287,6 +287,65 @@ class EntryUpdateView(EmpresaMixin, HtmxResponseMixin, UpdateView):
         return response
 
 
+class EntryDeleteView(EmpresaMixin, View):
+    """RV10 — Exclui lançamento financeiro (hard delete).
+
+    Cliente reportou: "não tem como excluir lançamento pendente". A coluna
+    Ações só tinha 'editar' e 'marcar como pago'. Sem essa view, o user só
+    conseguia excluir via Django admin.
+
+    Comportamento:
+    - Hard delete (FinancialEntry não tem soft-delete no model).
+    - Aceita qualquer status (pending/paid/overdue/cancelled).
+    - Se auto-gerada vinculada a Lead em won_stage: o backfill on-demand
+      vai SUGERIR recriar quando o user clicar "Sincronizar agora" — mas
+      o signal post_save do Lead NÃO recria automaticamente (idempotência
+      do generate_entry_from_lead_won verifica por `related_lead=lead +
+      auto_generated=True`, então uma vez deletada, ele só recria se o
+      lead for salvo de novo). Por isso adicionamos warning específico
+      na mensagem.
+    - HTMX-friendly: se vier de HTMX, retorna 204 (linha some via swap).
+    """
+
+    def post(self, request, pk):
+        entry = get_object_or_404(
+            FinancialEntry, pk=pk, empresa=request.empresa
+        )
+        # Snapshot pra mensagem amigável
+        description = entry.description
+        amount = entry.amount
+        was_auto = entry.auto_generated
+        had_lead = entry.related_lead_id is not None
+        had_proposal = entry.related_proposal_id is not None
+
+        entry.delete()
+
+        msg_parts = [f"Lançamento '{description}' (R$ {amount}) excluído."]
+        if was_auto and had_lead:
+            msg_parts.append(
+                "⚠ Era auto-gerado pelo lead. Se mover o lead novamente "
+                "para etapa de ganho, um novo lançamento será criado."
+            )
+        elif was_auto and had_proposal:
+            msg_parts.append(
+                "⚠ Era auto-gerado pela proposta. Se a proposta for aceita "
+                "novamente (após reabertura), um novo lançamento será criado."
+            )
+        messages.success(request, " ".join(msg_parts))
+
+        if request.htmx:
+            # 204 No Content + HX-Trigger pra atualizar contadores se quiser
+            response = HttpResponse(status=204)
+            response["HX-Trigger"] = "entryDeleted"
+            return response
+
+        from django.shortcuts import redirect
+        referer = request.META.get("HTTP_REFERER", "")
+        if "entries" in referer:
+            return redirect("finance:entry_list")
+        return redirect("finance:finance_overview")
+
+
 class BackfillWonLeadEntriesView(EmpresaMixin, View):
     """RV10 — POST que regenera FinancialEntry para leads em won_stage sem entry.
 

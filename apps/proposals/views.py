@@ -423,9 +423,24 @@ class ProposalDeleteView(EmpresaMixin, View):
         proposal = get_object_or_404(
             Proposal, pk=pk, empresa=request.empresa
         )
+        # RV10 — mostra ao user quais lançamentos financeiros estão vinculados
+        # (cliente reportou: 'se não exclui o financeiro pendente não exclui
+        # a proposta'). Tecnicamente o SET_NULL não bloqueia, mas o user
+        # pensa que sim. Deixamos opção de cascata explícita.
+        pending_entries = proposal.financial_entries.filter(
+            status__in=("pending", "overdue"),
+        )
+        paid_entries_count = proposal.financial_entries.filter(
+            status="paid",
+        ).count()
         html = render_to_string(
             "proposals/partials/_delete_confirm.html",
-            {"proposal": proposal},
+            {
+                "proposal": proposal,
+                "pending_entries": pending_entries,
+                "pending_entries_count": pending_entries.count(),
+                "paid_entries_count": paid_entries_count,
+            },
             request=request,
         )
         return HttpResponse(html)
@@ -436,6 +451,19 @@ class ProposalDeleteView(EmpresaMixin, View):
         proposal = get_object_or_404(
             Proposal, pk=pk, empresa=request.empresa
         )
+        # RV10 — Cascata opcional: se o checkbox 'delete_entries' veio marcado,
+        # excluir também os FinancialEntry pendentes vinculados. Entries PAGAS
+        # NUNCA são excluídas (preservam histórico de caixa).
+        delete_entries = request.POST.get("delete_entries") == "1"
+        entries_deleted = 0
+        if delete_entries:
+            entries_deleted = proposal.financial_entries.filter(
+                status__in=("pending", "overdue"),
+            ).count()
+            proposal.financial_entries.filter(
+                status__in=("pending", "overdue"),
+            ).delete()
+
         # Snapshot antes de excluir (mantido em AutomationLog para auditoria
         # mesmo que a proposta seja restaurada depois — registra a ação)
         snapshot = {
@@ -448,6 +476,7 @@ class ProposalDeleteView(EmpresaMixin, View):
             "deleted_by_user_id": request.user.pk if request.user.is_authenticated else None,
             "deleted_at": timezone.now().isoformat(),
             "soft": True,
+            "cascaded_entries_deleted": entries_deleted,
         }
         AutomationLog.objects.create(
             empresa=request.empresa,
@@ -459,11 +488,16 @@ class ProposalDeleteView(EmpresaMixin, View):
         )
         number = proposal.number
         proposal.delete()  # soft-delete: seta deleted_at
-        messages.success(
-            request,
+        msg = (
             f"Proposta {number} movida para a lixeira. "
-            f"Você pode restaurá-la em /proposals/trash/.",
+            f"Você pode restaurá-la em /proposals/trash/."
         )
+        if entries_deleted:
+            msg += (
+                f" {entries_deleted} lançamento(s) financeiro(s) pendente(s) "
+                f"também foram excluído(s)."
+            )
+        messages.success(request, msg)
         return redirect("proposals:list")
 
 

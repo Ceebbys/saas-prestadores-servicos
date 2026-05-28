@@ -56,6 +56,15 @@
                 {% icon "check-circle" "w-4 h-4" %}
             </button>
             {% endif %}
+            <button hx-post="{% url 'finance:entry_delete' entry.pk %}"
+                    hx-target="closest tr"
+                    hx-swap="outerHTML swap:300ms"
+                    hx-confirm="Excluir este lançamento? Esta ação não pode ser desfeita."
+                    hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                    class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                    title="Excluir">
+                {% icon "trash" "w-4 h-4" %}
+            </button>
         </div>
     </td>
 </tr>
