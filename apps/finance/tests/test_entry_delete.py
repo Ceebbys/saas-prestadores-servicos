@@ -104,7 +104,7 @@ class EntryDeleteViewTests(TestCase):
             pipeline=p, name="Ganho", order=0, is_won=True,
         )
         lead = Lead(empresa=self.empresa, name="L", pipeline_stage=s_ganho)
-        lead._suppress_automation = True
+        lead._suppress_finance_entry = True  # RV10 — flag dedicada
         lead.save()
         entry = _entry(
             self.empresa, auto_generated=True, related_lead=lead,

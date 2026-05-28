@@ -165,11 +165,17 @@ def _maybe_generate_finance_entry(lead: Lead) -> None:
     Idempotente: o helper generate_entry_from_lead_won não duplica.
     Erros são logados mas não propagam (não bloqueia o save do Lead).
 
-    RV10 — respeita `_suppress_automation` (mesma flag usada para suprimir
-    triggers de pipeline). Permite scripts/seeds criarem leads em won_stage
-    sem gerar entry — e o backfill on-demand depois cuida disso.
+    RV10 — Respeita APENAS `_suppress_finance_entry` (flag dedicada para
+    scripts/seeds que querem evitar criação automática).
+
+    IMPORTANTE: NÃO respeita `_suppress_automation`. Esse último é usado
+    pelo `automation._apply_rule` para prevenir loop de pipeline e NÃO
+    deve impedir criação de entry — senão, ao mover lead via regra de
+    automação (ex.: "Proposta Aceita → Ganho"), nenhuma entry é gerada
+    e o cliente vê o banner de "leads pendentes" no /finance/ (quebra
+    o fluxo principal do RV10).
     """
-    if getattr(lead, "_suppress_automation", False):
+    if getattr(lead, "_suppress_finance_entry", False):
         return
     try:
         if not lead.pipeline_stage_id:

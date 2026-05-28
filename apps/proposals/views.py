@@ -454,15 +454,18 @@ class ProposalDeleteView(EmpresaMixin, View):
         # RV10 — Cascata opcional: se o checkbox 'delete_entries' veio marcado,
         # excluir também os FinancialEntry pendentes vinculados. Entries PAGAS
         # NUNCA são excluídas (preservam histórico de caixa).
+        #
+        # Hotfix do pente fino: usa o tuple-return de .delete() em vez de
+        # count() + delete() separados (eliminava race onde outra request
+        # marcava entry como paid entre os dois, e a message mostrava count
+        # antigo). O retorno é (total_apagado, by_model_dict).
         delete_entries = request.POST.get("delete_entries") == "1"
         entries_deleted = 0
         if delete_entries:
-            entries_deleted = proposal.financial_entries.filter(
-                status__in=("pending", "overdue"),
-            ).count()
-            proposal.financial_entries.filter(
+            deleted_total, _by_model = proposal.financial_entries.filter(
                 status__in=("pending", "overdue"),
             ).delete()
+            entries_deleted = deleted_total
 
         # Snapshot antes de excluir (mantido em AutomationLog para auditoria
         # mesmo que a proposta seja restaurada depois — registra a ação)

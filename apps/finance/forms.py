@@ -146,10 +146,16 @@ class FinancialEntryForm(TailwindFormMixin, forms.ModelForm):
         - Descrição: "{descrição original} (1/N)", "(2/N)", etc.
         - Retorna lista de FinancialEntry criadas
 
+        IMPORTANTE: roda dentro de `transaction.atomic` — se qualquer parcela
+        falhar (constraint, signal exception, deadlock), o lote inteiro faz
+        rollback. Sem isso, podiam ficar parcelas órfãs como "3 de 10 criadas"
+        — inconsistência grave em módulo financeiro.
+
         Não toca em `auto_generated` (essas são MANUAIS — user criou de propósito).
         """
         from datetime import timedelta
         from decimal import Decimal
+        from django.db import transaction
         cleaned = self.cleaned_data
         total = Decimal(str(cleaned["amount"]))
         count = int(cleaned["installment_count"])
@@ -160,29 +166,30 @@ class FinancialEntryForm(TailwindFormMixin, forms.ModelForm):
         per_installment = (total / count).quantize(Decimal("0.01"))
         entries: list[FinancialEntry] = []
         accumulated = Decimal("0.00")
-        for i in range(count):
-            is_last = i == count - 1
-            amount = (total - accumulated) if is_last else per_installment
-            accumulated += amount
-            due_date = base_date + timedelta(days=interval * i)
-            entry = FinancialEntry(
-                empresa=empresa,
-                type=cleaned["type"],
-                description=f"{base_description} ({i + 1}/{count})",
-                amount=amount,
-                category=cleaned.get("category"),
-                date=due_date,
-                paid_date=cleaned.get("paid_date") if i == 0 else None,
-                status=cleaned.get("status") or FinancialEntry.Status.PENDING,
-                bank_account=cleaned.get("bank_account"),
-                related_proposal=cleaned.get("related_proposal"),
-                related_contract=cleaned.get("related_contract"),
-                related_work_order=cleaned.get("related_work_order"),
-                notes=cleaned.get("notes", ""),
-                auto_generated=False,
-            )
-            entry.save()
-            entries.append(entry)
+        with transaction.atomic():
+            for i in range(count):
+                is_last = i == count - 1
+                amount = (total - accumulated) if is_last else per_installment
+                accumulated += amount
+                due_date = base_date + timedelta(days=interval * i)
+                entry = FinancialEntry(
+                    empresa=empresa,
+                    type=cleaned["type"],
+                    description=f"{base_description} ({i + 1}/{count})",
+                    amount=amount,
+                    category=cleaned.get("category"),
+                    date=due_date,
+                    paid_date=cleaned.get("paid_date") if i == 0 else None,
+                    status=cleaned.get("status") or FinancialEntry.Status.PENDING,
+                    bank_account=cleaned.get("bank_account"),
+                    related_proposal=cleaned.get("related_proposal"),
+                    related_contract=cleaned.get("related_contract"),
+                    related_work_order=cleaned.get("related_work_order"),
+                    notes=cleaned.get("notes", ""),
+                    auto_generated=False,
+                )
+                entry.save()
+                entries.append(entry)
         return entries
 
 

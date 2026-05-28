@@ -48,15 +48,17 @@ def _pipeline_with_stages(empresa):
 def _won_lead_without_entry(empresa, s_ganho, name="L", value=Decimal("1000")):
     """Cria lead em won_stage sem disparar o signal — simula leads antigos.
 
-    Usa _suppress_automation pra criar diretamente em won_stage sem que o
-    signal gere entry. Isso reproduz o caso real: lead que já estava em
-    won_stage antes do RV06.
+    RV10 — Usa `_suppress_finance_entry=True` (flag dedicada) para criar
+    diretamente em won_stage sem que o signal gere entry. Reproduz o caso
+    real: lead que já estava em won_stage antes do RV06 ou movido por
+    script de import. A flag `_suppress_automation` foi separada e agora
+    só previne loop de pipeline — NÃO impede criação de entry.
     """
     lead = Lead(
         empresa=empresa, name=name,
         estimated_value=value, pipeline_stage=s_ganho,
     )
-    lead._suppress_automation = True
+    lead._suppress_finance_entry = True
     lead.save()
     return lead
 

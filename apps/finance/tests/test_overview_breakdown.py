@@ -124,7 +124,7 @@ class ForecastBreakdownTests(TestCase):
         self.lead = Lead(
             empresa=self.empresa, name="L", pipeline_stage=self.s_ganho,
         )
-        self.lead._suppress_automation = True
+        self.lead._suppress_finance_entry = True  # RV10 — flag dedicada
         self.lead.save()
         self.proposal = Proposal.objects.create(
             empresa=self.empresa, lead=self.lead, title="P",

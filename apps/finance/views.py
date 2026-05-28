@@ -119,6 +119,10 @@ class FinanceOverviewView(EmpresaMixin, HtmxResponseMixin, TemplateView):
             list(list_won_leads_without_entry(empresa)[:5])
             if won_leads_pending else []
         )
+        # RV10 hotfix — quantos sobram além dos 5 do preview (corrige bug
+        # "…e mais -5" no banner que vinha da combinação errada de filtros
+        # `add` + `length` no template)
+        won_leads_pending_remaining = max(0, won_leads_pending - 5)
 
         # RV10 — Detecta também entries com valor 0 (criadas com warning
         # porque lead não tinha estimated_value nem servico). Cliente
@@ -153,6 +157,7 @@ class FinanceOverviewView(EmpresaMixin, HtmxResponseMixin, TemplateView):
                 "forecast_breakdown": forecast_breakdown,
                 "won_leads_pending": won_leads_pending,
                 "won_leads_pending_preview": won_leads_pending_preview,
+                "won_leads_pending_remaining": won_leads_pending_remaining,
                 "zero_value_entries_count": zero_value_entries_count,
             }
         )

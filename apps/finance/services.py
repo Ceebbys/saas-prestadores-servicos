@@ -112,12 +112,18 @@ def _default_account(empresa):
 
 
 @transaction.atomic
-def generate_entry_from_lead_won(lead, *, first_due_date=None):
+def generate_entry_from_lead_won(lead, *, first_due_date=None, notify=True):
     """RV06 — Gera FinancialEntry quando Lead vai para etapa de ganho.
 
     Cenário: negócio fechado direto via WhatsApp/conversa, SEM proposta
     ou contrato formal. Cliente pediu que isso também contabilize como
     entrada futura no financeiro.
+
+    Args:
+        lead: Lead a processar
+        first_due_date: data de vencimento da entry (default: hoje + 30 dias)
+        notify: se False, NÃO chama _notify_lead_won (usado pelo backfill
+                em lote para evitar spam de N notificações simultâneas).
 
     Comportamento:
     - Valor: lead.estimated_value OR lead.servico.default_price OR 0
@@ -180,8 +186,11 @@ def generate_entry_from_lead_won(lead, *, first_due_date=None):
             f"Gerado automaticamente — Lead movido para etapa de ganho.{notes_extra}"
         ),
     )
-    # RV06 — Notifica responsável (best-effort, não bloqueia)
-    _notify_lead_won(lead, entry)
+    # RV06 — Notifica responsável (best-effort, não bloqueia).
+    # RV10 — backfill em lote passa notify=False pra evitar spam de N
+    # notificações simultâneas quando processa empresa com vários leads.
+    if notify:
+        _notify_lead_won(lead, entry)
     return entry
 
 
@@ -314,6 +323,11 @@ def backfill_won_lead_entries(empresa) -> dict:
 
     Retorna {"created": [entry1, ...], "skipped": N, "scanned": N}.
     Idempotente — pode ser rodado várias vezes sem duplicar.
+
+    Hotfix do pente fino: passa `notify=False` para evitar spam de N
+    notificações "🎉 Negócio fechado" todas de uma vez (uma por lead × N
+    membros ativos). Quem dispara o backfill já viu a mensagem de retorno
+    com a contagem total — notificar de novo é ruidoso.
     """
     leads = list(list_won_leads_without_entry(empresa))
     scanned = len(leads)
@@ -322,7 +336,7 @@ def backfill_won_lead_entries(empresa) -> dict:
     for lead in leads:
         # generate_entry_from_lead_won é idempotente; respeita proposta
         # já paga, valor 0 com warning, etc.
-        entry = generate_entry_from_lead_won(lead)
+        entry = generate_entry_from_lead_won(lead, notify=False)
         if entry is None:
             skipped += 1
         else:

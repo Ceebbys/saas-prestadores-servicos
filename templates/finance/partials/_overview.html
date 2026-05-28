@@ -135,8 +135,8 @@
                     {% if lead.estimated_value %}<span class="text-amber-700">— {{ lead.estimated_value|currency }}</span>{% endif %}
                 </li>
                 {% endfor %}
-                {% if won_leads_pending > won_leads_pending_preview|length %}
-                <li class="text-amber-700 italic">… e mais {{ won_leads_pending|add:won_leads_pending_preview|length|add:"-5"|stringformat:"d" }}</li>
+                {% if won_leads_pending_remaining > 0 %}
+                <li class="text-amber-700 italic">… e mais {{ won_leads_pending_remaining }}</li>
                 {% endif %}
             </ul>
             {% endif %}
