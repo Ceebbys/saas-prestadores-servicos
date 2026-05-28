@@ -183,6 +183,26 @@ def _apply_rule(source, rule, event: str, source_label: str = "proposal"):
             )
             return
 
+        # Defesa em camadas: rejeita lead de outra empresa (cross-tenant).
+        # Pente fino do dia identificou que `_apply_rule` movia o lead sem
+        # validar que pertence à mesma empresa da regra — risco baixo na
+        # prática (form filter já filtra), mas crítico defendê-lo aqui.
+        if lead.empresa_id != empresa.pk:
+            AutomationLog.objects.create(
+                empresa=empresa,
+                action=AutomationLog.Action.PROPOSAL_PIPELINE_TRIGGER,
+                entity_type=_entity_type_for_label(source_label),
+                entity_id=source_id,
+                status=AutomationLog.Status.ERROR,
+                error_message="cross-tenant lead skipped",
+                metadata={
+                    "rule_id": rule.pk, "skipped": "cross_tenant_lead",
+                    "event": event, "source_type": source_label,
+                    "lead_id": lead.pk, "lead_empresa_id": lead.empresa_id,
+                },
+            )
+            return
+
         if lead.pipeline_stage_id == rule.target_stage_id:
             AutomationLog.objects.create(
                 empresa=empresa,

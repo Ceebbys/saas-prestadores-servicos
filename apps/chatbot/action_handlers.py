@@ -31,6 +31,29 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _check_lead_same_tenant(session: "ChatbotSession") -> dict | None:
+    """RV10 hotfix2 — Defesa em camadas contra cross-tenant.
+
+    Se `session.lead` aponta para um lead de outra empresa (improvável na
+    prática — flow filter já valida — mas o pente fino identificou que os
+    handlers de update_pipeline/apply_tag/link_servico usavam session.lead
+    SEM checar), retorna um result de erro padronizado. None = OK.
+    """
+    if session.lead_id and session.lead.empresa_id != session.flow.empresa_id:
+        logger.warning(
+            "action_handlers: cross-tenant lead skipped "
+            "(session=%s flow.empresa=%s lead.empresa=%s lead_id=%s)",
+            session.session_key, session.flow.empresa_id,
+            session.lead.empresa_id, session.lead_id,
+        )
+        return {
+            "ok": False,
+            "message": "Lead pertence a outra empresa — operação ignorada",
+            "extra": {"skipped": True, "reason": "cross_tenant_lead"},
+        }
+    return None
+
+
 def dispatch_action(
     action_type: str,
     session: "ChatbotSession",
@@ -131,6 +154,10 @@ def _handle_link_servico(session: "ChatbotSession", config: dict) -> dict:
         }
 
     empresa = session.flow.empresa
+    # RV10 hotfix2 — defesa cross-tenant antes de tocar session.lead
+    cross = _check_lead_same_tenant(session)
+    if cross is not None:
+        return cross
     servico = ServiceType.objects.filter(
         pk=servico_id, empresa=empresa, is_active=True,
     ).first()
@@ -205,6 +232,10 @@ def _handle_update_pipeline(session: "ChatbotSession", config: dict) -> dict:
             "message": "Lead ainda não criado — posicione esta ação após 'Criar lead'",
             "extra": {"skipped": True, "reason": "no_lead"},
         }
+    # RV10 hotfix2 — defesa cross-tenant antes de tocar session.lead
+    cross = _check_lead_same_tenant(session)
+    if cross is not None:
+        return cross
 
     empresa = session.flow.empresa
     stage = PipelineStage.objects.filter(
@@ -238,6 +269,10 @@ def _handle_apply_tag(session: "ChatbotSession", config: dict) -> dict:
             "message": "Lead ainda não criado — posicione esta ação após 'Criar lead'",
             "extra": {"skipped": True, "reason": "no_lead"},
         }
+    # RV10 hotfix2 — defesa cross-tenant antes de criar LeadTag vinculada
+    cross = _check_lead_same_tenant(session)
+    if cross is not None:
+        return cross
     # Idempotência: não duplica
     tag, created = LeadTag.objects.get_or_create(
         empresa=session.flow.empresa,

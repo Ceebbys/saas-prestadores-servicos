@@ -467,8 +467,8 @@ class EntryDeleteView(EmpresaMixin, View):
         msg_parts = [f"Lançamento '{description}' (R$ {amount}) excluído."]
         if was_auto and had_lead:
             msg_parts.append(
-                "⚠ Era auto-gerado pelo lead. Se mover o lead novamente "
-                "para etapa de ganho, um novo lançamento será criado."
+                "⚠ Era auto-gerado pelo lead. Qualquer edição/save do lead "
+                "enquanto ele estiver em etapa de ganho recriará o lançamento."
             )
         elif was_auto and had_proposal:
             msg_parts.append(

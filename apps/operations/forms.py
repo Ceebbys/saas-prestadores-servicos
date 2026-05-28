@@ -115,6 +115,10 @@ class WorkOrderForm(TailwindFormMixin, forms.ModelForm):
         Cliente pediu: "A previsão se for de serviço cadastrado puxa de lá
         mas pode ficar editavel para o cara ajustar". User pode sobrescrever
         no form — só preenchemos se vazio.
+
+        Pente fino: também valida que end_date >= scheduled_date pra evitar
+        que a OS suma do calendário silenciosamente (loop while não roda
+        quando end < start).
         """
         from datetime import timedelta
         cleaned = super().clean()
@@ -125,6 +129,13 @@ class WorkOrderForm(TailwindFormMixin, forms.ModelForm):
             prazo = getattr(service_type, "default_prazo_dias", None) or 0
             if prazo > 0:
                 cleaned["expected_end_date"] = scheduled + timedelta(days=int(prazo))
+                end_date = cleaned["expected_end_date"]
+        # Validação de coerência (depois do auto-calc)
+        if end_date and scheduled and end_date < scheduled:
+            self.add_error(
+                "expected_end_date",
+                "A previsão de término não pode ser anterior à data agendada.",
+            )
         return cleaned
 
     def clean_cloud_storage_links_json(self):

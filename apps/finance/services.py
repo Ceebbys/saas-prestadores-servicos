@@ -144,10 +144,14 @@ def generate_entry_from_lead_won(lead, *, first_due_date=None, notify=True):
     if existing:
         return existing[0]
 
-    # Se há entries auto-geradas vinculadas a propostas DESTE lead, não duplica
+    # Se há entries auto-geradas vinculadas a propostas DESTE lead, não duplica.
+    # IMPORTANTE: usa `all_objects` (inclui soft-deleted) — senão, ao excluir a
+    # proposta sem cascata, a entry fica órfã (related_proposal aponta pra
+    # soft-deleted) E o lookup esconde a proposta → criava DUPLICATA da entry
+    # no próximo save do lead. Bug identificado no pente fino do dia.
     from apps.proposals.models import Proposal
     proposal_with_entries = (
-        Proposal.objects.filter(
+        Proposal.all_objects.filter(
             lead=lead,
             financial_entries__auto_generated=True,
         ).exists()
@@ -265,8 +269,13 @@ def count_won_leads_without_entry(empresa) -> int:
     Casos detectados:
     - Leads que já estavam em won_stage ANTES do RV06 ser deployado (signal
       só dispara em saves novos).
-    - Leads movidos por scripts/imports que setaram `_suppress_automation=True`.
+    - Leads movidos por scripts/imports que setaram `_suppress_finance_entry=True`.
     - Leads cuja proposta gerou entry — esses são EXCLUÍDOS (já contam).
+
+    IMPORTANTE: usa `Proposal.all_objects` (inclui soft-deleted). Senão,
+    proposta excluída sem cascata fica invisível na exclusão, e o lead
+    aparece como "pendente de lançamento" e ao clicar "Sincronizar agora"
+    gera DUPLICATA. Bug identificado no pente fino do dia.
     """
     from apps.crm.models import Lead
     from apps.proposals.models import Proposal
@@ -279,8 +288,9 @@ def count_won_leads_without_entry(empresa) -> int:
         # Não tem entry vinculada direta ao lead
         .exclude(financial_entries__auto_generated=True)
         # Nem tem proposta com entries auto-geradas (a proposta cuidou)
+        # — inclusive propostas soft-deletadas (entries órfãs ainda existem)
         .exclude(
-            pk__in=Proposal.objects.filter(
+            pk__in=Proposal.all_objects.filter(
                 empresa=empresa,
                 financial_entries__auto_generated=True,
             ).values_list("lead_id", flat=True)
@@ -292,6 +302,8 @@ def count_won_leads_without_entry(empresa) -> int:
 def list_won_leads_without_entry(empresa):
     """RV10 — Lista (queryset) dos leads ganhos sem entry. Usado pelo
     dashboard pra mostrar quais leads precisam de atenção.
+
+    Mesmo cuidado do `count_won_leads_without_entry` quanto a soft-deletadas.
     """
     from apps.crm.models import Lead
     from apps.proposals.models import Proposal
@@ -303,7 +315,7 @@ def list_won_leads_without_entry(empresa):
         )
         .exclude(financial_entries__auto_generated=True)
         .exclude(
-            pk__in=Proposal.objects.filter(
+            pk__in=Proposal.all_objects.filter(
                 empresa=empresa,
                 financial_entries__auto_generated=True,
             ).values_list("lead_id", flat=True)
