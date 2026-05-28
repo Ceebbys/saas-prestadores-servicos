@@ -31,9 +31,45 @@
             {% form_field form.priority %}
             {% form_field form.scheduled_date %}
             {% form_field form.scheduled_time %}
+            {% form_field form.expected_end_date %}
             {% form_field form.assigned_to %}
             {% form_field form.assigned_team %}
         </div>
+
+        {# RV10 — Auto-calcula `expected_end_date` quando user seleciona serviço.
+           Lê `default_prazo_dias` do mapa serializado no contexto da view.
+           Sobrescreve só se o user não tiver editado manualmente. #}
+        <script>
+        (function() {
+            const PRAZOS = {{ service_type_prazos_json|default:'{}'|safe }};
+            const stEl = document.getElementById('id_service_type');
+            const dateEl = document.getElementById('id_scheduled_date');
+            const endEl = document.getElementById('id_expected_end_date');
+            if (!stEl || !dateEl || !endEl) return;
+
+            // Marca se o user já editou manualmente o expected_end_date para
+            // não sobrescrever quando ele muda o serviço/data depois
+            let userEdited = !!endEl.value;
+            endEl.addEventListener('change', () => { userEdited = true; });
+
+            function recalc() {
+                if (userEdited) return;
+                const stId = stEl.value;
+                const startStr = dateEl.value;
+                const prazo = PRAZOS[stId];
+                if (!stId || !startStr || !prazo) return;
+                const start = new Date(startStr + 'T00:00:00');
+                if (isNaN(start.getTime())) return;
+                start.setDate(start.getDate() + parseInt(prazo, 10));
+                const yyyy = start.getFullYear();
+                const mm = String(start.getMonth() + 1).padStart(2, '0');
+                const dd = String(start.getDate()).padStart(2, '0');
+                endEl.value = `${yyyy}-${mm}-${dd}`;
+            }
+            stEl.addEventListener('change', recalc);
+            dateEl.addEventListener('change', recalc);
+        })();
+        </script>
 
         <div class="mt-2">
             {% form_field form.description %}

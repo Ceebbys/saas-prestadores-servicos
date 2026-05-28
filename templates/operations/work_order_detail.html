@@ -219,6 +219,19 @@
                         {% endif %}
                     </dd>
                 </div>
+                {% if work_order.expected_end_date %}
+                <div>
+                    <dt class="text-xs text-slate-400">Previsão de término</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5">
+                        {{ work_order.expected_end_date|date:"d/m/Y" }}
+                        {% if work_order.scheduled_date %}
+                        <span class="text-xs text-slate-400 ml-1">
+                            ({{ work_order.scheduled_date|timeuntil:work_order.expected_end_date }})
+                        </span>
+                        {% endif %}
+                    </dd>
+                </div>
+                {% endif %}
                 <div>
                     <dt class="text-xs text-slate-400">Status</dt>
                     <dd class="mt-0.5">{% status_badge work_order.status %}</dd>

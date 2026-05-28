@@ -98,6 +98,22 @@ class WorkOrderDetailView(EmpresaMixin, DetailView):
         return context
 
 
+def _service_type_prazos_json(empresa):
+    """RV10 — Mapa {service_type_id: default_prazo_dias} pro frontend
+    auto-popular `expected_end_date` quando o user seleciona o serviço.
+
+    Serializado como JSON pra Alpine.js ler direto no x-data.
+    """
+    import json
+    items = ServiceType.objects.filter(
+        empresa=empresa, is_active=True,
+        default_prazo_dias__isnull=False,
+    ).values("pk", "default_prazo_dias")
+    return json.dumps({
+        str(item["pk"]): item["default_prazo_dias"] for item in items
+    })
+
+
 class WorkOrderCreateView(EmpresaMixin, HtmxResponseMixin, CreateView):
     model = WorkOrder
     form_class = WorkOrderForm
@@ -109,6 +125,14 @@ class WorkOrderCreateView(EmpresaMixin, HtmxResponseMixin, CreateView):
         kwargs = super().get_form_kwargs()
         kwargs["empresa"] = self.request.empresa
         return kwargs
+
+    def get_context_data(self, **kwargs):
+        # RV10 — Mapa de prazos pro Alpine.js auto-calcular previsão de término
+        context = super().get_context_data(**kwargs)
+        context["service_type_prazos_json"] = _service_type_prazos_json(
+            self.request.empresa,
+        )
+        return context
 
     def get_initial(self):
         initial = super().get_initial()
@@ -159,6 +183,13 @@ class WorkOrderUpdateView(EmpresaMixin, HtmxResponseMixin, UpdateView):
         kwargs = super().get_form_kwargs()
         kwargs["empresa"] = self.request.empresa
         return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["service_type_prazos_json"] = _service_type_prazos_json(
+            self.request.empresa,
+        )
+        return context
 
     def form_valid(self, form):
         response = super().form_valid(form)
@@ -359,11 +390,25 @@ class CalendarView(EmpresaMixin, HtmxResponseMixin, TemplateView):
         cal = cal_module.Calendar(firstweekday=6)  # Sunday first
         month_days = cal.monthdayscalendar(year, month)
 
-        # Get work orders for this month
+        # RV10 — Cliente pediu: "ai vai para o calendario e ocara vê quem ta
+        # garrado ou não". Agora consideramos OS que SE SOBREPÕEM ao mês:
+        # scheduled_date <= último_dia E (expected_end_date IS NULL OR
+        # expected_end_date >= primeiro_dia). Mostramos a OS em TODOS os
+        # dias do range que caem no mês.
+        from datetime import date as _date
+        from calendar import monthrange as _monthrange
+        first_day = _date(year, month, 1)
+        last_day_num = _monthrange(year, month)[1]
+        last_day = _date(year, month, last_day_num)
+
         work_orders = WorkOrder.objects.filter(
             empresa=self.request.empresa,
-            scheduled_date__year=year,
-            scheduled_date__month=month,
+            scheduled_date__isnull=False,
+            scheduled_date__lte=last_day,
+        ).filter(
+            # expected_end_date >= primeiro_dia OU NULL (1-dia, mostra só no dia inicial)
+            Q(expected_end_date__gte=first_day) |
+            Q(expected_end_date__isnull=True, scheduled_date__gte=first_day),
         ).select_related("assigned_to", "assigned_team", "service_type")
 
         # Apply filters
@@ -374,11 +419,19 @@ class CalendarView(EmpresaMixin, HtmxResponseMixin, TemplateView):
         if filter_assigned:
             work_orders = work_orders.filter(assigned_to_id=filter_assigned)
 
-        # Group by day
-        wo_by_day = {}
+        # Group by day — espalha a OS por todos os dias do range que caem no mês
+        from datetime import timedelta as _td
+        wo_by_day: dict = {}
         for wo in work_orders:
-            day = wo.scheduled_date.day
-            wo_by_day.setdefault(day, []).append(wo)
+            start = wo.scheduled_date
+            end = wo.expected_end_date or start
+            # Clipa o range ao mês atual
+            range_start = max(start, first_day)
+            range_end = min(end, last_day)
+            day = range_start
+            while day <= range_end:
+                wo_by_day.setdefault(day.day, []).append(wo)
+                day = day + _td(days=1)
 
         # Teams and members for filters
         teams = Team.objects.filter(

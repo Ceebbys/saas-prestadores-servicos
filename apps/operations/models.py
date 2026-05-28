@@ -303,6 +303,17 @@ class WorkOrder(TenantOwnedModel):
     description = models.TextField("Descrição", blank=True)
     scheduled_date = models.DateField("Data agendada", null=True, blank=True)
     scheduled_time = models.TimeField("Horário agendado", null=True, blank=True)
+    # RV10 — Cliente pediu: "colocar na os previsão de término. pq ai vai
+    # para o calendário e ocara vê quem ta garrado ou não. AI a previsão
+    # se for de serviço cadastrado puxa de lá mas pode ficar editavel".
+    # Auto-populado pelo form: scheduled_date + service_type.default_prazo_dias.
+    expected_end_date = models.DateField(
+        "Previsão de término", null=True, blank=True,
+        help_text=(
+            "Quando a OS deve terminar. Calculado a partir do prazo do "
+            "serviço cadastrado, mas pode ser editado."
+        ),
+    )
     completed_at = models.DateTimeField("Concluída em", null=True, blank=True)
     assigned_to = models.ForeignKey(
         settings.AUTH_USER_MODEL,

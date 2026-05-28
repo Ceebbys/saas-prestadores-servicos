@@ -36,6 +36,7 @@ class WorkOrderForm(TailwindFormMixin, forms.ModelForm):
             "description",
             "scheduled_date",
             "scheduled_time",
+            "expected_end_date",  # RV10 — previsão de término
             "assigned_to",
             "assigned_team",
             "location",
@@ -50,6 +51,10 @@ class WorkOrderForm(TailwindFormMixin, forms.ModelForm):
             "scheduled_time": forms.TimeInput(
                 attrs={"type": "time"},
                 format="%H:%M",
+            ),
+            "expected_end_date": forms.DateInput(
+                attrs={"type": "date"},
+                format="%Y-%m-%d",
             ),
             "description": forms.Textarea(attrs={"rows": 3}),
             "location": forms.Textarea(attrs={"rows": 2}),
@@ -102,6 +107,25 @@ class WorkOrderForm(TailwindFormMixin, forms.ModelForm):
                 )
             except (ImportError, LookupError):
                 pass
+
+    def clean(self):
+        """RV10 — Auto-calcula `expected_end_date` quando vazia, a partir de
+        `scheduled_date + service_type.default_prazo_dias`.
+
+        Cliente pediu: "A previsão se for de serviço cadastrado puxa de lá
+        mas pode ficar editavel para o cara ajustar". User pode sobrescrever
+        no form — só preenchemos se vazio.
+        """
+        from datetime import timedelta
+        cleaned = super().clean()
+        end_date = cleaned.get("expected_end_date")
+        scheduled = cleaned.get("scheduled_date")
+        service_type = cleaned.get("service_type")
+        if not end_date and scheduled and service_type:
+            prazo = getattr(service_type, "default_prazo_dias", None) or 0
+            if prazo > 0:
+                cleaned["expected_end_date"] = scheduled + timedelta(days=int(prazo))
+        return cleaned
 
     def clean_cloud_storage_links_json(self):
         raw = self.cleaned_data.get("cloud_storage_links_json", "")
