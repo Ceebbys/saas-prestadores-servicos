@@ -7,11 +7,19 @@ from apps.core.forms import TailwindFormMixin
 from apps.crm.models import Lead
 from apps.proposals.models import Proposal
 
-from .models import ServiceType, Team, TeamMember, WorkOrder
+from .models import ServiceType, Team, TeamMember, WorkOrder, WorkOrderChecklist
 
 
 class WorkOrderForm(TailwindFormMixin, forms.ModelForm):
     cloud_storage_links_json = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput,
+    )
+    # RV09 — Checklist editável inline (cliente reportou: detail mostra
+    # 'Nenhum item no checklist' mas form não tinha como adicionar).
+    # JSON serializado no hidden field; Alpine.js no template controla o CRUD.
+    # Formato: [{"id": opcional, "description": str, "is_completed": bool}]
+    checklist_json = forms.CharField(
         required=False,
         widget=forms.HiddenInput,
     )
@@ -55,6 +63,16 @@ class WorkOrderForm(TailwindFormMixin, forms.ModelForm):
             self.initial["cloud_storage_links_json"] = json.dumps(
                 self.instance.cloud_storage_links
             )
+        # RV09 — Pre-popula checklist_json com itens existentes para o Alpine
+        # renderizar no form de edição. `order` mantém a sequência mostrada.
+        if self.instance and self.instance.pk:
+            existing_items = list(
+                self.instance.checklist_items
+                .order_by("order", "id")
+                .values("id", "description", "is_completed")
+            )
+            if existing_items:
+                self.initial["checklist_json"] = json.dumps(existing_items)
         self.fields["google_maps_url"].help_text = (
             "Deixe em branco para gerar automaticamente a partir do endereço."
         )
@@ -103,6 +121,40 @@ class WorkOrderForm(TailwindFormMixin, forms.ModelForm):
                 cleaned.append({"url": url, "label": label})
         return cleaned
 
+    def clean_checklist_json(self):
+        """RV09 — Valida estrutura do JSON do checklist editado no form."""
+        raw = self.cleaned_data.get("checklist_json", "")
+        if not raw:
+            return []
+        try:
+            items = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            raise forms.ValidationError("Formato inválido para o checklist.")
+        if not isinstance(items, list):
+            raise forms.ValidationError("Checklist deve ser uma lista.")
+        cleaned = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            desc = (item.get("description") or "").strip()
+            if not desc:
+                # Item sem descrição é ignorado silenciosamente (input vazio)
+                continue
+            entry = {
+                "description": desc[:500],
+                "is_completed": bool(item.get("is_completed", False)),
+            }
+            # Preserva ID quando vier do form (item já existente que está
+            # sendo editado/mantido). ID inválido é ignorado.
+            raw_id = item.get("id")
+            if raw_id not in (None, "", 0):
+                try:
+                    entry["id"] = int(raw_id)
+                except (TypeError, ValueError):
+                    pass
+            cleaned.append(entry)
+        return cleaned
+
     def save(self, commit=True):
         instance = super().save(commit=False)
         instance.cloud_storage_links = self.cleaned_data.get(
@@ -110,7 +162,50 @@ class WorkOrderForm(TailwindFormMixin, forms.ModelForm):
         )
         if commit:
             instance.save()
+            # RV09 — Sincroniza checklist DEPOIS do save (precisa de instance.pk)
+            self._sync_checklist(instance)
         return instance
+
+    def _sync_checklist(self, instance):
+        """RV09 — Reconcilia WorkOrderChecklist com o JSON enviado.
+
+        Estratégia:
+        - Items com `id` válido e presente no JSON → atualiza description + order
+        - Items com `id` que NÃO estão no JSON → deleta
+        - Items sem `id` → cria
+        - `is_completed` só é tocado se o form enviar explicitamente; já que a
+          toggle do detail é HTMX direto, mantemos o estado atual ao editar.
+        """
+        items = self.cleaned_data.get("checklist_json", [])
+        # IDs que o user manteve no form
+        kept_ids = {it["id"] for it in items if "id" in it}
+        # Deleta os que foram removidos no form
+        instance.checklist_items.exclude(id__in=kept_ids).delete()
+        # Reconcilia o resto
+        existing = {
+            obj.id: obj
+            for obj in instance.checklist_items.filter(id__in=kept_ids)
+        }
+        for idx, it in enumerate(items):
+            obj_id = it.get("id")
+            if obj_id and obj_id in existing:
+                obj = existing[obj_id]
+                changed = False
+                if obj.description != it["description"]:
+                    obj.description = it["description"]
+                    changed = True
+                if obj.order != idx:
+                    obj.order = idx
+                    changed = True
+                if changed:
+                    obj.save(update_fields=["description", "order", "updated_at"])
+            else:
+                WorkOrderChecklist.objects.create(
+                    work_order=instance,
+                    description=it["description"],
+                    is_completed=it.get("is_completed", False),
+                    order=idx,
+                )
 
 
 class TeamForm(TailwindFormMixin, forms.ModelForm):
