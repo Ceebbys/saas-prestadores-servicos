@@ -80,6 +80,28 @@ class FinanceOverviewView(EmpresaMixin, HtmxResponseMixin, TemplateView):
         # OU manuais com type=INCOME) por mês de vencimento. Últimos 6 meses.
         forecast = _compute_revenue_forecast(empresa, today, months=6)
 
+        # RV10 — Cliente reportou: "fechei 3 leads sem proposta mas não
+        # aparecem na previsão". Causa típica: leads já estavam em won_stage
+        # antes do signal RV06, ou movidos via script. Aqui contamos e
+        # listamos para o dashboard, e oferecemos botão "Sincronizar agora".
+        from .services import count_won_leads_without_entry, list_won_leads_without_entry
+        won_leads_pending = count_won_leads_without_entry(empresa)
+        won_leads_pending_preview = (
+            list(list_won_leads_without_entry(empresa)[:5])
+            if won_leads_pending else []
+        )
+
+        # RV10 — Detecta também entries com valor 0 (criadas com warning
+        # porque lead não tinha estimated_value nem servico). Cliente
+        # provavelmente quer ajustar esses valores.
+        zero_value_entries_count = FinancialEntry.objects.filter(
+            empresa=empresa,
+            auto_generated=True,
+            amount=0,
+            status=FinancialEntry.Status.PENDING,
+            related_lead__isnull=False,
+        ).count()
+
         context.update(
             {
                 "total_income": total_income,
@@ -93,6 +115,9 @@ class FinanceOverviewView(EmpresaMixin, HtmxResponseMixin, TemplateView):
                 "forecast_months": forecast["months"],
                 "forecast_total": forecast["total"],
                 "forecast_max": forecast["max"],
+                "won_leads_pending": won_leads_pending,
+                "won_leads_pending_preview": won_leads_pending_preview,
+                "zero_value_entries_count": zero_value_entries_count,
             }
         )
         return context
@@ -260,6 +285,43 @@ class EntryUpdateView(EmpresaMixin, HtmxResponseMixin, UpdateView):
         response = super().form_valid(form)
         messages.success(self.request, "Lançamento atualizado com sucesso.")
         return response
+
+
+class BackfillWonLeadEntriesView(EmpresaMixin, View):
+    """RV10 — POST que regenera FinancialEntry para leads em won_stage sem entry.
+
+    Cliente reportou: "fechei 3 leads sem proposta mas não aparecem na
+    previsão". Causa: signal RV06 só dispara em saves após o deploy; leads
+    movidos antes (ou por script) ficaram sem entry. Este endpoint faz
+    backfill on-demand a partir do dashboard.
+    """
+
+    def post(self, request):
+        from .services import backfill_won_lead_entries
+        result = backfill_won_lead_entries(request.empresa)
+        scanned = result["scanned"]
+        created = len(result["created"])
+        skipped = result["skipped"]
+        if scanned == 0:
+            messages.info(
+                request, "Nenhum lead aguardando lançamento — tudo certo!",
+            )
+        else:
+            msg = (
+                f"Sincronização concluída: {created} lançamento"
+                f"{'s' if created != 1 else ''} criado"
+                f"{'s' if created != 1 else ''} a partir de {scanned} "
+                f"lead{'s' if scanned != 1 else ''} ganho"
+                f"{'s' if scanned != 1 else ''}."
+            )
+            if skipped:
+                msg += (
+                    f" ({skipped} pulado{'s' if skipped != 1 else ''} — "
+                    f"já tinham proposta com lançamento.)"
+                )
+            messages.success(request, msg)
+        from django.shortcuts import redirect
+        return redirect("finance:finance_overview")
 
 
 class EntryMarkPaidView(EmpresaMixin, View):

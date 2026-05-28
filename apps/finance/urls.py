@@ -7,6 +7,12 @@ app_name = "finance"
 urlpatterns = [
     # Overview
     path("", views.FinanceOverviewView.as_view(), name="finance_overview"),
+    # RV10 — Backfill on-demand de entries de leads ganhos sem lançamento
+    path(
+        "backfill-won-leads/",
+        views.BackfillWonLeadEntriesView.as_view(),
+        name="backfill_won_leads",
+    ),
     # Entries
     path("entries/", views.EntryListView.as_view(), name="entry_list"),
     path(

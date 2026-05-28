@@ -250,6 +250,86 @@ def _notify_lead_won(lead, entry):
         )
 
 
+def count_won_leads_without_entry(empresa) -> int:
+    """RV10 — Conta leads em stage com is_won=True que NÃO têm FinancialEntry.
+
+    Casos detectados:
+    - Leads que já estavam em won_stage ANTES do RV06 ser deployado (signal
+      só dispara em saves novos).
+    - Leads movidos por scripts/imports que setaram `_suppress_automation=True`.
+    - Leads cuja proposta gerou entry — esses são EXCLUÍDOS (já contam).
+    """
+    from apps.crm.models import Lead
+    from apps.proposals.models import Proposal
+
+    qs = (
+        Lead.objects.filter(
+            empresa=empresa,
+            pipeline_stage__is_won=True,
+        )
+        # Não tem entry vinculada direta ao lead
+        .exclude(financial_entries__auto_generated=True)
+        # Nem tem proposta com entries auto-geradas (a proposta cuidou)
+        .exclude(
+            pk__in=Proposal.objects.filter(
+                empresa=empresa,
+                financial_entries__auto_generated=True,
+            ).values_list("lead_id", flat=True)
+        )
+    )
+    return qs.count()
+
+
+def list_won_leads_without_entry(empresa):
+    """RV10 — Lista (queryset) dos leads ganhos sem entry. Usado pelo
+    dashboard pra mostrar quais leads precisam de atenção.
+    """
+    from apps.crm.models import Lead
+    from apps.proposals.models import Proposal
+
+    return (
+        Lead.objects.filter(
+            empresa=empresa,
+            pipeline_stage__is_won=True,
+        )
+        .exclude(financial_entries__auto_generated=True)
+        .exclude(
+            pk__in=Proposal.objects.filter(
+                empresa=empresa,
+                financial_entries__auto_generated=True,
+            ).values_list("lead_id", flat=True)
+        )
+        .select_related("pipeline_stage", "pipeline_stage__pipeline", "servico")
+        .order_by("-updated_at")
+    )
+
+
+def backfill_won_lead_entries(empresa) -> dict:
+    """RV10 — Gera FinancialEntry para todos os leads em won_stage sem entry.
+
+    Usado quando o cliente reporta: "fechei 3 negócios este mês mas não
+    aparece no financeiro". Causa típica: os leads já estavam em won_stage
+    antes do signal RV06 entrar, ou foram movidos por script bypassando o
+    signal.
+
+    Retorna {"created": [entry1, ...], "skipped": N, "scanned": N}.
+    Idempotente — pode ser rodado várias vezes sem duplicar.
+    """
+    leads = list(list_won_leads_without_entry(empresa))
+    scanned = len(leads)
+    created = []
+    skipped = 0
+    for lead in leads:
+        # generate_entry_from_lead_won é idempotente; respeita proposta
+        # já paga, valor 0 com warning, etc.
+        entry = generate_entry_from_lead_won(lead)
+        if entry is None:
+            skipped += 1
+        else:
+            created.append(entry)
+    return {"created": created, "skipped": skipped, "scanned": scanned}
+
+
 @transaction.atomic
 def generate_entries_from_proposal(
     proposal,
