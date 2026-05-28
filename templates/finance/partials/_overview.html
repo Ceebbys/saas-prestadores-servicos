@@ -1,15 +1,89 @@
 {% load ui_tags humanize %}
 
-<!-- Stat Cards -->
+<!-- Stat Cards (RV10 — com contagem visível + breakdown pago/pendente) -->
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-    {% include "components/_stat_card.html" with title="Receitas do Mês" value=total_income|currency icon_name="arrow-trending-up" color="emerald" subtitle=current_month|date:"F/Y" %}
-    {% include "components/_stat_card.html" with title="Despesas do Mês" value=total_expense|currency icon_name="arrow-trending-down" color="rose" subtitle=current_month|date:"F/Y" %}
-    {% if balance >= 0 %}
-        {% include "components/_stat_card.html" with title="Saldo" value=balance|currency icon_name="banknotes" color="emerald" %}
-    {% else %}
-        {% include "components/_stat_card.html" with title="Saldo" value=balance|currency icon_name="banknotes" color="rose" %}
-    {% endif %}
-    {% include "components/_stat_card.html" with title="Pendentes" value=pending_count icon_name="clock" color="amber" %}
+    <!-- Receitas do Mês -->
+    <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+        <div class="flex items-start justify-between">
+            <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-slate-500">Receitas do Mês</p>
+                <p class="mt-2 text-2xl font-bold text-slate-900">{{ total_income|currency }}</p>
+                <p class="mt-0.5 text-xs text-slate-500">
+                    {{ income_paid_count }} paga{{ income_paid_count|pluralize:"s" }} · {{ current_month|date:"F/Y" }}
+                </p>
+                {% if income_pending_count > 0 %}
+                <a href="{% url 'finance:entry_list' %}?type=income&status=pending"
+                   class="mt-1 inline-block text-xs text-amber-600 hover:text-amber-700">
+                    + {{ income_pending_total|currency }} em {{ income_pending_count }} pendente{{ income_pending_count|pluralize:"s" }}
+                </a>
+                {% endif %}
+            </div>
+            <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                {% icon "arrow-trending-up" "w-5 h-5 text-emerald-600" %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Despesas do Mês -->
+    <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+        <div class="flex items-start justify-between">
+            <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-slate-500">Despesas do Mês</p>
+                <p class="mt-2 text-2xl font-bold text-slate-900">{{ total_expense|currency }}</p>
+                <p class="mt-0.5 text-xs text-slate-500">
+                    {{ expense_paid_count }} paga{{ expense_paid_count|pluralize:"s" }} · {{ current_month|date:"F/Y" }}
+                </p>
+                {% if expense_pending_count > 0 %}
+                <a href="{% url 'finance:entry_list' %}?type=expense&status=pending"
+                   class="mt-1 inline-block text-xs text-amber-600 hover:text-amber-700">
+                    + {{ expense_pending_total|currency }} em {{ expense_pending_count }} pendente{{ expense_pending_count|pluralize:"s" }}
+                </a>
+                {% endif %}
+            </div>
+            <div class="w-10 h-10 rounded-lg bg-rose-50 flex items-center justify-center flex-shrink-0">
+                {% icon "arrow-trending-down" "w-5 h-5 text-rose-600" %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Saldo -->
+    <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+        <div class="flex items-start justify-between">
+            <div class="flex-1">
+                <p class="text-sm font-medium text-slate-500">Saldo</p>
+                <p class="mt-2 text-2xl font-bold {% if balance >= 0 %}text-emerald-600{% else %}text-rose-600{% endif %}">
+                    {{ balance|currency }}
+                </p>
+                <p class="mt-0.5 text-xs text-slate-500">Receitas − Despesas (pagas)</p>
+            </div>
+            <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
+                        {% if balance >= 0 %}bg-emerald-50 text-emerald-600{% else %}bg-rose-50 text-rose-600{% endif %}">
+                {% icon "currency-dollar" "w-5 h-5" %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Pendentes (RV10 — quebrado em receitas vs despesas) -->
+    <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+        <div class="flex items-start justify-between">
+            <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-slate-500">Pendentes</p>
+                <p class="mt-2 text-2xl font-bold text-slate-900">{{ pending_count }}</p>
+                {% if pending_count > 0 %}
+                <p class="mt-0.5 text-xs text-slate-500">
+                    {% if income_pending_count %}<span class="text-emerald-600">{{ income_pending_count }} receita{{ income_pending_count|pluralize:"s" }}</span>{% endif %}
+                    {% if income_pending_count and expense_pending_count %} · {% endif %}
+                    {% if expense_pending_count %}<span class="text-rose-600">{{ expense_pending_count }} despesa{{ expense_pending_count|pluralize:"s" }}</span>{% endif %}
+                </p>
+                {% else %}
+                <p class="mt-0.5 text-xs text-slate-400">Tudo em dia 🎉</p>
+                {% endif %}
+            </div>
+            <div class="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+                {% icon "clock" "w-5 h-5 text-amber-600" %}
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Bank Accounts Quick View -->
@@ -119,6 +193,36 @@
             <p class="text-2xl font-bold text-emerald-600">R$ {{ forecast_total|floatformat:2|stringformat:"s" }}</p>
         </div>
     </div>
+
+    {# RV10 — Breakdown da previsão por origem (cliente pediu: "deve puxar dos dois") #}
+    {% if forecast_breakdown %}
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4 text-xs">
+        <div class="rounded-lg bg-indigo-50 ring-1 ring-indigo-100 px-3 py-2.5">
+            <p class="font-semibold text-indigo-900 flex items-center gap-1.5">
+                📄 De propostas
+                <span class="text-indigo-500 font-normal">({{ forecast_breakdown.from_proposal.count }})</span>
+            </p>
+            <p class="text-base font-bold text-indigo-700 mt-1">{{ forecast_breakdown.from_proposal.total|currency }}</p>
+        </div>
+        <div class="rounded-lg bg-amber-50 ring-1 ring-amber-100 px-3 py-2.5">
+            <p class="font-semibold text-amber-900 flex items-center gap-1.5">
+                🎯 De leads ganhos (sem proposta)
+                <span class="text-amber-600 font-normal">({{ forecast_breakdown.from_lead.count }})</span>
+            </p>
+            <p class="text-base font-bold text-amber-700 mt-1">{{ forecast_breakdown.from_lead.total|currency }}</p>
+        </div>
+        <div class="rounded-lg bg-slate-50 ring-1 ring-slate-200 px-3 py-2.5">
+            <p class="font-semibold text-slate-700 flex items-center gap-1.5">
+                ✍ Lançamentos manuais
+                <span class="text-slate-400 font-normal">({{ forecast_breakdown.manual.count }})</span>
+            </p>
+            <p class="text-base font-bold text-slate-700 mt-1">{{ forecast_breakdown.manual.total|currency }}</p>
+        </div>
+    </div>
+    <p class="text-[11px] text-slate-400 mb-3 italic">
+        Sem duplicação: se a proposta aceita já tem lançamento, o lead ganho NÃO conta de novo.
+    </p>
+    {% endif %}
 
     <!-- Gráfico simples (barras horizontais escaladas pelo max) -->
     <div class="space-y-2">
