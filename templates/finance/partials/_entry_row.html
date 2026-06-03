@@ -34,6 +34,9 @@
     </td>
     <td class="px-5 py-3.5 text-sm text-slate-500 hidden lg:table-cell">
         {{ entry.date|date:"d/m/Y" }}
+        {% if entry.status == 'paid' and entry.paid_date %}
+        <span class="block text-[10px] text-emerald-600" title="Data de pagamento (vale para a contabilidade)">pago em {{ entry.paid_date|date:"d/m/Y" }}</span>
+        {% endif %}
     </td>
     <td class="px-5 py-3.5">
         {% status_badge entry.status %}

@@ -122,6 +122,32 @@ class FinancePeriodViewTests(TestCase):
         self.assertEqual(resp.context["current_period"], "mes_atual")
         self.assertEqual(resp.context["selected_month"], "")
 
+    def test_paid_counts_by_payment_date_not_due_date(self):
+        """RV07 — Regime de caixa: despesa PAGA conta no mês do PAGAMENTO, não
+        do vencimento (cliente: paga em maio, vence junho → caía em junho)."""
+        FinancialEntry.objects.create(
+            empresa=self.empresa, type=FinancialEntry.Type.EXPENSE,
+            description="ART", amount=Decimal("108"),
+            date=date(2025, 6, 5), paid_date=date(2025, 5, 26),
+            status=FinancialEntry.Status.PAID,
+        )
+        # Maio/2025 (mês do pagamento) → inclui
+        r_mai = self.client.get(reverse("finance:finance_overview"), {"period": "mes", "mes": "2025-05"})
+        self.assertEqual(r_mai.context["total_expense"], Decimal("108"))
+        # Junho/2025 (mês do vencimento) → NÃO inclui (já contou em maio)
+        r_jun = self.client.get(reverse("finance:finance_overview"), {"period": "mes", "mes": "2025-06"})
+        self.assertEqual(r_jun.context["total_expense"], 0)
+
+    def test_pending_still_counts_by_due_date(self):
+        """Pendentes continuam pela data de vencimento (projeção)."""
+        FinancialEntry.objects.create(
+            empresa=self.empresa, type=FinancialEntry.Type.INCOME,
+            description="A receber", amount=Decimal("500"),
+            date=date(2025, 7, 10), status=FinancialEntry.Status.PENDING,
+        )
+        resp = self.client.get(reverse("finance:finance_overview"), {"period": "mes", "mes": "2025-07"})
+        self.assertEqual(resp.context["income_pending_total"], Decimal("500"))
+
     def test_forecast_unchanged_by_period(self):
         """A Previsão de receita é consolidada — não muda com o período."""
         resp_mes = self.client.get(reverse("finance:finance_overview"))

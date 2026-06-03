@@ -1,7 +1,8 @@
 from datetime import date
 
 from django.contrib import messages
-from django.db.models import Q, Sum
+from django.db.models import Case, F, Q, Sum, When
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
@@ -119,11 +120,23 @@ class FinanceOverviewView(EmpresaMixin, HtmxResponseMixin, TemplateView):
             period, today, selected_month,
         )
 
-        period_entries = FinancialEntry.objects.filter(empresa=empresa)
+        # RV07 — Data contábil (regime de caixa): lançamentos PAGOS contam pela
+        # DATA DE PAGAMENTO (quando o dinheiro entrou/saiu); pendentes/vencidos
+        # pela data de vencimento (projeção). Cliente reportou que uma despesa
+        # paga em maio mas com vencimento em junho estava sendo contada em junho.
+        period_entries = FinancialEntry.objects.filter(empresa=empresa).annotate(
+            acct_date=Case(
+                When(
+                    status=FinancialEntry.Status.PAID,
+                    then=Coalesce("paid_date", "date"),
+                ),
+                default=F("date"),
+            )
+        )
         if period_start:
-            period_entries = period_entries.filter(date__gte=period_start)
+            period_entries = period_entries.filter(acct_date__gte=period_start)
         if period_end:
-            period_entries = period_entries.filter(date__lte=period_end)
+            period_entries = period_entries.filter(acct_date__lte=period_end)
 
         # RV10 — Cliente reportou "fiz 3 despesas mas só conta 2". A SOMA
         # estava correta, mas a lista de "Recentes" mostra só top-10 — o
