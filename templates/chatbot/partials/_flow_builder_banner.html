@@ -1,5 +1,5 @@
 {% load ui_tags %}
-{# RV06 Item 2 — Banner exibido quando flow.use_visual_builder=True.
+{% comment %} RV06 Item 2 — Banner exibido quando flow.use_visual_builder=True.
 
    Mostra que o motor de execução está usando a versão visual publicada
    (não o editor legacy de steps). Oferece 2 caminhos:
@@ -7,7 +7,7 @@
    2. "Voltar para editor legado" — desativa o visual + arquiva versão
       publicada + volta para edição via ChatbotStep formset (com modal de
       confirmação para evitar acidentes).
-#}
+{% endcomment %}
 <div class="mb-6 rounded-xl bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-200 p-4">
     <div class="flex items-start gap-3">
         <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-indigo-500 text-white flex items-center justify-center">

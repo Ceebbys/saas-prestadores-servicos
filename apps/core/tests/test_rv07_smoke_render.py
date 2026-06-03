@@ -31,6 +31,14 @@ class RV07SmokeRenderTests(TestCase):
     def assert_ok(self, url_name, *args, **kwargs):
         resp = self.client.get(reverse(url_name, args=args, kwargs=kwargs))
         self.assertEqual(resp.status_code, 200, f"{url_name} -> {resp.status_code}")
+        # Pente fino: nenhum marcador de comentário de template pode VAZAR no HTML
+        # renderizado (bug do {# #} multi-linha que o Django não reconhece).
+        body = resp.content.decode("utf-8", "replace")
+        for marker in ("{#", "#}", "{% comment %}", "{% endcomment %}"):
+            self.assertNotIn(
+                marker, body, f"{url_name}: vazou marcador de template {marker!r} no HTML",
+            )
+        return resp
 
     # Financeiro (1.1 / 1.3)
     def test_finance_overview_and_periods(self):
@@ -38,6 +46,15 @@ class RV07SmokeRenderTests(TestCase):
         resp = self.client.get(reverse("finance:finance_overview"), {"period": "tudo"})
         self.assertEqual(resp.status_code, 200)
         self.assert_ok("finance:entry_create")
+        # entry_form.html (comentário de parcelamento) também na edição
+        from datetime import date
+
+        from apps.finance.models import FinancialEntry
+        entry = FinancialEntry.objects.create(
+            empresa=self.empresa, type="income", description="x",
+            amount="100", date=date.today(), status="pending",
+        )
+        self.assert_ok("finance:entry_update", entry.pk)
 
     # Pipeline (5.1) — Nova Oportunidade com seção de lead/contato
     def test_opportunity_create(self):
@@ -55,10 +72,11 @@ class RV07SmokeRenderTests(TestCase):
         self.assert_ok("contacts:update", pk=self.contato.pk)
         self.assert_ok("contacts:detail", pk=self.contato.pk)
 
-    # OS (3.1) — detail com seção Tempo/Horas + form manual
+    # OS (3.1) — detail com seção Tempo/Horas + form manual + form de OS
     def test_work_order_detail_and_time_log_form(self):
         self.assert_ok("operations:work_order_detail", pk=self.wo.pk)
         self.assert_ok("operations:time_log_create", wo_pk=self.wo.pk)
+        self.assert_ok("operations:work_order_create")
 
     # Configurações (3.1) — index + CRUD de Função e Valor Hora
     def test_settings_pages(self):

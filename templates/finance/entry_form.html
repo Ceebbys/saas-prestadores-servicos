@@ -33,9 +33,9 @@
             {% form_field form.bank_account %}
         </div>
 
-        {# RV10 — Parcelamento na criação. RV07 — também na edição de
+        {% comment %} RV10 — Parcelamento na criação. RV07 — também na edição de
            lançamentos pendentes/vencidos (divide o existente em N parcelas),
-           dando aos lançamentos automáticos a mesma opção dos manuais. #}
+           dando aos lançamentos automáticos a mesma opção dos manuais. {% endcomment %}
         {% if not form.instance.pk or form.instance.status == 'pending' or form.instance.status == 'overdue' %}
         <div class="mt-4 pt-4 border-t border-slate-200"
              x-data="{

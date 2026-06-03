@@ -36,9 +36,9 @@
             {% form_field form.assigned_team %}
         </div>
 
-        {# RV10 — Auto-calcula `expected_end_date` quando user seleciona serviço.
+        {% comment %} RV10 — Auto-calcula `expected_end_date` quando user seleciona serviço.
            Lê `default_prazo_dias` do mapa serializado no contexto da view.
-           Sobrescreve só se o user não tiver editado manualmente. #}
+           Sobrescreve só se o user não tiver editado manualmente. {% endcomment %}
         <script>
         (function() {
             const PRAZOS = {{ service_type_prazos_json|default:'{}'|safe }};

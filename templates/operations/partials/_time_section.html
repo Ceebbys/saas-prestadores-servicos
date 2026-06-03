@@ -1,7 +1,7 @@
 {% load ui_tags %}
-{# RV07 (3.1) — Seção de Tempo / Horas da OS. Trocada via HTMX (outerHTML)
+{% comment %} RV07 (3.1) — Seção de Tempo / Horas da OS. Trocada via HTMX (outerHTML)
    pelas ações de cronômetro/exclusão. O relógio ao vivo é só visual (Alpine);
-   a fonte da verdade é `started_at` no servidor. #}
+   a fonte da verdade é `started_at` no servidor. {% endcomment %}
 <div id="time-section" class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
     <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
         <h3 class="text-sm font-semibold text-slate-700">Tempo / Horas</h3>

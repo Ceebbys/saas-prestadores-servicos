@@ -1,7 +1,7 @@
 {% load ui_tags humanize %}
 
-{# RV07 — Seletor de período (item 1.3). Recarrega o dashboard com o período
-   escolhido; a Previsão de receita abaixo permanece consolidada. #}
+{% comment %} RV07 — Seletor de período (item 1.3). Recarrega o dashboard com o período
+   escolhido; a Previsão de receita abaixo permanece consolidada. {% endcomment %}
 <div class="flex flex-wrap items-center gap-1.5 mb-5">
     <span class="text-xs font-medium text-slate-400 mr-1">Período:</span>
     {% for value, label in period_choices %}
