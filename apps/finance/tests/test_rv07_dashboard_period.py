@@ -50,6 +50,21 @@ class FinancePeriodRangeHelperTests(TestCase):
         self.assertIsNone(e)
         self.assertEqual(label, "Todo o período")
 
+    def test_mes_especifico(self):
+        s, e, label = _finance_period_range("mes", date(2026, 6, 15), "2026-03")
+        self.assertEqual(s, date(2026, 3, 1))
+        self.assertEqual(e, date(2026, 3, 31))
+        self.assertEqual(label, "Março/2026")
+
+    def test_mes_especifico_fevereiro_bissexto(self):
+        s, e, _ = _finance_period_range("mes", date(2024, 6, 15), "2024-02")
+        self.assertEqual(s, date(2024, 2, 1))
+        self.assertEqual(e, date(2024, 2, 29))  # 2024 é bissexto
+
+    def test_mes_invalido_cai_para_mes_atual(self):
+        s, e, label = _finance_period_range("mes", date(2026, 6, 15), "xxxx")
+        self.assertEqual(label, "Mês atual")
+
 
 class FinancePeriodViewTests(TestCase):
     def setUp(self):
@@ -87,6 +102,25 @@ class FinancePeriodViewTests(TestCase):
     def test_invalid_period_falls_back_to_mes_atual(self):
         resp = self.client.get(reverse("finance:finance_overview"), {"period": "xpto"})
         self.assertEqual(resp.context["current_period"], "mes_atual")
+
+    def test_specific_month_filter(self):
+        self._income("250", date(2025, 1, 15))  # Janeiro/2025
+        self._income("999", self.today)         # mês atual (não deve contar)
+
+        resp = self.client.get(
+            reverse("finance:finance_overview"), {"period": "mes", "mes": "2025-01"},
+        )
+        self.assertEqual(resp.context["current_period"], "mes")
+        self.assertEqual(resp.context["selected_month"], "2025-01")
+        self.assertEqual(resp.context["total_income"], Decimal("250"))
+        self.assertEqual(resp.context["period_label"], "Janeiro/2025")
+
+    def test_specific_month_invalid_falls_back(self):
+        resp = self.client.get(
+            reverse("finance:finance_overview"), {"period": "mes", "mes": "bad"},
+        )
+        self.assertEqual(resp.context["current_period"], "mes_atual")
+        self.assertEqual(resp.context["selected_month"], "")
 
     def test_forecast_unchanged_by_period(self):
         """A Previsão de receita é consolidada — não muda com o período."""

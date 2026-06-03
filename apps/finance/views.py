@@ -36,11 +36,13 @@ FINANCE_PERIOD_CHOICES = [
 ]
 
 
-def _finance_period_range(period, today):
+def _finance_period_range(period, today, selected_month=None):
     """Retorna (start, end, label) para o filtro de período do dashboard.
 
     ``start``/``end`` ``None`` => sem limite naquela ponta (todo o período).
     Os intervalos de N meses são por mês-calendário, incluindo o mês atual.
+    ``period == "mes"`` + ``selected_month`` ('YYYY-MM') filtra um mês específico
+    (cliente pediu "vê o mês q vc quiser").
     """
     import calendar
 
@@ -50,6 +52,24 @@ def _finance_period_range(period, today):
     def _add_months(year, month, delta):
         idx = (year * 12 + (month - 1)) + delta
         return idx // 12, idx % 12 + 1
+
+    # RV07 — Mês específico (filtro mensal).
+    if period == "mes" and selected_month:
+        try:
+            year_str, month_str = selected_month.split("-")
+            year, month = int(year_str), int(month_str)
+            if 1 <= month <= 12 and 2000 <= year <= 2100:
+                pt_full = [
+                    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+                    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+                ]
+                return (
+                    date(year, month, 1),
+                    _last_day(year, month),
+                    f"{pt_full[month - 1]}/{year}",
+                )
+        except (ValueError, TypeError, AttributeError):
+            pass  # mês inválido → cai para o mês atual abaixo
 
     if period == "tudo":
         return None, None, "Todo o período"
@@ -85,10 +105,19 @@ class FinanceOverviewView(EmpresaMixin, HtmxResponseMixin, TemplateView):
         # período e não ir trocando os dados do dashboard". Os cards (receitas/
         # despesas/saldo/pendentes) passam a respeitar o período; a Previsão de
         # receita continua consolidada (olha sempre pra frente).
+        import re
+
         period = self.request.GET.get("period", "mes_atual")
-        if period not in {p for p, _ in FINANCE_PERIOD_CHOICES}:
+        selected_month = self.request.GET.get("mes", "").strip()
+        valid_periods = {p for p, _ in FINANCE_PERIOD_CHOICES} | {"mes"}
+        if period not in valid_periods:
             period = "mes_atual"
-        period_start, period_end, period_label = _finance_period_range(period, today)
+        # period=mes exige um mês 'YYYY-MM' válido (01-12); senão volta ao mês atual.
+        if period == "mes" and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", selected_month):
+            period, selected_month = "mes_atual", ""
+        period_start, period_end, period_label = _finance_period_range(
+            period, today, selected_month,
+        )
 
         period_entries = FinancialEntry.objects.filter(empresa=empresa)
         if period_start:
@@ -208,6 +237,7 @@ class FinanceOverviewView(EmpresaMixin, HtmxResponseMixin, TemplateView):
                 "current_period": period,
                 "period_label": period_label,
                 "period_choices": FINANCE_PERIOD_CHOICES,
+                "selected_month": selected_month,
                 "bank_accounts": bank_accounts,
                 "forecast_months": forecast["months"],
                 "forecast_total": forecast["total"],

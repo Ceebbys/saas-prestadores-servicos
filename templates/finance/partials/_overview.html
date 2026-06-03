@@ -10,6 +10,16 @@
         {{ label }}
     </a>
     {% endfor %}
+    {% comment %} RV07 — Filtro de mês específico (escolher qualquer mês/ano) {% endcomment %}
+    <span class="text-xs text-slate-300 mx-0.5">|</span>
+    <form method="get" class="inline-flex items-center">
+        <input type="hidden" name="period" value="mes">
+        <input type="month" name="mes" value="{{ selected_month }}"
+               onchange="this.form.submit()"
+               aria-label="Escolher mês específico"
+               title="Filtrar por um mês específico"
+               class="rounded-lg text-xs font-medium px-2.5 py-1 border transition-colors focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 {% if current_period == 'mes' %}border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50 text-indigo-700{% else %}border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">
+    </form>
 </div>
 
 <!-- Stat Cards (RV10 — com contagem visível + breakdown pago/pendente) -->
