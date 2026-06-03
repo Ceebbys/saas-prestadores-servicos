@@ -150,3 +150,32 @@ class PurgeCommandTests(TestCase):
         )
         call_command("purge_deleted_proposals", "--days=60", "--dry-run")
         self.assertTrue(Proposal.all_objects.filter(pk=p.pk).exists())
+
+
+class DeleteModalViewTests(TestCase):
+    """RV07 — O modal de exclusão precisa funcionar SEM depender do Alpine
+    (type-to-confirm) que não habilitava o botão no conteúdo injetado por HTMX.
+    """
+
+    def setUp(self):
+        self.empresa = create_test_empresa()
+        self.user = create_test_user("del@t.com", "D", self.empresa)
+        self.client.force_login(self.user)
+
+    def test_modal_button_clickable_without_js_gate(self):
+        p = _proposal(self.empresa, total=Decimal("1500"))
+        resp = self.client.get(reverse("proposals:delete", args=[p.pk]))
+        self.assertEqual(resp.status_code, 200)
+        body = resp.content.decode("utf-8")
+        self.assertIn("Excluir", body)
+        # O gate Alpine que travava o botão NÃO pode mais existir:
+        self.assertNotIn(":disabled", body)
+        self.assertNotIn("confirmText", body)
+        self.assertNotIn("x-model", body)
+
+    def test_post_soft_deletes_to_trash(self):
+        p = _proposal(self.empresa, total=Decimal("1500"))
+        resp = self.client.post(reverse("proposals:delete", args=[p.pk]))
+        self.assertEqual(resp.status_code, 302)
+        p_db = Proposal.all_objects.get(pk=p.pk)
+        self.assertIsNotNone(p_db.deleted_at)  # foi para a lixeira
