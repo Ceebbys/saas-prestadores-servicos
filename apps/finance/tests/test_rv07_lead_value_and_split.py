@@ -12,11 +12,12 @@ from decimal import Decimal
 
 from django.test import TestCase
 
-from apps.core.tests.helpers import create_test_empresa
+from apps.core.tests.helpers import create_test_empresa, create_test_user
 from apps.crm.models import Lead, Opportunity, Pipeline, PipelineStage
 from apps.finance.models import FinancialEntry
 from apps.finance.services import (
     generate_entry_from_lead_won,
+    resync_zero_value_entries,
     split_entry_into_installments,
 )
 
@@ -191,3 +192,112 @@ class SplitEntryIntoInstallmentsTests(TestCase):
         # soma das 2 sub-parcelas preserva o valor da parcela re-dividida
         total = sum((e.amount for e in again), Decimal("0.00"))
         self.assertEqual(total, original_amount)
+
+
+class ResyncZeroValueEntriesTests(TestCase):
+    """RV07 — Re-sincroniza lançamentos auto-gerados que ficaram 0,00
+    (criados antes da correção 1.1; valor está na Oportunidade)."""
+
+    def setUp(self):
+        self.empresa = create_test_empresa(slug="rv07-resync")
+        self.p, self.s_novo, self.s_ganho = _pipeline_with_stages(self.empresa)
+
+    def _zero_entry(self, lead, **kw):
+        defaults = dict(
+            empresa=self.empresa, type=FinancialEntry.Type.INCOME,
+            description=f"Lead - {lead.name}", amount=Decimal("0.00"),
+            date=date(2026, 6, 1), status=FinancialEntry.Status.PENDING,
+            related_lead=lead, auto_generated=True,
+            notes="Gerado automaticamente — Lead movido para etapa de ganho.\n\n⚠ Valor não definido — edite.",
+        )
+        defaults.update(kw)
+        return FinancialEntry.objects.create(**defaults)
+
+    def test_resync_pulls_opportunity_value(self):
+        lead = Lead.objects.create(empresa=self.empresa, name="Velho 0", pipeline_stage=self.s_novo)
+        Opportunity.objects.filter(lead=lead).update(value=Decimal("2200.00"))
+        entry = self._zero_entry(lead)
+
+        result = resync_zero_value_entries(self.empresa)
+
+        entry.refresh_from_db(); lead.refresh_from_db()
+        self.assertEqual(entry.amount, Decimal("2200.00"))
+        self.assertEqual(lead.estimated_value, Decimal("2200.00"))
+        self.assertNotIn("⚠", entry.notes)
+        self.assertEqual(len(result["updated"]), 1)
+
+    def test_resync_leaves_valueless_at_zero(self):
+        lead = Lead.objects.create(empresa=self.empresa, name="Sem valor", pipeline_stage=self.s_novo)
+        Opportunity.objects.filter(lead=lead).update(value=Decimal("0.00"))
+        entry = self._zero_entry(lead)
+
+        result = resync_zero_value_entries(self.empresa)
+
+        entry.refresh_from_db()
+        self.assertEqual(entry.amount, Decimal("0.00"))
+        self.assertEqual(result["updated"], [])
+
+    def test_resync_idempotent(self):
+        lead = Lead.objects.create(empresa=self.empresa, name="X", pipeline_stage=self.s_novo)
+        Opportunity.objects.filter(lead=lead).update(value=Decimal("500.00"))
+        self._zero_entry(lead)
+
+        r1 = resync_zero_value_entries(self.empresa)
+        r2 = resync_zero_value_entries(self.empresa)
+        self.assertEqual(len(r1["updated"]), 1)
+        self.assertEqual(len(r2["updated"]), 0)
+
+    def test_resync_does_not_touch_manual_or_nonzero(self):
+        lead = Lead.objects.create(empresa=self.empresa, name="Y", pipeline_stage=self.s_novo)
+        Opportunity.objects.filter(lead=lead).update(value=Decimal("999.00"))
+        # manual (auto_generated=False) com 0 → NÃO mexe
+        manual = self._zero_entry(lead, auto_generated=False)
+        # auto com valor já definido → NÃO mexe
+        nonzero = self._zero_entry(lead, amount=Decimal("100.00"))
+
+        resync_zero_value_entries(self.empresa)
+
+        manual.refresh_from_db(); nonzero.refresh_from_db()
+        self.assertEqual(manual.amount, Decimal("0.00"))
+        self.assertEqual(nonzero.amount, Decimal("100.00"))
+
+
+class ResyncZeroValuesViewTests(TestCase):
+    """RV07 — Botão 'Sincronizar valores' no dashboard."""
+
+    def setUp(self):
+        self.empresa = create_test_empresa(slug="rv07-resync-view")
+        self.user = create_test_user("rz@t.com", "RZ", self.empresa)
+        self.client.force_login(self.user)
+        self.p, self.s_novo, self.s_ganho = _pipeline_with_stages(self.empresa)
+
+    def _zero_auto_entry(self, empresa, lead):
+        return FinancialEntry.objects.create(
+            empresa=empresa, type=FinancialEntry.Type.INCOME,
+            description=f"Lead - {lead.name}", amount=Decimal("0.00"),
+            date=date(2026, 6, 1), status=FinancialEntry.Status.PENDING,
+            related_lead=lead, auto_generated=True,
+        )
+
+    def test_post_resyncs_and_redirects(self):
+        from django.urls import reverse
+        lead = Lead.objects.create(empresa=self.empresa, name="V", pipeline_stage=self.s_novo)
+        Opportunity.objects.filter(lead=lead).update(value=Decimal("1800.00"))
+        entry = self._zero_auto_entry(self.empresa, lead)
+
+        resp = self.client.post(reverse("finance:resync_zero_values"))
+        self.assertEqual(resp.status_code, 302)
+        entry.refresh_from_db()
+        self.assertEqual(entry.amount, Decimal("1800.00"))
+
+    def test_does_not_touch_other_tenant(self):
+        from django.urls import reverse
+        other = create_test_empresa(slug="rv07-resync-other")
+        _, on, _ = _pipeline_with_stages(other)
+        other_lead = Lead.objects.create(empresa=other, name="O", pipeline_stage=on)
+        Opportunity.objects.filter(lead=other_lead).update(value=Decimal("500.00"))
+        other_entry = self._zero_auto_entry(other, other_lead)
+
+        self.client.post(reverse("finance:resync_zero_values"))  # logado na empresa
+        other_entry.refresh_from_db()
+        self.assertEqual(other_entry.amount, Decimal("0.00"))  # intocada

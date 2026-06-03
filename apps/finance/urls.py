@@ -13,6 +13,12 @@ urlpatterns = [
         views.BackfillWonLeadEntriesView.as_view(),
         name="backfill_won_leads",
     ),
+    # RV07 — Re-sincroniza valor de lançamentos auto-gerados zerados
+    path(
+        "resync-zero-values/",
+        views.ResyncZeroValuesView.as_view(),
+        name="resync_zero_values",
+    ),
     # Entries
     path("entries/", views.EntryListView.as_view(), name="entry_list"),
     path(

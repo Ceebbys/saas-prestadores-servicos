@@ -638,6 +638,39 @@ class BackfillWonLeadEntriesView(EmpresaMixin, View):
         return redirect("finance:finance_overview")
 
 
+class ResyncZeroValuesView(EmpresaMixin, View):
+    """RV07 — POST que re-puxa o valor de lançamentos auto-gerados zerados.
+
+    Cliente reportou: "na geração automática não está puxando o valor que tá
+    no lead". Causa: lançamentos criados ANTES da correção 1.1 (ou com o valor
+    apenas na Oportunidade) ficaram em R$ 0,00 e a correção não reescreve o
+    passado. Este botão resolve on-demand (estimated_value → Oportunidade →
+    serviço). Idempotente.
+    """
+
+    def post(self, request):
+        from django.shortcuts import redirect
+
+        from .services import resync_zero_value_entries
+        result = resync_zero_value_entries(request.empresa)
+        n = len(result["updated"])
+        if n:
+            messages.success(
+                request,
+                f"{n} lançamento{'s' if n != 1 else ''} atualizado"
+                f"{'s' if n != 1 else ''} com o valor do negócio (puxado do "
+                f"lead/oportunidade/serviço).",
+            )
+        else:
+            messages.info(
+                request,
+                "Nenhum lançamento zerado com valor a puxar — os que seguem em "
+                "R$ 0,00 não têm valor no lead/oportunidade/serviço. Ajuste-os "
+                "manualmente em 'Ver e ajustar'.",
+            )
+        return redirect("finance:finance_overview")
+
+
 class EntryMarkPaidView(EmpresaMixin, View):
     """Marca um lançamento como pago."""
 

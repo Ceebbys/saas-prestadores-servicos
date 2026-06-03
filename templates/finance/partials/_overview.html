@@ -187,13 +187,24 @@
                 {{ zero_value_entries_count }} lançamento{{ zero_value_entries_count|pluralize:"s" }} de venda fechada sem valor definido
             </p>
             <p class="text-xs text-sky-700 mt-0.5">
-                Lançamentos gerados a partir de leads ganhos sem valor estimado. Ajuste o valor para refletir no caixa.
+                Lançamentos gerados a partir de leads ganhos. Puxe o valor do lead/oportunidade automaticamente, ou ajuste manualmente.
             </p>
         </div>
-        <a href="{% url 'finance:entry_list' %}?status=pending&q="
-           class="text-sm font-medium text-sky-700 hover:text-sky-900 transition-colors whitespace-nowrap">
-            Ver e ajustar
-        </a>
+        <div class="flex items-center gap-2 flex-shrink-0">
+            {# RV07 — puxa o valor do lead/oportunidade/serviço de uma vez #}
+            <form method="post" action="{% url 'finance:resync_zero_values' %}">
+                {% csrf_token %}
+                <button type="submit"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-600 text-white text-sm font-medium hover:bg-sky-700 transition-colors shadow-sm whitespace-nowrap">
+                    {% icon "arrow-uturn-left" "w-4 h-4" %}
+                    Sincronizar valores
+                </button>
+            </form>
+            <a href="{% url 'finance:entry_list' %}?status=pending&q="
+               class="text-sm font-medium text-sky-700 hover:text-sky-900 transition-colors whitespace-nowrap">
+                Ver e ajustar
+            </a>
+        </div>
     </div>
 </div>
 {% endif %}

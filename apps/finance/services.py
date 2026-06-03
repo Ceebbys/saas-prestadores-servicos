@@ -111,6 +111,26 @@ def _default_account(empresa):
     )
 
 
+def _resolve_lead_value(lead) -> Decimal:
+    """RV07 — Valor do negócio do lead, na ordem de precedência:
+      1. ``lead.estimated_value`` (valor próprio do lead)
+      2. maior ``Opportunity.value`` vinculada (valor digitado na Pipeline)
+      3. preço padrão do serviço cadastrado
+      4. 0 (nada informado)
+    Usado tanto na geração automática quanto na re-sincronização de valores.
+    """
+    from django.db.models import Max
+
+    amount = lead.estimated_value
+    if amount is None or amount <= 0:
+        opp_value = lead.opportunities.aggregate(m=Max("value"))["m"]
+        if opp_value and opp_value > 0:
+            amount = opp_value
+    if (amount is None or amount <= 0) and lead.servico_id:
+        amount = lead.servico.default_price or Decimal("0.00")
+    return amount if amount is not None else Decimal("0.00")
+
+
 @transaction.atomic
 def generate_entry_from_lead_won(lead, *, first_due_date=None, notify=True):
     """RV06 — Gera FinancialEntry quando Lead vai para etapa de ganho.
@@ -159,25 +179,8 @@ def generate_entry_from_lead_won(lead, *, first_due_date=None, notify=True):
     if proposal_with_entries:
         return None  # proposta já cuidou disso
 
-    # Resolve valor (RV07 — agora considera também o valor digitado na
-    # Pipeline/Oportunidade, que antes era ignorado e fazia o lançamento
-    # nascer com R$ 0,00 mesmo quando o usuário já tinha informado o valor
-    # do negócio no card da pipeline). Ordem de precedência:
-    #   1. lead.estimated_value (valor próprio do lead)
-    #   2. maior Opportunity.value vinculada ao lead (valor da pipeline)
-    #   3. preço padrão do serviço vinculado
-    #   4. 0 (cria entrada com aviso para o usuário ajustar)
-    amount = lead.estimated_value
-    if amount is None or amount <= 0:
-        from django.db.models import Max
-
-        opp_value = lead.opportunities.aggregate(m=Max("value"))["m"]
-        if opp_value and opp_value > 0:
-            amount = opp_value
-    if (amount is None or amount <= 0) and lead.servico_id:
-        amount = lead.servico.default_price or Decimal("0.00")
-    if amount is None:
-        amount = Decimal("0.00")
+    # Resolve valor do negócio (estimated_value → Oportunidade → serviço → 0).
+    amount = _resolve_lead_value(lead)
 
     base_date = first_due_date or (timezone.now().date() + timedelta(days=30))
     default_account = _default_account(lead.empresa)
@@ -367,6 +370,51 @@ def backfill_won_lead_entries(empresa) -> dict:
         else:
             created.append(entry)
     return {"created": created, "skipped": skipped, "scanned": scanned}
+
+
+@transaction.atomic
+def resync_zero_value_entries(empresa=None) -> dict:
+    """RV07 — Re-puxa o valor de lançamentos AUTO-gerados que ficaram com 0,00.
+
+    Cobre lançamentos criados ANTES da correção 1.1 (que só lia o
+    ``estimated_value``) ou cujo valor estava apenas na Oportunidade. Para cada
+    ``FinancialEntry(auto_generated=True, amount=0, related_lead=...)`` resolve o
+    valor via ``_resolve_lead_value`` (estimated_value → Oportunidade → serviço)
+    e atualiza o lançamento; também sincroniza ``lead.estimated_value`` e remove
+    o aviso "⚠ Valor não definido" da observação. Idempotente — rodar de novo
+    não altera nada (não há mais entries com amount=0 e valor resolvível).
+
+    Args:
+        empresa: se informado, limita ao tenant; senão varre todos.
+
+    Retorna ``{"updated": [(entry_pk, novo_valor), ...], "scanned": N}``.
+    """
+    from apps.crm.models import Lead
+
+    qs = FinancialEntry.objects.filter(
+        auto_generated=True, amount=0, related_lead__isnull=False,
+    ).select_related("related_lead", "related_lead__servico")
+    if empresa is not None:
+        qs = qs.filter(empresa=empresa)
+
+    updated = []
+    scanned = 0
+    for entry in qs:
+        scanned += 1
+        lead = entry.related_lead
+        value = _resolve_lead_value(lead)
+        if not value or value <= 0:
+            continue  # nada para puxar — segue 0 (usuário ajusta manualmente)
+        entry.amount = value
+        if entry.notes and "⚠" in entry.notes:
+            entry.notes = entry.notes.split("⚠")[0].rstrip()
+        entry.save(update_fields=["amount", "notes", "updated_at"])
+        # Sincroniza o valor de volta no lead (consistência), sem disparar
+        # signals (update direto) para não re-gerar lançamentos.
+        if lead.estimated_value is None or lead.estimated_value <= 0:
+            Lead.objects.filter(pk=lead.pk).update(estimated_value=value)
+        updated.append((entry.pk, str(value)))
+    return {"updated": updated, "scanned": scanned}
 
 
 @transaction.atomic
