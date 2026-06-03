@@ -36,6 +36,11 @@ app.conf.beat_schedule = {
         "task": "apps.communications.tasks.send_daily_digest",
         "schedule": crontab(hour=8, minute=0),
     },
+    # RV07 (6.2) — Follow-up de leads sem contato (1x/dia às 9h, após o digest).
+    "lead-followups-daily-9am": {
+        "task": "apps.crm.tasks.evaluate_lead_followups",
+        "schedule": crontab(hour=9, minute=0),
+    },
 }
 
 

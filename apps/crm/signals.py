@@ -15,6 +15,7 @@ Mantém coerência entre Lead, Opportunity, PipelineStage e LeadContact:
 from __future__ import annotations
 
 import logging
+from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 from django.db.models.signals import post_save, pre_delete, pre_save
@@ -71,7 +72,14 @@ def lead_post_save(sender, instance: Lead, created: bool, **kwargs):
                 Lead.objects.filter(pk=instance.pk).update(pipeline_stage=stage)
                 instance.pipeline_stage = stage
 
-        if instance.pipeline_stage_id and not instance.opportunities.exists():
+        # RV07 — `_suppress_auto_opportunity` permite que a OpportunityForm
+        # crie o Lead inline (item 5.1) SEM gerar uma 2ª oportunidade — a
+        # própria form já cria a oportunidade configurada pelo usuário.
+        if (
+            instance.pipeline_stage_id
+            and not instance.opportunities.exists()
+            and not getattr(instance, "_suppress_auto_opportunity", False)
+        ):
             Opportunity.objects.create(
                 empresa=instance.empresa,
                 lead=instance,
@@ -143,6 +151,15 @@ def _maybe_dispatch_lead_pipeline_event(
                 events_to_fire.append(PipelineAutomationRule.Event.LEAD_GANHO)
             elif stage and stage.is_lost:
                 events_to_fire.append(PipelineAutomationRule.Event.LEAD_PERDIDO)
+            # RV07 (6.2) — "lead movimentado" só em transições reais de etapa
+            # que NÃO sejam ganho/perdido (won já notifica LEAD_WON) e nunca na
+            # criação. Como estamos após o guard de `_suppress_automation`, um
+            # movimento feito por regra de automação não gera dupla notificação.
+            elif not created and stage:
+                from apps.communications.notifications_events import (
+                    notify_lead_moved,
+                )
+                notify_lead_moved(lead, None, stage)
         except Exception:  # noqa: BLE001
             logger.exception(
                 "RV10: falha lendo pipeline_stage para detectar won/lost (lead=%s)",
@@ -199,16 +216,58 @@ def opportunity_post_save(sender, instance: Opportunity, created: bool, **kwargs
 
     Only syncs when lead and opportunity belong to the same empresa, to
     avoid cross-tenant data corruption if form filtering is ever bypassed.
+
+    RV07 — Também propaga o valor da oportunidade (Opportunity.value),
+    digitado na Pipeline, para o Lead (estimated_value) quando o lead ainda
+    não tem valor próprio. Sem isso o lançamento financeiro automático (que
+    lê lead.estimated_value) nascia com R$ 0,00 mesmo com o valor informado
+    no card da pipeline. Além disso, se a oportunidade entrou numa etapa de
+    ganho, garante a geração da entry financeira (idempotente): o sync de
+    stage usa .update(), que NÃO dispara o post_save do Lead, então sem isto
+    mover pelo board de oportunidades não criava o lançamento.
     """
     if not (instance.current_stage_id and instance.lead_id):
         return
     lead = instance.lead
     if lead.empresa_id != instance.empresa_id:
         return
+
+    update_fields: dict = {}
     if lead.pipeline_stage_id != instance.current_stage_id:
-        Lead.objects.filter(pk=lead.pk).update(
-            pipeline_stage_id=instance.current_stage_id
-        )
+        update_fields["pipeline_stage_id"] = instance.current_stage_id
+
+    # Coerção defensiva: instance.value pode ser str (atribuído antes da
+    # coerção do DB, ex.: Opportunity(value="1500")) — normaliza para Decimal
+    # antes de comparar, senão `str > 0` levanta TypeError e derruba o save.
+    opp_value = instance.value
+    if opp_value is not None and not isinstance(opp_value, Decimal):
+        try:
+            opp_value = Decimal(str(opp_value))
+        except (InvalidOperation, ValueError, TypeError):
+            opp_value = None
+    lead_value = lead.estimated_value
+    if (
+        opp_value
+        and opp_value > 0
+        and (lead_value is None or lead_value <= 0)
+    ):
+        update_fields["estimated_value"] = opp_value
+
+    if not update_fields:
+        return
+
+    Lead.objects.filter(pk=lead.pk).update(**update_fields)
+    # Reflete o novo estado no objeto em memória p/ o gerador de entry ler
+    if "pipeline_stage_id" in update_fields:
+        lead.pipeline_stage_id = instance.current_stage_id
+        lead.pipeline_stage = instance.current_stage
+    if "estimated_value" in update_fields:
+        lead.estimated_value = update_fields["estimated_value"]
+
+    # Oportunidade entrou em etapa de ganho? Garante a entry financeira
+    # (idempotente — generate_entry_from_lead_won não duplica).
+    if instance.current_stage and instance.current_stage.is_won:
+        _maybe_generate_finance_entry(lead)
 
 
 @receiver(pre_delete, sender=PipelineStage)

@@ -1,0 +1,92 @@
+{% load ui_tags %}
+{# RV07 (3.1) — Seção de Tempo / Horas da OS. Trocada via HTMX (outerHTML)
+   pelas ações de cronômetro/exclusão. O relógio ao vivo é só visual (Alpine);
+   a fonte da verdade é `started_at` no servidor. #}
+<div id="time-section" class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+        <h3 class="text-sm font-semibold text-slate-700">Tempo / Horas</h3>
+        <div class="text-right">
+            <p class="text-sm font-semibold text-slate-900">{{ time_total_display }}</p>
+            {% if time_billable_total %}
+            <p class="text-xs text-emerald-600">Faturável: {{ time_billable_total|currency }}</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
+        {% if running_log %}
+        <div class="flex items-center gap-3"
+             x-data="{ start: {{ running_started_ts }}, now: Math.floor(Date.now()/1000),
+                       fmt(s){ s=Math.max(0,Math.floor(s)); const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), x=s%60; return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(x).padStart(2,'0'); },
+                       init(){ setInterval(()=>{ this.now = Math.floor(Date.now()/1000); }, 1000); } }">
+            <span class="inline-flex items-center gap-1.5 text-rose-600">
+                <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                <span class="font-mono text-lg font-semibold" x-text="fmt(now - start)"></span>
+            </span>
+            <button type="button"
+                    hx-post="{% url 'operations:timer_stop' wo_pk=work_order.pk log_pk=running_log.pk %}"
+                    hx-target="#time-section" hx-swap="outerHTML"
+                    hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                    class="px-4 py-2 text-sm font-medium text-white bg-rose-600 rounded-lg hover:bg-rose-700 transition-colors">
+                Parar
+            </button>
+        </div>
+        {% else %}
+        <button type="button"
+                hx-post="{% url 'operations:timer_start' wo_pk=work_order.pk %}"
+                hx-target="#time-section" hx-swap="outerHTML"
+                hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
+            {% icon "bolt" "w-4 h-4" %}
+            Iniciar cronômetro
+        </button>
+        {% endif %}
+        <a href="{% url 'operations:time_log_create' wo_pk=work_order.pk %}"
+           class="inline-flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-700 font-medium">
+            {% icon "plus" "w-4 h-4" %}
+            Lançar manualmente
+        </a>
+    </div>
+
+    {% if time_logs %}
+    <ul class="divide-y divide-slate-100">
+        {% for log in time_logs %}
+        <li class="flex items-center justify-between px-5 py-3 text-sm">
+            <div class="min-w-0">
+                <p class="font-medium text-slate-800">
+                    {{ log.duration_hours }}h
+                    {% if log.is_running %}<span class="text-rose-600 text-xs font-normal">· em andamento</span>{% endif %}
+                    {% if not log.is_billable %}<span class="text-slate-400 text-xs font-normal">· não faturável</span>{% endif %}
+                </p>
+                <p class="text-xs text-slate-500">
+                    {{ log.started_at|date:"d/m H:i" }}{% if log.ended_at %}–{{ log.ended_at|date:"H:i" }}{% endif %}
+                    · {{ log.user.full_name|default:"—" }} · {{ log.get_source_display }}
+                    {% if log.is_billable and log.rate_applied %}· <span class="text-emerald-600">{{ log.billable_value|currency }}</span>{% endif %}
+                </p>
+                {% if log.notes %}<p class="text-xs text-slate-400 italic mt-0.5">{{ log.notes }}</p>{% endif %}
+            </div>
+            {% if not log.is_running %}
+            <div class="flex items-center gap-1 shrink-0">
+                <a href="{% url 'operations:time_log_update' wo_pk=work_order.pk log_pk=log.pk %}"
+                   class="p-1.5 text-slate-400 hover:text-indigo-600" title="Editar">{% icon "pencil" "w-4 h-4" %}</a>
+                <button type="button"
+                        hx-post="{% url 'operations:time_log_delete' wo_pk=work_order.pk log_pk=log.pk %}"
+                        hx-target="#time-section" hx-swap="outerHTML"
+                        hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                        hx-confirm="Remover este apontamento?"
+                        class="p-1.5 text-slate-400 hover:text-red-500" title="Remover">{% icon "trash" "w-4 h-4" %}</button>
+            </div>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="px-5 py-4 text-sm text-slate-400">Nenhuma hora registrada ainda.</p>
+    {% endif %}
+
+    {% if time_no_rate %}
+    <p class="px-5 py-3 text-xs text-amber-600 border-t border-slate-100">
+        ⚠ Valor-hora não configurado — defina em Configurações › Valores Hora para calcular o faturável.
+    </p>
+    {% endif %}
+</div>

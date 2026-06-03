@@ -1,15 +1,27 @@
 {% load ui_tags humanize %}
 
+{# RV07 — Seletor de período (item 1.3). Recarrega o dashboard com o período
+   escolhido; a Previsão de receita abaixo permanece consolidada. #}
+<div class="flex flex-wrap items-center gap-1.5 mb-5">
+    <span class="text-xs font-medium text-slate-400 mr-1">Período:</span>
+    {% for value, label in period_choices %}
+    <a href="?period={{ value }}"
+       class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors {% if value == current_period %}bg-indigo-600 text-white shadow-sm{% else %}bg-white text-slate-600 ring-1 ring-slate-200/60 hover:bg-slate-50{% endif %}">
+        {{ label }}
+    </a>
+    {% endfor %}
+</div>
+
 <!-- Stat Cards (RV10 — com contagem visível + breakdown pago/pendente) -->
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
     <!-- Receitas do Mês -->
     <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
         <div class="flex items-start justify-between">
             <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-slate-500">Receitas do Mês</p>
+                <p class="text-sm font-medium text-slate-500">Receitas</p>
                 <p class="mt-2 text-2xl font-bold text-slate-900">{{ total_income|currency }}</p>
                 <p class="mt-0.5 text-xs text-slate-500">
-                    {{ income_paid_count }} paga{{ income_paid_count|pluralize:"s" }} · {{ current_month|date:"F/Y" }}
+                    {{ income_paid_count }} paga{{ income_paid_count|pluralize:"s" }} · {{ period_label }}
                 </p>
                 {% if income_pending_count > 0 %}
                 <a href="{% url 'finance:entry_list' %}?type=income&status=pending"
@@ -28,10 +40,10 @@
     <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
         <div class="flex items-start justify-between">
             <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-slate-500">Despesas do Mês</p>
+                <p class="text-sm font-medium text-slate-500">Despesas</p>
                 <p class="mt-2 text-2xl font-bold text-slate-900">{{ total_expense|currency }}</p>
                 <p class="mt-0.5 text-xs text-slate-500">
-                    {{ expense_paid_count }} paga{{ expense_paid_count|pluralize:"s" }} · {{ current_month|date:"F/Y" }}
+                    {{ expense_paid_count }} paga{{ expense_paid_count|pluralize:"s" }} · {{ period_label }}
                 </p>
                 {% if expense_pending_count > 0 %}
                 <a href="{% url 'finance:entry_list' %}?type=expense&status=pending"

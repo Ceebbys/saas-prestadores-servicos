@@ -159,8 +159,21 @@ def generate_entry_from_lead_won(lead, *, first_due_date=None, notify=True):
     if proposal_with_entries:
         return None  # proposta já cuidou disso
 
-    # Resolve valor
+    # Resolve valor (RV07 — agora considera também o valor digitado na
+    # Pipeline/Oportunidade, que antes era ignorado e fazia o lançamento
+    # nascer com R$ 0,00 mesmo quando o usuário já tinha informado o valor
+    # do negócio no card da pipeline). Ordem de precedência:
+    #   1. lead.estimated_value (valor próprio do lead)
+    #   2. maior Opportunity.value vinculada ao lead (valor da pipeline)
+    #   3. preço padrão do serviço vinculado
+    #   4. 0 (cria entrada com aviso para o usuário ajustar)
     amount = lead.estimated_value
+    if amount is None or amount <= 0:
+        from django.db.models import Max
+
+        opp_value = lead.opportunities.aggregate(m=Max("value"))["m"]
+        if opp_value and opp_value > 0:
+            amount = opp_value
     if (amount is None or amount <= 0) and lead.servico_id:
         amount = lead.servico.default_price or Decimal("0.00")
     if amount is None:
@@ -421,5 +434,84 @@ def generate_entries_from_proposal(
             ),
         )
         entries.append(entry)
+
+    return entries
+
+
+@transaction.atomic
+def split_entry_into_installments(entry, *, count, interval_days=DEFAULT_INSTALLMENT_INTERVAL_DAYS):
+    """RV07 — Divide um lançamento existente em N parcelas.
+
+    Usado na EDIÇÃO de um lançamento (inclusive os auto-gerados de lead
+    ganho), dando aos lançamentos automáticos a mesma opção de parcelamento
+    dos manuais — pedido do PDF (item 1.1).
+
+    Estratégia (mesma régua do parcelamento manual/proposta):
+    - A entry existente vira a parcela ``1/N`` — preserva PK, vínculos
+      (related_lead/proposal/contract/work_order) e o flag ``auto_generated``,
+      mantendo a idempotência de ``generate_entry_from_lead_won`` (que procura
+      por ``related_lead + auto_generated=True``).
+    - As ``N-1`` parcelas restantes são criadas copiando os mesmos vínculos,
+      com ``auto_generated=False`` (passam a ser geridas pelo usuário) e
+      vencimentos escalonados (``date + i * interval_days``).
+    - Cada parcela = total / N (2 casas); a última recebe o restante para
+      somar exatamente o total (sem perda por arredondamento).
+    - Tudo dentro de ``transaction.atomic`` — se qualquer parcela falhar, o
+      lote inteiro faz rollback (sem parcelas órfãs em módulo financeiro).
+
+    Não divide lançamentos já PAGOS (preserva histórico de caixa) — o
+    chamador deve validar; aqui é só defesa: retorna [entry] sem alterar.
+    """
+    import re
+    from datetime import timedelta
+
+    count = int(count)
+    interval = int(interval_days or DEFAULT_INSTALLMENT_INTERVAL_DAYS)
+    if count < 2 or entry.status == FinancialEntry.Status.PAID:
+        return [entry]
+
+    total = Decimal(str(entry.amount or 0))
+    base_date = entry.date
+    # Pente fino: remove um sufixo "(i/N)" pré-existente para não empilhar
+    # "(1/3) (1/2)" ao re-parcelar uma parcela já dividida.
+    base_description = re.sub(r"\s*\(\d+/\d+\)\s*$", "", entry.description)
+    per_installment = (total / count).quantize(Decimal("0.01"))
+
+    entries: list[FinancialEntry] = []
+    accumulated = Decimal("0.00")
+    for i in range(count):
+        is_last = i == count - 1
+        amount = (total - accumulated) if is_last else per_installment
+        accumulated += amount
+        due_date = base_date + timedelta(days=interval * i)
+        description = f"{base_description} ({i + 1}/{count})"
+
+        if i == 0:
+            # Reaproveita a entry existente como 1/N (preserva PK e vínculos)
+            entry.amount = amount
+            entry.date = due_date
+            entry.description = description
+            entry.save(update_fields=["amount", "date", "description", "updated_at"])
+            entries.append(entry)
+        else:
+            sibling = FinancialEntry.objects.create(
+                empresa=entry.empresa,
+                type=entry.type,
+                description=description,
+                amount=amount,
+                category=entry.category,
+                date=due_date,
+                # Parcelas seguintes têm vencimento futuro → sempre PENDENTES
+                # (nunca herdam 'overdue' da parcela original).
+                status=FinancialEntry.Status.PENDING,
+                bank_account=entry.bank_account,
+                related_proposal=entry.related_proposal,
+                related_contract=entry.related_contract,
+                related_work_order=entry.related_work_order,
+                related_lead=entry.related_lead,
+                notes=entry.notes,
+                auto_generated=False,
+            )
+            entries.append(sibling)
 
     return entries

@@ -11,6 +11,7 @@ import json
 import logging
 
 from django.contrib.auth.decorators import login_required
+from django.db.models import Q
 from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import render
 from django.utils.decorators import method_decorator
@@ -27,6 +28,21 @@ def _login_required(view_cls):
     return view_cls
 
 
+def _scoped_notifications(request):
+    """RV07 (pente fino) — escopo multi-tenant das notificações.
+
+    Mostra apenas notificações da empresa ATIVA do usuário (+ pessoais/sistema
+    com empresa nula). Sem isso, um usuário membro de 2+ empresas via (e podia
+    marcar como lidas) notificações de OUTRO tenant na sininha — vazamento
+    cross-tenant. ``Notification.empresa`` é populado por todos os emissores.
+    """
+    empresa = getattr(request, "empresa", None)
+    return (
+        Notification.objects.filter(user=request.user)
+        .filter(Q(empresa=empresa) | Q(empresa__isnull=True))
+    )
+
+
 @_login_required
 class NotificationListView(View):
     """Lista todas as notificações do user (paginada).
@@ -38,11 +54,7 @@ class NotificationListView(View):
 
     def get(self, request):
         from django.core.paginator import Paginator
-        qs = (
-            Notification.objects
-            .filter(user=request.user)
-            .order_by("-created_at")
-        )
+        qs = _scoped_notifications(request).order_by("-created_at")
         if request.GET.get("unread_only") == "1":
             qs = qs.filter(read_at__isnull=True)
         paginator = Paginator(qs, self.PAGE_SIZE)
@@ -53,8 +65,8 @@ class NotificationListView(View):
             page_number = 1
         page = paginator.get_page(page_number)
 
-        unread_count = Notification.objects.filter(
-            user=request.user, read_at__isnull=True,
+        unread_count = _scoped_notifications(request).filter(
+            read_at__isnull=True,
         ).count()
 
         return render(request, "communications/notifications_list.html", {
@@ -73,12 +85,10 @@ class NotificationDropdownView(View):
 
     def get(self, request):
         notifications = list(
-            Notification.objects
-            .filter(user=request.user)
-            .order_by("-created_at")[: self.LIMIT]
+            _scoped_notifications(request).order_by("-created_at")[: self.LIMIT]
         )
-        unread_count = Notification.objects.filter(
-            user=request.user, read_at__isnull=True,
+        unread_count = _scoped_notifications(request).filter(
+            read_at__isnull=True,
         ).count()
         return render(request, "communications/partials/_notification_dropdown.html", {
             "notifications": notifications,
@@ -91,7 +101,7 @@ class NotificationMarkReadView(View):
     """POST — marca notificação como lida. Retorna 204."""
 
     def post(self, request, pk: int):
-        n = Notification.objects.filter(pk=pk, user=request.user).first()
+        n = _scoped_notifications(request).filter(pk=pk).first()
         if n is None:
             return HttpResponse(status=404)
         if n.read_at is None:
@@ -109,15 +119,14 @@ class NotificationMarkAllReadView(View):
 
     def post(self, request):
         from django.utils import timezone
-        updated = Notification.objects.filter(
-            user=request.user, read_at__isnull=True,
+        updated = _scoped_notifications(request).filter(
+            read_at__isnull=True,
         ).update(read_at=timezone.now())
 
         if request.htmx:
             # Retorna o dropdown atualizado (badge=0, todas lidas)
             notifications = list(
-                Notification.objects
-                .filter(user=request.user)
+                _scoped_notifications(request)
                 .order_by("-created_at")[: NotificationDropdownView.LIMIT]
             )
             return render(

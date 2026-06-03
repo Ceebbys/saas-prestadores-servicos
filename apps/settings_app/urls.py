@@ -169,6 +169,20 @@ urlpatterns = [
         views.TeamMemberRoleView.as_view(),
         name="team_member_role",
     ),
+    # RV07 (3.1) — Funções/Cargos
+    path("job-roles/", views.JobRoleListView.as_view(), name="job_role_list"),
+    path("job-roles/create/", views.JobRoleCreateView.as_view(), name="job_role_create"),
+    path("job-roles/<int:pk>/edit/", views.JobRoleUpdateView.as_view(), name="job_role_update"),
+    path("job-roles/<int:pk>/delete/", views.JobRoleDeleteView.as_view(), name="job_role_delete"),
+    # RV07 (3.1) — Valores Hora
+    path("hour-rates/", views.HourRateListView.as_view(), name="hour_rate_list"),
+    path("hour-rates/create/", views.HourRateCreateView.as_view(), name="hour_rate_create"),
+    path("hour-rates/<int:pk>/edit/", views.HourRateUpdateView.as_view(), name="hour_rate_update"),
+    path("hour-rates/<int:pk>/delete/", views.HourRateDeleteView.as_view(), name="hour_rate_delete"),
+    # RV07 (6.2) — Follow-up de leads
+    path("followup/", views.FollowUpSettingsView.as_view(), name="followup_settings"),
+    # RV07 (Epic 7 + 6.1) — Integrações (status read-only; groundwork)
+    path("integrations/", views.IntegrationsSettingsView.as_view(), name="integrations"),
     # WhatsApp Config
     path("whatsapp/", views.WhatsAppConfigView.as_view(), name="whatsapp_config"),
     path("whatsapp/save/", views.WhatsAppConfigSaveView.as_view(), name="whatsapp_config_save"),

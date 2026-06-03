@@ -82,9 +82,10 @@ class ContactCreateView(EmpresaMixin, HtmxResponseMixin, CreateView):
         form.validate_unique_for_empresa(self.request.empresa)
         if form.errors:
             return self.form_invalid(form)
-        contato = form.save(commit=False)
-        contato.empresa = self.request.empresa
-        contato.save()
+        # RV07 — empresa setada no instance ANTES do save() para que o form
+        # sincronize os telefones (ContatoTelefone) na mesma transação.
+        form.instance.empresa = self.request.empresa
+        contato = form.save()
         messages.success(self.request, "Contato criado com sucesso.")
         return redirect("contacts:detail", pk=contato.pk)
 

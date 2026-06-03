@@ -224,6 +224,26 @@ class SaveInstallmentsTests(TestCase):
         for e in entries:
             self.assertFalse(e.auto_generated)
 
+    def test_paid_status_marks_only_first_parcela(self):
+        """Pente fino: status=Pago marca SÓ a 1ª parcela; as demais ficam
+        pendentes — senão as parcelas futuras contariam como já recebidas
+        (receita inflada)."""
+        form = FinancialEntryForm(
+            data=_form_data(
+                amount="1500.00", status="paid", paid_date="2026-05-29",
+                is_installment="on", installment_count="3",
+            ),
+            empresa=self.empresa,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        entries = form.save_installments(self.empresa)
+        self.assertEqual(len(entries), 3)
+        self.assertEqual(entries[0].status, "paid")
+        self.assertIsNotNone(entries[0].paid_date)
+        self.assertEqual(entries[1].status, "pending")
+        self.assertEqual(entries[2].status, "pending")
+        self.assertIsNone(entries[1].paid_date)
+
 
 class EntryCreateViewInstallmentTests(TestCase):
     """E2E: POST no /finance/entries/create/ com is_installment cria N entries."""
@@ -270,16 +290,23 @@ class EntryCreateViewInstallmentTests(TestCase):
         self.assertContains(response, "is_installment")
         self.assertContains(response, "Pagamento parcelado")
 
-    def test_get_update_form_hides_installment_fields(self):
-        """Edição NÃO mostra campos de parcelamento."""
-        entry = FinancialEntry.objects.create(
-            empresa=self.empresa, type="income",
-            description="Teste", amount=Decimal("100"),
-            date=_date(2026, 5, 1), status="pending",
+    def test_update_form_shows_installment_for_pending_hides_for_paid(self):
+        """RV07 — Na edição, parcelamento aparece para lançamentos
+        pendentes/vencidos (permite DIVIDIR o lançamento em N parcelas, dando
+        aos automáticos a mesma opção dos manuais), mas fica oculto para
+        pagos/cancelados (não faz sentido parcelar o que já foi pago)."""
+        pending = FinancialEntry.objects.create(
+            empresa=self.empresa, type="income", description="Pendente",
+            amount=Decimal("100"), date=_date(2026, 5, 1), status="pending",
         )
-        response = self.client.get(
-            reverse("finance:entry_update", args=[entry.pk]),
+        resp = self.client.get(reverse("finance:entry_update", args=[pending.pk]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'name="is_installment"')
+
+        paid = FinancialEntry.objects.create(
+            empresa=self.empresa, type="income", description="Pago",
+            amount=Decimal("100"), date=_date(2026, 5, 1), status="paid",
         )
-        self.assertEqual(response.status_code, 200)
-        # Campo de checkbox de parcelamento NÃO renderiza em edição
-        self.assertNotContains(response, 'name="is_installment"')
+        resp_paid = self.client.get(reverse("finance:entry_update", args=[paid.pk]))
+        self.assertEqual(resp_paid.status_code, 200)
+        self.assertNotContains(resp_paid, 'name="is_installment"')

@@ -1,10 +1,11 @@
 import calendar as cal_module
 from datetime import date
+from decimal import Decimal
 
 from django.contrib import messages
 from django.db.models import Q
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse_lazy
 from django.utils import timezone
@@ -20,8 +21,57 @@ from django.views.generic import (
 
 from apps.core.mixins import EmpresaMixin, HtmxResponseMixin
 
-from .forms import ServiceTypeForm, WorkOrderForm
-from .models import ServiceType, Team, WorkOrder, WorkOrderChecklist
+from .forms import ServiceTypeForm, WorkOrderForm, WorkOrderTimeLogForm
+from .models import (
+    ServiceType,
+    Team,
+    WorkOrder,
+    WorkOrderChecklist,
+    WorkOrderTimeLog,
+)
+
+
+# ---------------------------------------------------------------------------
+# Time tracker helpers (RV07 3.1)
+# ---------------------------------------------------------------------------
+
+
+def _format_hm(seconds: int) -> str:
+    """Segundos → 'Hh MMmin' (ex.: 9000 → '2h 30min')."""
+    seconds = int(seconds or 0)
+    h, rem = divmod(seconds, 3600)
+    m = rem // 60
+    return f"{h}h {m:02d}min"
+
+
+def time_section_context(work_order, user):
+    """Contexto consistente da seção 'Tempo / Horas' da OS — usado pela
+    DetailView e pelas ações de cronômetro/manual (HTMX)."""
+    logs = list(work_order.time_logs.select_related("user").all())
+    total_seconds = sum(log.live_duration_seconds for log in logs)
+    billable_total = sum((log.billable_value for log in logs), Decimal("0.00"))
+    user_id = getattr(user, "id", None)
+    running = next(
+        (log for log in logs if log.is_running and log.user_id == user_id), None,
+    )
+    return {
+        "work_order": work_order,
+        "time_logs": logs,
+        "time_total_seconds": total_seconds,
+        "time_total_display": _format_hm(total_seconds),
+        "time_billable_total": billable_total,
+        "running_log": running,
+        "running_started_ts": int(running.started_at.timestamp()) if running else 0,
+        "time_no_rate": bool(logs) and not any(log.rate_source for log in logs),
+    }
+
+
+def _render_time_section(request, work_order):
+    return render_to_string(
+        "operations/partials/_time_section.html",
+        time_section_context(work_order, request.user),
+        request=request,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +134,7 @@ class WorkOrderDetailView(EmpresaMixin, DetailView):
             super()
             .get_queryset()
             .select_related("lead", "proposal", "contract", "service_type", "assigned_to", "assigned_team")
-            .prefetch_related("checklist_items")
+            .prefetch_related("checklist_items", "time_logs__user")
         )
 
     def get_context_data(self, **kwargs):
@@ -95,6 +145,8 @@ class WorkOrderDetailView(EmpresaMixin, DetailView):
         context["checklist_total"] = total
         context["checklist_completed"] = completed
         context["checklist_pct"] = int((completed / total) * 100) if total else 0
+        # RV07 (3.1) — seção de Tempo / Horas
+        context.update(time_section_context(self.object, self.request.user))
         return context
 
 
@@ -169,6 +221,15 @@ class WorkOrderCreateView(EmpresaMixin, HtmxResponseMixin, CreateView):
     def form_valid(self, form):
         response = super().form_valid(form)
         messages.success(self.request, "Ordem de serviço criada com sucesso.")
+        # EPIC 7 hook (groundwork — deferido): criar pasta do projeto no
+        # armazenamento em nuvem conectado (Google Drive / OneDrive) e anexar
+        # o link em self.object.cloud_storage_links. No-op até haver provedor
+        # conectado (apps.integrations.services.create_workorder_folder).
+        # from apps.integrations.services import create_workorder_folder
+        # result = create_workorder_folder(self.object)
+        # if result.get("integration_ready") and result.get("share_url"):
+        #     self.object.cloud_storage_links.append(result["share_url"])
+        #     self.object.save(update_fields=["cloud_storage_links", "updated_at"])
         return response
 
 
@@ -245,6 +306,15 @@ class WorkOrderStatusView(EmpresaMixin, View):
                 work_order.completed_at = now
             work_order.save()
             messages.success(request, "Status da OS atualizado.")
+            # RV07 (6.2) — notifica serviço iniciado/concluído
+            from apps.communications.notifications_events import (
+                notify_service_completed,
+                notify_service_started,
+            )
+            if new_status == WorkOrder.Status.IN_PROGRESS:
+                notify_service_started(work_order)
+            elif new_status == WorkOrder.Status.COMPLETED:
+                notify_service_completed(work_order)
         else:
             messages.error(request, "Transição de status inválida.")
 
@@ -281,6 +351,159 @@ class WorkOrderChecklistToggleView(EmpresaMixin, View):
             return HttpResponse(html)
 
         return HttpResponse(status=204)
+
+
+# ---------------------------------------------------------------------------
+# Time tracker views (RV07 3.1)
+# ---------------------------------------------------------------------------
+
+
+class WorkOrderTimerStartView(EmpresaMixin, View):
+    """Inicia o cronômetro da OS para o usuário atual (idempotente)."""
+
+    def post(self, request, wo_pk):
+        from django.db import IntegrityError, transaction
+
+        work_order = get_object_or_404(WorkOrder, pk=wo_pk, empresa=request.empresa)
+        try:
+            with transaction.atomic():
+                WorkOrderTimeLog.objects.get_or_create(
+                    work_order=work_order,
+                    user=request.user,
+                    ended_at__isnull=True,
+                    defaults={
+                        "started_at": timezone.now(),
+                        "source": WorkOrderTimeLog.Source.TIMER,
+                        "is_billable": True,
+                    },
+                )
+        except IntegrityError:
+            pass  # corrida: já existe um cronômetro rodando — segue idempotente
+
+        # Auto-avança para "Em andamento" (estilo ClickUp), só de etapas
+        # iniciais e nunca de OS concluída/cancelada.
+        if work_order.status in (
+            WorkOrder.Status.PENDING, WorkOrder.Status.SCHEDULED,
+        ):
+            work_order.status = WorkOrder.Status.IN_PROGRESS
+            work_order.save(update_fields=["status", "updated_at"])
+            # Pente fino: iniciar o cronômetro é a forma mais comum de "começar
+            # o serviço" — notifica "Serviço iniciado" igual à mudança manual de
+            # status. Só dispara dentro do if (transição real), sem duplicar.
+            from apps.communications.notifications_events import notify_service_started
+            notify_service_started(work_order)
+
+        if request.htmx:
+            return HttpResponse(_render_time_section(request, work_order))
+        return redirect("operations:work_order_detail", pk=work_order.pk)
+
+
+class WorkOrderTimerStopView(EmpresaMixin, View):
+    """Para o cronômetro em execução (encerra o intervalo) e fixa a tarifa."""
+
+    def post(self, request, wo_pk, log_pk):
+        from apps.operations.services import resolve_hour_rate
+
+        work_order = get_object_or_404(WorkOrder, pk=wo_pk, empresa=request.empresa)
+        log = get_object_or_404(
+            WorkOrderTimeLog, pk=log_pk, work_order=work_order,
+            ended_at__isnull=True,
+        )
+        log.ended_at = timezone.now()
+        log.recompute_duration()
+        log.rate_applied, log.rate_source = resolve_hour_rate(
+            work_order.empresa, log.user,
+        )
+        log.save()
+
+        if request.htmx:
+            return HttpResponse(_render_time_section(request, work_order))
+        return redirect("operations:work_order_detail", pk=work_order.pk)
+
+
+class WorkOrderTimeLogCreateView(EmpresaMixin, View):
+    """Lançamento manual de horas."""
+
+    def get(self, request, wo_pk):
+        work_order = get_object_or_404(WorkOrder, pk=wo_pk, empresa=request.empresa)
+        return render(request, "operations/time_log_form.html", {
+            "work_order": work_order, "form": WorkOrderTimeLogForm(),
+        })
+
+    def post(self, request, wo_pk):
+        from apps.operations.services import resolve_hour_rate
+
+        work_order = get_object_or_404(WorkOrder, pk=wo_pk, empresa=request.empresa)
+        form = WorkOrderTimeLogForm(request.POST)
+        if not form.is_valid():
+            return render(request, "operations/time_log_form.html", {
+                "work_order": work_order, "form": form,
+            })
+        log = form.save(commit=False)
+        log.work_order = work_order
+        log.user = request.user
+        log.source = WorkOrderTimeLog.Source.MANUAL
+        log.recompute_duration()
+        log.rate_applied, log.rate_source = resolve_hour_rate(
+            work_order.empresa, log.user,
+        )
+        log.save()
+        messages.success(request, "Horas lançadas com sucesso.")
+        return redirect("operations:work_order_detail", pk=work_order.pk)
+
+
+class WorkOrderTimeLogUpdateView(EmpresaMixin, View):
+    """Edita um apontamento (manual ou já encerrado)."""
+
+    def _get_objects(self, request, wo_pk, log_pk):
+        work_order = get_object_or_404(WorkOrder, pk=wo_pk, empresa=request.empresa)
+        log = get_object_or_404(WorkOrderTimeLog, pk=log_pk, work_order=work_order)
+        return work_order, log
+
+    def get(self, request, wo_pk, log_pk):
+        work_order, log = self._get_objects(request, wo_pk, log_pk)
+        return render(request, "operations/time_log_form.html", {
+            "work_order": work_order, "form": WorkOrderTimeLogForm(instance=log),
+            "log": log,
+        })
+
+    def post(self, request, wo_pk, log_pk):
+        from apps.operations.services import resolve_hour_rate
+
+        work_order, log = self._get_objects(request, wo_pk, log_pk)
+        form = WorkOrderTimeLogForm(request.POST, instance=log)
+        if not form.is_valid():
+            return render(request, "operations/time_log_form.html", {
+                "work_order": work_order, "form": form, "log": log,
+            })
+        log = form.save(commit=False)
+        log.recompute_duration()
+        # Pente fino: preserva o snapshot da tarifa (preço histórico). Editar
+        # uma observação/duração NÃO re-precifica pela tarifa atual da empresa
+        # (que pode ter mudado). O valor faturável recalcula via property
+        # (duração × tarifa fixada). Só resolve se ainda não houver tarifa.
+        if log.rate_applied is None:
+            log.rate_applied, log.rate_source = resolve_hour_rate(
+                work_order.empresa, log.user,
+            )
+        log.save()
+        messages.success(request, "Apontamento atualizado.")
+        return redirect("operations:work_order_detail", pk=work_order.pk)
+
+
+class WorkOrderTimeLogDeleteView(EmpresaMixin, View):
+    """Remove um apontamento de horas."""
+
+    http_method_names = ["post"]
+
+    def post(self, request, wo_pk, log_pk):
+        work_order = get_object_or_404(WorkOrder, pk=wo_pk, empresa=request.empresa)
+        log = get_object_or_404(WorkOrderTimeLog, pk=log_pk, work_order=work_order)
+        log.delete()
+        if request.htmx:
+            return HttpResponse(_render_time_section(request, work_order))
+        messages.success(request, "Apontamento removido.")
+        return redirect("operations:work_order_detail", pk=work_order.pk)
 
 
 # ---------------------------------------------------------------------------

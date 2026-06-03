@@ -3,10 +3,35 @@ from django.contrib import admin
 from .models import (
     ChecklistItem,
     ChecklistTemplate,
+    HourRate,
+    JobRole,
     ServiceType,
     WorkOrder,
     WorkOrderChecklist,
+    WorkOrderTimeLog,
 )
+
+
+@admin.register(JobRole)
+class JobRoleAdmin(admin.ModelAdmin):
+    list_display = ("name", "empresa", "is_active")
+    list_filter = ("is_active",)
+    search_fields = ("name",)
+
+
+@admin.register(HourRate)
+class HourRateAdmin(admin.ModelAdmin):
+    list_display = ("scope", "empresa", "user", "job_role", "hourly_value", "is_active")
+    list_filter = ("scope", "is_active")
+
+
+@admin.register(WorkOrderTimeLog)
+class WorkOrderTimeLogAdmin(admin.ModelAdmin):
+    list_display = (
+        "work_order", "user", "source", "started_at", "ended_at",
+        "duration_seconds", "is_billable",
+    )
+    list_filter = ("source", "is_billable")
 
 
 @admin.register(ServiceType)

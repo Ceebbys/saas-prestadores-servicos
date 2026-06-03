@@ -275,3 +275,82 @@ class PipelineAutomationRuleForm(TailwindFormMixin, forms.ModelForm):
                 "A etapa selecionada não pertence ao pipeline escolhido.",
             )
         return cleaned
+
+
+# RV07 (3.1) — Funções/Cargos e Valores Hora (configuração de horas da OS).
+from django.contrib.auth import get_user_model  # noqa: E402
+
+from apps.accounts.models import Membership  # noqa: E402
+from apps.operations.models import HourRate, JobRole  # noqa: E402
+
+
+class JobRoleForm(TailwindFormMixin, forms.ModelForm):
+    class Meta:
+        model = JobRole
+        fields = ["name", "is_active"]
+
+
+class HourRateForm(TailwindFormMixin, forms.ModelForm):
+    class Meta:
+        model = HourRate
+        fields = ["scope", "user", "job_role", "hourly_value", "is_active"]
+
+    def __init__(self, *args, empresa=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._empresa = empresa
+        if empresa:
+            user_model = get_user_model()
+            user_ids = Membership.objects.filter(
+                empresa=empresa, is_active=True,
+            ).values_list("user_id", flat=True)
+            self.fields["user"].queryset = user_model.objects.filter(id__in=user_ids)
+            self.fields["job_role"].queryset = JobRole.objects.filter(
+                empresa=empresa, is_active=True,
+            )
+        self.fields["user"].required = False
+        self.fields["job_role"].required = False
+
+    def clean(self):
+        cleaned = super().clean()
+        scope = cleaned.get("scope")
+        if scope == HourRate.Scope.USER and not cleaned.get("user"):
+            self.add_error("user", "Selecione o responsável.")
+        if scope == HourRate.Scope.JOB_ROLE and not cleaned.get("job_role"):
+            self.add_error("job_role", "Selecione a função/cargo.")
+        if scope == HourRate.Scope.TEAM:
+            cleaned["user"] = None
+            cleaned["job_role"] = None
+        return cleaned
+
+
+# RV07 (6.2) — Follow-up automático de leads.
+from apps.crm.models import FollowUpSettings  # noqa: E402
+
+
+class FollowUpSettingsForm(TailwindFormMixin, forms.ModelForm):
+    class Meta:
+        model = FollowUpSettings
+        fields = [
+            "enabled",
+            "threshold_1_days",
+            "threshold_2_days",
+            "threshold_3_days",
+            "threshold_4_days",
+        ]
+
+    def clean(self):
+        cleaned = super().clean()
+        # Limiares devem ser não-negativos e, quando preenchidos, crescentes.
+        prev = 0
+        for i in range(1, 5):
+            value = cleaned.get(f"threshold_{i}_days")
+            if value in (None, 0):
+                continue
+            if value <= prev:
+                self.add_error(
+                    f"threshold_{i}_days",
+                    "Os limiares devem ser crescentes (1º < 2º < 3º < 4º).",
+                )
+                break
+            prev = value
+        return cleaned

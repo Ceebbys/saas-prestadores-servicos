@@ -7,7 +7,14 @@ from apps.core.forms import TailwindFormMixin
 from apps.crm.models import Lead
 from apps.proposals.models import Proposal
 
-from .models import ServiceType, Team, TeamMember, WorkOrder, WorkOrderChecklist
+from .models import (
+    ServiceType,
+    Team,
+    TeamMember,
+    WorkOrder,
+    WorkOrderChecklist,
+    WorkOrderTimeLog,
+)
 
 
 class WorkOrderForm(TailwindFormMixin, forms.ModelForm):
@@ -349,4 +356,53 @@ class ServiceTypeForm(TailwindFormMixin, forms.ModelForm):
                 "default_stage",
                 "A etapa precisa pertencer ao pipeline selecionado.",
             )
+        return cleaned
+
+
+class WorkOrderTimeLogForm(TailwindFormMixin, forms.ModelForm):
+    """RV07 (3.1) — Lançamento manual de horas: início + fim OU duração."""
+
+    duration_minutes = forms.IntegerField(
+        label="Duração (minutos)", required=False, min_value=1,
+        help_text="Preencha início e fim OU a duração em minutos.",
+    )
+
+    class Meta:
+        model = WorkOrderTimeLog
+        fields = ["started_at", "ended_at", "is_billable", "notes"]
+        widgets = {
+            "started_at": forms.DateTimeInput(
+                attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M",
+            ),
+            "ended_at": forms.DateTimeInput(
+                attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M",
+            ),
+            "notes": forms.TextInput(),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # datetime-local envia "2026-06-01T14:30" — garante o parse.
+        for field_name in ("started_at", "ended_at"):
+            self.fields[field_name].input_formats = [
+                "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
+            ]
+
+    def clean(self):
+        from datetime import timedelta
+
+        cleaned = super().clean()
+        start = cleaned.get("started_at")
+        end = cleaned.get("ended_at")
+        mins = cleaned.get("duration_minutes")
+        if not start:
+            self.add_error("started_at", "Informe o início.")
+            return cleaned
+        if end and end < start:
+            self.add_error("ended_at", "O fim não pode ser anterior ao início.")
+        if not end and not mins:
+            raise forms.ValidationError("Informe o fim OU a duração em minutos.")
+        if not end and mins:
+            cleaned["ended_at"] = start + timedelta(minutes=mins)
+            self.instance.ended_at = cleaned["ended_at"]
         return cleaned

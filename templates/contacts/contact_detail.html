@@ -65,6 +65,21 @@
                     </dd>
                 </div>
                 {% endif %}
+                {% with tels=contato.telefones.all %}
+                {% if tels %}
+                <div>
+                    <dt class="text-xs text-slate-400">Telefones</dt>
+                    <dd class="text-sm text-slate-900 mt-0.5 space-y-0.5">
+                        {% for tel in tels %}
+                        <div class="flex items-center gap-1.5">
+                            <span>{{ tel.numero|phone_format }}</span>
+                            <span class="text-xs text-slate-400">· {{ tel.get_tipo_display }}</span>
+                            {% if tel.is_principal %}<span class="text-xs font-medium text-indigo-600">· principal</span>{% endif %}
+                        </div>
+                        {% endfor %}
+                    </dd>
+                </div>
+                {% else %}
                 {% if contato.phone %}
                 <div>
                     <dt class="text-xs text-slate-400">Telefone</dt>
@@ -77,6 +92,8 @@
                     <dd class="text-sm text-slate-900 mt-0.5">{{ contato.whatsapp|phone_format }}</dd>
                 </div>
                 {% endif %}
+                {% endif %}
+                {% endwith %}
                 {% if contato.email %}
                 <div>
                     <dt class="text-xs text-slate-400">E-mail</dt>

@@ -33,8 +33,10 @@
             {% form_field form.bank_account %}
         </div>
 
-        {# RV10 — Parcelamento (apenas em criação; edição não suporta) #}
-        {% if not form.instance.pk %}
+        {# RV10 — Parcelamento na criação. RV07 — também na edição de
+           lançamentos pendentes/vencidos (divide o existente em N parcelas),
+           dando aos lançamentos automáticos a mesma opção dos manuais. #}
+        {% if not form.instance.pk or form.instance.status == 'pending' or form.instance.status == 'overdue' %}
         <div class="mt-4 pt-4 border-t border-slate-200"
              x-data="{
                 isInstallment: {{ form.is_installment.value|default:'false'|yesno:'true,false' }},
@@ -54,10 +56,15 @@
                        x-model="isInstallment"
                        class="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
                 <div>
-                    <span class="text-sm font-semibold text-slate-800">Pagamento parcelado?</span>
+                    <span class="text-sm font-semibold text-slate-800">{% if form.instance.pk %}Dividir em parcelas?{% else %}Pagamento parcelado?{% endif %}</span>
                     <p class="text-xs text-slate-500 mt-0.5">
+                        {% if form.instance.pk %}
+                        Ao salvar, este lançamento será dividido em N parcelas com
+                        vencimentos escalonados (a 1ª mantém este registro; as demais são criadas).
+                        {% else %}
                         Marque para dividir o valor em várias entradas.
                         Exemplo: R$ 1.500 em 3x gera 3 lançamentos de R$ 500 com vencimentos escalonados.
+                        {% endif %}
                     </p>
                 </div>
             </label>

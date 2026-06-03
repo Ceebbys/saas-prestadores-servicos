@@ -33,7 +33,14 @@ def _resolve_cancel_url(request, default_name: str = "crm:lead_list") -> str:
     return reverse(default_name)
 
 from .forms import LeadContactForm, LeadForm, OpportunityForm
-from .models import Lead, LeadContact, Opportunity, Pipeline, PipelineStage
+from .models import (
+    Lead,
+    LeadChecklist,
+    LeadContact,
+    Opportunity,
+    Pipeline,
+    PipelineStage,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -438,6 +445,34 @@ class LeadContactCreateView(EmpresaMixin, View):
         contact.user = request.user if request.user.is_authenticated else None
         contact.save()
         messages.success(request, "Contato registrado com sucesso.")
+        return redirect("crm:lead_detail", pk=lead.pk)
+
+
+class LeadChecklistToggleView(EmpresaMixin, View):
+    """RV07 (4.1) — Alterna a conclusão de um item de checklist do Lead."""
+
+    def post(self, request, lead_id, item_pk):
+        lead = get_object_or_404(Lead, pk=lead_id, empresa=request.empresa)
+        item = get_object_or_404(LeadChecklist, pk=item_pk, lead=lead)
+
+        if item.is_completed:
+            item.is_completed = False
+            item.completed_at = None
+        else:
+            item.is_completed = True
+            item.completed_at = timezone.now()
+        item.save()
+
+        if request.htmx:
+            from django.http import HttpResponse
+            from django.template.loader import render_to_string
+
+            html = render_to_string(
+                "crm/partials/_lead_checklist_item.html",
+                {"item": item, "lead": lead},
+                request=request,
+            )
+            return HttpResponse(html)
         return redirect("crm:lead_detail", pk=lead.pk)
 
 

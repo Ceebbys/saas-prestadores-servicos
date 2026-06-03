@@ -36,9 +36,10 @@ class FinancialEntryForm(TailwindFormMixin, forms.ModelForm):
     # lançamento. exemplo serviço 1500 de 3 vezes. gera 3 entradas de 500
     # nos lançamentos"
     #
-    # Campos extras não-model que controlam o parcelamento na criação. Em
-    # edição esses campos são ignorados (parcelar já-existente não faz
-    # sentido — o user edita parcela por parcela).
+    # Campos extras não-model que controlam o parcelamento. Na criação geram
+    # N entries (save_installments). Na edição de um lançamento pendente,
+    # dividem o registro existente em N parcelas (split_entry_into_installments,
+    # RV07 — dá aos lançamentos automáticos a mesma opção dos manuais).
     is_installment = forms.BooleanField(
         label="Pagamento parcelado?",
         required=False,
@@ -172,6 +173,16 @@ class FinancialEntryForm(TailwindFormMixin, forms.ModelForm):
                 amount = (total - accumulated) if is_last else per_installment
                 accumulated += amount
                 due_date = base_date + timedelta(days=interval * i)
+                # Pente fino: apenas a 1ª parcela pode herdar o status escolhido
+                # (ex.: Pago). As demais são PENDENTES — senão um lançamento
+                # parcelado marcado como Pago contaria TODAS as parcelas (futuras
+                # inclusive) como já recebidas, inflando a receita.
+                if i == 0:
+                    parcela_status = cleaned.get("status") or FinancialEntry.Status.PENDING
+                    parcela_paid_date = cleaned.get("paid_date")
+                else:
+                    parcela_status = FinancialEntry.Status.PENDING
+                    parcela_paid_date = None
                 entry = FinancialEntry(
                     empresa=empresa,
                     type=cleaned["type"],
@@ -179,8 +190,8 @@ class FinancialEntryForm(TailwindFormMixin, forms.ModelForm):
                     amount=amount,
                     category=cleaned.get("category"),
                     date=due_date,
-                    paid_date=cleaned.get("paid_date") if i == 0 else None,
-                    status=cleaned.get("status") or FinancialEntry.Status.PENDING,
+                    paid_date=parcela_paid_date,
+                    status=parcela_status,
                     bank_account=cleaned.get("bank_account"),
                     related_proposal=cleaned.get("related_proposal"),
                     related_contract=cleaned.get("related_contract"),

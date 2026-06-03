@@ -25,6 +25,51 @@ from .models import BankAccount, FinancialCategory, FinancialEntry
 # Finance Overview
 # ---------------------------------------------------------------------------
 
+# RV07 — Períodos do dashboard financeiro (item 1.3).
+FINANCE_PERIOD_CHOICES = [
+    ("mes_atual", "Mês atual"),
+    ("3m", "Últimos 3 meses"),
+    ("6m", "Últimos 6 meses"),
+    ("12m", "Últimos 12 meses"),
+    ("ano", "Ano atual"),
+    ("tudo", "Todo o período"),
+]
+
+
+def _finance_period_range(period, today):
+    """Retorna (start, end, label) para o filtro de período do dashboard.
+
+    ``start``/``end`` ``None`` => sem limite naquela ponta (todo o período).
+    Os intervalos de N meses são por mês-calendário, incluindo o mês atual.
+    """
+    import calendar
+
+    def _last_day(year, month):
+        return date(year, month, calendar.monthrange(year, month)[1])
+
+    def _add_months(year, month, delta):
+        idx = (year * 12 + (month - 1)) + delta
+        return idx // 12, idx % 12 + 1
+
+    if period == "tudo":
+        return None, None, "Todo o período"
+    if period == "ano":
+        return date(today.year, 1, 1), _last_day(today.year, 12), f"Ano de {today.year}"
+    if period in ("3m", "6m", "12m"):
+        n = int(period[:-1])
+        start_year, start_month = _add_months(today.year, today.month, -(n - 1))
+        return (
+            date(start_year, start_month, 1),
+            _last_day(today.year, today.month),
+            f"Últimos {n} meses",
+        )
+    # default: mês atual
+    return (
+        date(today.year, today.month, 1),
+        _last_day(today.year, today.month),
+        "Mês atual",
+    )
+
 
 class FinanceOverviewView(EmpresaMixin, HtmxResponseMixin, TemplateView):
     template_name = "finance/overview.html"
@@ -35,11 +80,21 @@ class FinanceOverviewView(EmpresaMixin, HtmxResponseMixin, TemplateView):
         today = date.today()
         empresa = self.request.empresa
 
-        month_entries = FinancialEntry.objects.filter(
-            empresa=empresa,
-            date__year=today.year,
-            date__month=today.month,
-        )
+        # RV07 — Filtro de período do dashboard. Cliente pediu: "tem q ter
+        # como filtra para vê o mês q vc quiser e tbm ter a visão de todo o
+        # período e não ir trocando os dados do dashboard". Os cards (receitas/
+        # despesas/saldo/pendentes) passam a respeitar o período; a Previsão de
+        # receita continua consolidada (olha sempre pra frente).
+        period = self.request.GET.get("period", "mes_atual")
+        if period not in {p for p, _ in FINANCE_PERIOD_CHOICES}:
+            period = "mes_atual"
+        period_start, period_end, period_label = _finance_period_range(period, today)
+
+        period_entries = FinancialEntry.objects.filter(empresa=empresa)
+        if period_start:
+            period_entries = period_entries.filter(date__gte=period_start)
+        if period_end:
+            period_entries = period_entries.filter(date__lte=period_end)
 
         # RV10 — Cliente reportou "fiz 3 despesas mas só conta 2". A SOMA
         # estava correta, mas a lista de "Recentes" mostra só top-10 — o
@@ -47,28 +102,28 @@ class FinanceOverviewView(EmpresaMixin, HtmxResponseMixin, TemplateView):
         # PAGO/PENDENTE no card pra reduzir a confusão.
         from django.db.models import Count
 
-        income_paid = month_entries.filter(
+        income_paid = period_entries.filter(
             type=FinancialEntry.Type.INCOME,
             status=FinancialEntry.Status.PAID,
         ).aggregate(total=Sum("amount"), count=Count("id"))
         total_income = income_paid.get("total") or 0
         income_paid_count = income_paid.get("count") or 0
 
-        income_pending = month_entries.filter(
+        income_pending = period_entries.filter(
             type=FinancialEntry.Type.INCOME,
             status=FinancialEntry.Status.PENDING,
         ).aggregate(total=Sum("amount"), count=Count("id"))
         income_pending_total = income_pending.get("total") or 0
         income_pending_count = income_pending.get("count") or 0
 
-        expense_paid = month_entries.filter(
+        expense_paid = period_entries.filter(
             type=FinancialEntry.Type.EXPENSE,
             status=FinancialEntry.Status.PAID,
         ).aggregate(total=Sum("amount"), count=Count("id"))
         total_expense = expense_paid.get("total") or 0
         expense_paid_count = expense_paid.get("count") or 0
 
-        expense_pending = month_entries.filter(
+        expense_pending = period_entries.filter(
             type=FinancialEntry.Type.EXPENSE,
             status=FinancialEntry.Status.PENDING,
         ).aggregate(total=Sum("amount"), count=Count("id"))
@@ -150,6 +205,9 @@ class FinanceOverviewView(EmpresaMixin, HtmxResponseMixin, TemplateView):
                 "overdue_count": overdue_count,
                 "recent_entries": recent_entries,
                 "current_month": today,
+                "current_period": period,
+                "period_label": period_label,
+                "period_choices": FINANCE_PERIOD_CHOICES,
                 "bank_accounts": bank_accounts,
                 "forecast_months": forecast["months"],
                 "forecast_total": forecast["total"],
@@ -426,8 +484,31 @@ class EntryUpdateView(EmpresaMixin, HtmxResponseMixin, UpdateView):
         return kwargs
 
     def form_valid(self, form):
+        # RV07 — Permite parcelar um lançamento já existente na edição,
+        # dando aos lançamentos automáticos (lead ganho) a mesma opção de
+        # parcelamento dos manuais (pedido do PDF, item 1.1). Só divide
+        # quando marcado E o lançamento não está pago (preserva o histórico
+        # de caixa). O save normal grava o valor total; depois dividimos.
         response = super().form_valid(form)
-        messages.success(self.request, "Lançamento atualizado com sucesso.")
+        if (
+            form.cleaned_data.get("is_installment")
+            and self.object.status != FinancialEntry.Status.PAID
+        ):
+            from .services import split_entry_into_installments
+
+            entries = split_entry_into_installments(
+                self.object,
+                count=form.cleaned_data.get("installment_count") or 2,
+                interval_days=form.cleaned_data.get("installment_interval_days") or 30,
+            )
+            messages.success(
+                self.request,
+                f"Lançamento dividido em {len(entries)} parcelas "
+                f"(de {entries[0].date.strftime('%d/%m/%Y')} a "
+                f"{entries[-1].date.strftime('%d/%m/%Y')}).",
+            )
+        else:
+            messages.success(self.request, "Lançamento atualizado com sucesso.")
         return response
 
 

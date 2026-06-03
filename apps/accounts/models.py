@@ -245,6 +245,14 @@ class Membership(TimestampedModel):
         choices=Role.choices,
         default=Role.MEMBER,
     )
+    # RV07 (3.1) — Função/cargo do colaborador na empresa, usado para resolver
+    # o valor-hora por função (HourRate de escopo job_role). FK por string para
+    # evitar ciclo de import accounts <-> operations.
+    job_role = models.ForeignKey(
+        "operations.JobRole",
+        on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="memberships", verbose_name="Função / Cargo",
+    )
     is_active = models.BooleanField("Ativo", default=True)
 
     class Meta:

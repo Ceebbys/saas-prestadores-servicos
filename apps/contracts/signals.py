@@ -66,6 +66,15 @@ def _record_status_change(sender, instance: Contract, created: bool, **kwargs) -
     )
     # RV10 — dispara automação de pipeline para a transição de status
     _dispatch_pipeline_event(instance, created=False, previous=previous)
+    # RV07 (6.2) — notifica contrato enviado/assinado
+    from apps.communications.notifications_events import (
+        notify_contract_sent,
+        notify_contract_signed,
+    )
+    if instance.status == Contract.Status.SENT:
+        notify_contract_sent(instance)
+    elif instance.status == Contract.Status.SIGNED:
+        notify_contract_signed(instance)
 
 
 def _dispatch_pipeline_event(instance: Contract, *, created: bool, previous) -> None:

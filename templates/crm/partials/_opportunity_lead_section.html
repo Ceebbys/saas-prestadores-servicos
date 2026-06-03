@@ -1,0 +1,35 @@
+{% load ui_tags %}
+{# RV07 (5.1) — Seção de Lead da Nova Oportunidade: escolher um lead existente
+   OU criar um novo lead (com contato novo/existente). Incluída dentro do form,
+   que define Alpine x-data com `leadMode` e `contactMode`. Só na criação. #}
+<div class="mb-2 mt-2 rounded-lg border border-slate-200 bg-slate-50 p-4">
+    <p class="text-sm font-semibold text-slate-700 mb-3">Lead</p>
+
+    <div class="flex gap-2 mb-4">
+        <label class="flex-1 cursor-pointer">
+            <input type="radio" name="lead_mode" value="existing" class="sr-only peer"
+                   :checked="leadMode === 'existing'" @change="leadMode = 'existing'">
+            <div class="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-slate-200 peer-checked:border-indigo-500 peer-checked:bg-white peer-checked:shadow-sm transition-colors">
+                {% icon "search" "w-4 h-4 text-indigo-600" %}
+                <span class="text-sm font-medium text-slate-700">Lead existente</span>
+            </div>
+        </label>
+        <label class="flex-1 cursor-pointer">
+            <input type="radio" name="lead_mode" value="new" class="sr-only peer"
+                   :checked="leadMode === 'new'" @change="leadMode = 'new'">
+            <div class="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-slate-200 peer-checked:border-indigo-500 peer-checked:bg-white peer-checked:shadow-sm transition-colors">
+                {% icon "plus" "w-4 h-4 text-indigo-600" %}
+                <span class="text-sm font-medium text-slate-700">Criar novo lead</span>
+            </div>
+        </label>
+    </div>
+
+    <div x-show="leadMode === 'existing'">
+        {% form_field form.lead %}
+    </div>
+
+    <div x-show="leadMode === 'new'" x-cloak>
+        {% include "crm/partials/_contact_picker.html" %}
+        <p class="text-xs text-slate-400 mt-2">O nome do lead será o título da oportunidade acima.</p>
+    </div>
+</div>

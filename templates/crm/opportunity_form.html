@@ -20,12 +20,31 @@
 
 {% block content %}
 <div class="max-w-2xl">
-    <form method="post" class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6">
+    <form method="post" class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6"
+          x-data="{ leadMode: '{{ form.lead_mode.value|default:'existing' }}', contactMode: '{{ form.contact_mode.value|default:'search' }}' }">
         {% csrf_token %}
+
+        {% if form.non_field_errors %}
+        <div class="mb-4 rounded-lg bg-rose-50 border border-rose-200 p-3">
+            {% for error in form.non_field_errors %}
+            <p class="text-sm text-rose-700">{{ error }}</p>
+            {% endfor %}
+        </div>
+        {% endif %}
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
             {% form_field form.title %}
+        </div>
+
+        {% if form.instance.pk %}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
             {% form_field form.lead %}
+        </div>
+        {% else %}
+        {% include "crm/partials/_opportunity_lead_section.html" %}
+        {% endif %}
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
             {% form_field form.pipeline %}
             {% form_field form.current_stage %}
             {% form_field form.value %}

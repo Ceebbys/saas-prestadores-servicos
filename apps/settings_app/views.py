@@ -3,7 +3,7 @@ import logging
 from django.conf import settings as django_settings
 from django.contrib import messages
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse_lazy
 from django.views import View
@@ -18,10 +18,16 @@ from apps.contracts.models import ContractTemplate
 from apps.finance.forms import BankAccountForm, FinancialCategoryForm
 from apps.finance.models import BankAccount, FinancialCategory
 from apps.operations.forms import ServiceTypeForm, TeamForm
-from apps.operations.models import ServiceType, Team, TeamMember
+from apps.operations.models import HourRate, JobRole, ServiceType, Team, TeamMember
 from apps.proposals.models import ProposalTemplate
 
-from .forms import ContractTemplateForm, PipelineStageForm, ProposalTemplateForm
+from .forms import (
+    ContractTemplateForm,
+    HourRateForm,
+    JobRoleForm,
+    PipelineStageForm,
+    ProposalTemplateForm,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +60,13 @@ class SettingsIndexView(EmpresaMixin, TemplateView):
             empresa=empresa
         ).count()
         context["teams_count"] = Team.objects.filter(
+            empresa=empresa
+        ).count()
+        # RV07 (3.1) — Funções/Cargos e Valores Hora
+        context["job_roles_count"] = JobRole.objects.filter(
+            empresa=empresa
+        ).count()
+        context["hour_rates_count"] = HourRate.objects.filter(
             empresa=empresa
         ).count()
         return context
@@ -1575,3 +1588,161 @@ class ChatbotSecretDeleteView(EmpresaMixin, DeleteView):
         secret.delete()
         messages.success(request, f"Segredo '{name}' removido permanentemente.")
         return redirect(self.success_url)
+
+
+# ---------------------------------------------------------------------------
+# RV07 (3.1) — Funções/Cargos
+# ---------------------------------------------------------------------------
+
+
+class JobRoleListView(EmpresaMixin, ListView):
+    model = JobRole
+    template_name = "settings/job_role_list.html"
+    context_object_name = "job_roles"
+    paginate_by = 50
+
+
+class JobRoleCreateView(EmpresaMixin, CreateView):
+    model = JobRole
+    form_class = JobRoleForm
+    template_name = "settings/job_role_form.html"
+    success_url = reverse_lazy("settings_app:job_role_list")
+
+    def form_valid(self, form):
+        messages.success(self.request, "Função/cargo criada com sucesso.")
+        return super().form_valid(form)
+
+
+class JobRoleUpdateView(EmpresaMixin, UpdateView):
+    model = JobRole
+    form_class = JobRoleForm
+    template_name = "settings/job_role_form.html"
+    success_url = reverse_lazy("settings_app:job_role_list")
+
+    def form_valid(self, form):
+        messages.success(self.request, "Função/cargo atualizada com sucesso.")
+        return super().form_valid(form)
+
+
+class JobRoleDeleteView(EmpresaMixin, DeleteView):
+    model = JobRole
+    success_url = reverse_lazy("settings_app:job_role_list")
+    http_method_names = ["post"]
+
+    def post(self, request, *args, **kwargs):
+        messages.success(request, "Função/cargo excluída com sucesso.")
+        return self.delete(request, *args, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# RV07 (3.1) — Valores Hora
+# ---------------------------------------------------------------------------
+
+
+class HourRateListView(EmpresaMixin, ListView):
+    model = HourRate
+    template_name = "settings/hour_rate_list.html"
+    context_object_name = "hour_rates"
+    paginate_by = 50
+
+    def get_queryset(self):
+        return super().get_queryset().select_related("user", "job_role")
+
+
+class _HourRateFormViewMixin:
+    model = HourRate
+    form_class = HourRateForm
+    template_name = "settings/hour_rate_form.html"
+    success_url = reverse_lazy("settings_app:hour_rate_list")
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["empresa"] = self.request.empresa
+        return kwargs
+
+
+class HourRateCreateView(_HourRateFormViewMixin, EmpresaMixin, CreateView):
+    def form_valid(self, form):
+        messages.success(self.request, "Valor hora criado com sucesso.")
+        return super().form_valid(form)
+
+
+class HourRateUpdateView(_HourRateFormViewMixin, EmpresaMixin, UpdateView):
+    def form_valid(self, form):
+        messages.success(self.request, "Valor hora atualizado com sucesso.")
+        return super().form_valid(form)
+
+
+class HourRateDeleteView(EmpresaMixin, DeleteView):
+    model = HourRate
+    success_url = reverse_lazy("settings_app:hour_rate_list")
+    http_method_names = ["post"]
+
+    def post(self, request, *args, **kwargs):
+        messages.success(request, "Valor hora excluído com sucesso.")
+        return self.delete(request, *args, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# RV07 (6.2) — Follow-up automático de leads
+# ---------------------------------------------------------------------------
+
+
+class FollowUpSettingsView(EmpresaMixin, View):
+    """Edita a config de follow-up padrão da empresa (singleton user=None)."""
+
+    def _get_settings(self, request):
+        from apps.crm.models import FollowUpSettings
+
+        obj, _ = FollowUpSettings.objects.get_or_create(
+            empresa=request.empresa, user=None,
+        )
+        return obj
+
+    def get(self, request):
+        from .forms import FollowUpSettingsForm
+
+        obj = self._get_settings(request)
+        return render(request, "settings/followup_settings.html", {
+            "form": FollowUpSettingsForm(instance=obj),
+        })
+
+    def post(self, request):
+        from .forms import FollowUpSettingsForm
+
+        obj = self._get_settings(request)
+        form = FollowUpSettingsForm(request.POST, instance=obj)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Configurações de follow-up salvas.")
+            return redirect("settings_app:followup_settings")
+        return render(request, "settings/followup_settings.html", {"form": form})
+
+
+# ---------------------------------------------------------------------------
+# RV07 (Epic 7 + 6.1) — Integrações (status read-only; groundwork)
+# ---------------------------------------------------------------------------
+
+
+class IntegrationsSettingsView(EmpresaMixin, TemplateView):
+    template_name = "settings/integrations.html"
+
+    def get_context_data(self, **kwargs):
+        from apps.integrations.models import AssistantConfig, IntegrationConnection
+
+        context = super().get_context_data(**kwargs)
+        empresa = self.request.empresa
+        providers = []
+        for value, label in IntegrationConnection.Provider.choices:
+            conn = IntegrationConnection.objects.filter(
+                empresa=empresa, provider=value,
+            ).first()
+            providers.append({
+                "value": value,
+                "label": label,
+                "connected": bool(conn and conn.is_connected),
+                "account_email": conn.account_email if conn else "",
+            })
+        context["providers"] = providers
+        context["assistant"] = AssistantConfig.objects.filter(empresa=empresa).first()
+        return context

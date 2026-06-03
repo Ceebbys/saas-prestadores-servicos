@@ -14,10 +14,17 @@ def notifications_context(request):
     if not user or not user.is_authenticated:
         return {"notifications_unread_count": 0}
     try:
+        from django.db.models import Q
+
         from apps.communications.models import Notification
-        count = Notification.objects.filter(
-            user=user, read_at__isnull=True,
-        ).count()
+        # RV07 (pente fino) — escopo multi-tenant: só conta da empresa ativa
+        # (+ pessoais com empresa nula). Senão o badge soma outros tenants.
+        empresa = getattr(request, "empresa", None)
+        count = (
+            Notification.objects.filter(user=user, read_at__isnull=True)
+            .filter(Q(empresa=empresa) | Q(empresa__isnull=True))
+            .count()
+        )
     except Exception:
         count = 0
     return {"notifications_unread_count": count}

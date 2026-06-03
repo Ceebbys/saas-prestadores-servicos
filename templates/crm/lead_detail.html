@@ -182,6 +182,28 @@
         </div>
         {% endif %}
 
+        <!-- Checklist (RV07 4.1) -->
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                <h3 class="text-sm font-semibold text-slate-700">Checklist</h3>
+                {% with n=lead.checklist_items.count %}
+                {% if n %}<span class="text-xs text-slate-400">{{ n }} {{ n|pluralize:"item,itens" }}</span>{% endif %}
+                {% endwith %}
+            </div>
+            {% if lead.checklist_items.exists %}
+            <ul class="divide-y divide-slate-100">
+                {% for item in lead.checklist_items.all %}
+                <li>{% include "crm/partials/_lead_checklist_item.html" %}</li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="px-5 py-4 text-sm text-slate-400">
+                Nenhum item no checklist.
+                <a href="{% url 'crm:lead_update' lead.pk %}" class="text-indigo-600 hover:underline">Adicionar na edição do lead</a>.
+            </p>
+            {% endif %}
+        </div>
+
         <!-- Related Opportunities -->
         <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
             <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">

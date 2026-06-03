@@ -47,6 +47,32 @@ urlpatterns = [
         views.WorkOrderChecklistToggleView.as_view(),
         name="checklist_toggle",
     ),
+    # Time tracker (RV07 3.1)
+    path(
+        "work-orders/<int:wo_pk>/timer/start/",
+        views.WorkOrderTimerStartView.as_view(),
+        name="timer_start",
+    ),
+    path(
+        "work-orders/<int:wo_pk>/timer/<int:log_pk>/stop/",
+        views.WorkOrderTimerStopView.as_view(),
+        name="timer_stop",
+    ),
+    path(
+        "work-orders/<int:wo_pk>/time-logs/create/",
+        views.WorkOrderTimeLogCreateView.as_view(),
+        name="time_log_create",
+    ),
+    path(
+        "work-orders/<int:wo_pk>/time-logs/<int:log_pk>/edit/",
+        views.WorkOrderTimeLogUpdateView.as_view(),
+        name="time_log_update",
+    ),
+    path(
+        "work-orders/<int:wo_pk>/time-logs/<int:log_pk>/delete/",
+        views.WorkOrderTimeLogDeleteView.as_view(),
+        name="time_log_delete",
+    ),
     # Calendar
     path("calendar/", views.CalendarView.as_view(), name="calendar"),
     # Service Types (settings)

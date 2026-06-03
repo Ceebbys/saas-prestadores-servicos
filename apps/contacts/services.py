@@ -79,6 +79,43 @@ def get_or_create_contato_by_document(
         return contato, True
 
 
+def resolve_contato_from_mode(
+    empresa,
+    *,
+    mode: str,
+    contato: Contato | None = None,
+    new_name: str = "",
+    new_document: str = "",
+    new_phone: str = "",
+    new_email: str = "",
+    source: str = "",
+) -> Contato | None:
+    """RV07 — Resolve/cria o Contato a partir do modo dual (search/new).
+
+    Centraliza a regra usada por LeadForm e OpportunityForm (item 5.1) para
+    não duplicar a criação/vinculação de contato.
+
+    - ``mode == 'new'``: cria (ou reaproveita por documento) um Contato.
+    - qualquer outro modo ('search'): retorna o ``contato`` já selecionado.
+    """
+    if mode != "new":
+        return contato
+    new_doc = (new_document or "").strip()
+    defaults = {
+        "name": (new_name or "").strip(),
+        "phone": (new_phone or "").strip(),
+        "whatsapp": (new_phone or "").strip(),
+        "email": (new_email or "").strip(),
+        "source": source or "",
+    }
+    if new_doc:
+        obj, _ = get_or_create_contato_by_document(
+            empresa, new_doc, defaults=defaults,
+        )
+        return obj
+    return Contato.objects.create(empresa=empresa, **defaults)
+
+
 def get_or_create_contato_for_phone(
     empresa, phone: str, name: str | None = None,
 ) -> tuple[Contato, bool]:

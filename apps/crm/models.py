@@ -385,3 +385,125 @@ class LeadTag(TenantOwnedModel):
 
     def __str__(self):
         return f"#{self.name} → {self.lead.name}"
+
+
+class FollowUpSettings(TenantOwnedModel):
+    """RV07 (6.2) — Configuração dos lembretes de follow-up de leads.
+
+    Linha com ``user=None`` = padrão da empresa; linha com ``user`` = override
+    do usuário. Lembretes são gerados quando um lead fica sem contato por mais
+    de N dias (limiares configuráveis).
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True, on_delete=models.CASCADE,
+        related_name="followup_settings",
+        help_text="NULL = padrão da empresa; preenchido = preferência do usuário.",
+    )
+    enabled = models.BooleanField("Ativo", default=True)
+    threshold_1_days = models.PositiveIntegerField("1º lembrete (dias)", default=7)
+    threshold_2_days = models.PositiveIntegerField("2º lembrete (dias)", default=14)
+    threshold_3_days = models.PositiveIntegerField("3º lembrete (dias)", default=30)
+    threshold_4_days = models.PositiveIntegerField("4º lembrete (dias)", default=90)
+
+    class Meta:
+        verbose_name = "Configuração de Follow-up"
+        verbose_name_plural = "Configurações de Follow-up"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["empresa", "user"],
+                name="uniq_followup_settings_empresa_user",
+            ),
+            models.UniqueConstraint(
+                fields=["empresa"], condition=models.Q(user__isnull=True),
+                name="uniq_followup_empresa_default",
+            ),
+        ]
+
+    def thresholds(self):
+        """Limiares positivos, únicos e ordenados (asc)."""
+        vals = {
+            self.threshold_1_days, self.threshold_2_days,
+            self.threshold_3_days, self.threshold_4_days,
+        }
+        return sorted(d for d in vals if d and d > 0)
+
+    def __str__(self):
+        alvo = "empresa" if not self.user_id else f"user {self.user_id}"
+        return f"Follow-up {self.empresa_id} ({alvo})"
+
+
+class LeadFollowUpReminder(TenantOwnedModel):
+    """RV07 (6.2) — Marcador de idempotência de follow-up.
+
+    Um lembrete por ``(lead, threshold_days, last_contact_at)``: incluir a base
+    de último contato na chave faz o ciclo reiniciar quando há um novo contato
+    (a base avança → o mesmo limiar pode disparar de novo no próximo ciclo).
+    """
+
+    lead = models.ForeignKey(
+        Lead, on_delete=models.CASCADE, related_name="followup_reminders",
+    )
+    threshold_days = models.PositiveIntegerField()
+    last_contact_at = models.DateTimeField()
+    notified_at = models.DateTimeField(default=timezone.now)
+    notification = models.ForeignKey(
+        "communications.Notification",
+        null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+    )
+
+    class Meta:
+        verbose_name = "Lembrete de Follow-up"
+        verbose_name_plural = "Lembretes de Follow-up"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["lead", "threshold_days", "last_contact_at"],
+                name="uniq_followup_lead_threshold_basis",
+            ),
+        ]
+        indexes = [models.Index(fields=["empresa", "lead"])]
+
+
+def get_effective_followup_settings(empresa, user=None):
+    """RV07 (6.2) — Resolve a config de follow-up: override do usuário se
+    existir e estiver habilitado, senão o padrão da empresa, senão um default
+    em memória (o recurso funciona antes de qualquer config salva)."""
+    if user is not None:
+        per_user = FollowUpSettings.objects.filter(empresa=empresa, user=user).first()
+        if per_user is not None:
+            return per_user
+    default = FollowUpSettings.objects.filter(
+        empresa=empresa, user__isnull=True,
+    ).first()
+    if default is not None:
+        return default
+    return FollowUpSettings(empresa=empresa, user=None)
+
+
+class LeadChecklist(TimestampedModel):
+    """RV07 (4.1) — Item de checklist de um Lead.
+
+    Usado sobretudo no pós-venda / execução do serviço (ex.: "Levantamento
+    realizado", "Memorial concluído", "Revisão técnica", "Entrega ao cliente").
+    Mesmo padrão do WorkOrderChecklist — alcança o tenant via ``lead.empresa``.
+    """
+
+    lead = models.ForeignKey(
+        Lead,
+        on_delete=models.CASCADE,
+        related_name="checklist_items",
+        verbose_name="Lead",
+    )
+    description = models.CharField("Descrição", max_length=500)
+    is_completed = models.BooleanField("Concluído", default=False)
+    completed_at = models.DateTimeField("Concluído em", null=True, blank=True)
+    order = models.PositiveIntegerField("Ordem", default=0)
+
+    class Meta:
+        verbose_name = "Item do Checklist do Lead"
+        verbose_name_plural = "Itens do Checklist do Lead"
+        ordering = ["order"]
+
+    def __str__(self):
+        return self.description

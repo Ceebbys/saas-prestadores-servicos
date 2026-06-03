@@ -1,0 +1,52 @@
+{% extends "layouts/authenticated.html" %}
+{% load ui_tags %}
+
+{% block title %}{% if form.instance.pk %}Editar{% else %}Novo{% endif %} Valor Hora — Configurações — ServiçoPro{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm text-slate-500 mb-4">
+    <a href="{% url 'settings_app:index' %}" class="hover:text-indigo-600">Configurações</a>
+    {% icon "chevron-right" "w-3 h-3" %}
+    <a href="{% url 'settings_app:hour_rate_list' %}" class="hover:text-indigo-600">Valores Hora</a>
+    {% icon "chevron-right" "w-3 h-3" %}
+    <span class="text-slate-900 font-medium">{% if form.instance.pk %}Editar{% else %}Novo{% endif %}</span>
+</nav>
+{% endblock %}
+
+{% block page_header %}
+<div class="mb-6">
+    <h1 class="text-2xl font-bold text-slate-900">{% if form.instance.pk %}Editar Valor Hora{% else %}Novo Valor Hora{% endif %}</h1>
+    <p class="mt-1 text-sm text-slate-500">Defina o valor para a equipe (padrão), um responsável específico ou uma função.</p>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-lg">
+    <form method="post" class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6"
+          x-data="{ scope: '{{ form.scope.value|default:'team' }}' }">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+        <div class="mb-4 rounded-lg bg-rose-50 border border-rose-200 p-3">
+            {% for error in form.non_field_errors %}<p class="text-sm text-rose-700">{{ error }}</p>{% endfor %}
+        </div>
+        {% endif %}
+
+        <div @change="scope = $event.target.value">
+            {% form_field form.scope %}
+        </div>
+        <div x-show="scope === 'user'" x-cloak>
+            {% form_field form.user %}
+        </div>
+        <div x-show="scope === 'job_role'" x-cloak>
+            {% form_field form.job_role %}
+        </div>
+        {% form_field form.hourly_value %}
+        {% form_field form.is_active %}
+
+        <div class="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
+            <a href="{% url 'settings_app:hour_rate_list' %}" class="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">Cancelar</a>
+            <button type="submit" class="px-6 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">Salvar</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

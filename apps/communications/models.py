@@ -315,6 +315,13 @@ class Notification(TimestampedModel):
         LEAD_WON = "lead_won", "Lead ganho"  # RV06
         PROPOSAL_ACCEPTED = "proposal_accepted", "Proposta aceita"
         CONTRACT_SIGNED = "contract_signed", "Contrato assinado"
+        # RV07 (6.2) — eventos de pipeline/operacional + follow-up
+        PROPOSAL_SENT = "proposal_sent", "Proposta enviada"
+        CONTRACT_SENT = "contract_sent", "Contrato enviado"
+        LEAD_MOVED = "lead_moved", "Lead movimentado"
+        SERVICE_STARTED = "service_started", "Serviço iniciado"
+        SERVICE_COMPLETED = "service_completed", "Serviço concluído"
+        LEAD_FOLLOWUP = "lead_followup", "Follow-up de lead pendente"
         SYSTEM = "system", "Sistema"
 
     user = models.ForeignKey(

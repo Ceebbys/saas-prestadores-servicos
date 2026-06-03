@@ -27,6 +27,11 @@ urlpatterns = [
         views.LeadContactCardView.as_view(),
         name="lead_contact_card",
     ),
+    path(
+        "leads/<int:lead_id>/checklist/<int:item_pk>/toggle/",
+        views.LeadChecklistToggleView.as_view(),
+        name="lead_checklist_toggle",
+    ),
     # Pipeline
     path("pipeline/", views.PipelineBoardView.as_view(), name="pipeline_board"),
     # RV06 — Configurar etapas (CRUD + flags ganho/perda)

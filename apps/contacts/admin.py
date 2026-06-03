@@ -1,10 +1,17 @@
 from django.contrib import admin
 
-from .models import Contato
+from .models import Contato, ContatoTelefone
+
+
+class ContatoTelefoneInline(admin.TabularInline):
+    model = ContatoTelefone
+    extra = 0
+    fields = ("tipo", "numero", "is_principal", "order")
 
 
 @admin.register(Contato)
 class ContatoAdmin(admin.ModelAdmin):
+    inlines = [ContatoTelefoneInline]
     list_display = (
         "name", "cpf_cnpj", "phone", "email", "company",
         "source", "is_active", "empresa", "created_at",

@@ -11,7 +11,7 @@ from __future__ import annotations
 from django.db import models
 from django.db.models import Index, Q, UniqueConstraint
 
-from apps.core.models import TenantOwnedModel
+from apps.core.models import TenantOwnedModel, TimestampedModel
 from apps.core.validators import normalize_document, validate_cpf_or_cnpj
 
 
@@ -92,3 +92,42 @@ class Contato(TenantOwnedModel):
     @property
     def whatsapp_or_phone(self) -> str:
         return self.whatsapp or self.phone
+
+
+class ContatoTelefone(TimestampedModel):
+    """RV07 (4.2) — Telefone adicional de um Contato.
+
+    Permite múltiplos números por contato (celular, WhatsApp, comercial...).
+    Os campos ``phone``/``whatsapp`` do Contato continuam existindo como
+    "principais" denormalizados (sincronizados a partir daqui) para manter a
+    compatibilidade com busca, autocomplete e o property ``whatsapp_or_phone``.
+    Alcança o tenant via ``contato.empresa`` (mesmo padrão do WorkOrderChecklist).
+    """
+
+    class Tipo(models.TextChoices):
+        CELULAR = "celular", "Celular"
+        WHATSAPP = "whatsapp", "WhatsApp"
+        COMERCIAL = "comercial", "Comercial"
+        FIXO = "fixo", "Fixo"
+        OUTRO = "outro", "Outro"
+
+    contato = models.ForeignKey(
+        Contato,
+        on_delete=models.CASCADE,
+        related_name="telefones",
+        verbose_name="Contato",
+    )
+    tipo = models.CharField(
+        "Tipo", max_length=20, choices=Tipo.choices, default=Tipo.CELULAR,
+    )
+    numero = models.CharField("Número", max_length=20)
+    is_principal = models.BooleanField("Principal", default=False)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "Telefone do contato"
+        verbose_name_plural = "Telefones do contato"
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return f"{self.get_tipo_display()}: {self.numero}"

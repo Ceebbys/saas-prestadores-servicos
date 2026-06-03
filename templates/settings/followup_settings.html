@@ -1,0 +1,49 @@
+{% extends "layouts/authenticated.html" %}
+{% load ui_tags %}
+
+{% block title %}Follow-up de Leads — Configurações — ServiçoPro{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm text-slate-500 mb-4">
+    <a href="{% url 'settings_app:index' %}" class="hover:text-indigo-600">Configurações</a>
+    {% icon "chevron-right" "w-3 h-3" %}
+    <span class="text-slate-900 font-medium">Follow-up de Leads</span>
+</nav>
+{% endblock %}
+
+{% block page_header %}
+<div class="mb-6">
+    <h1 class="text-2xl font-bold text-slate-900">Follow-up automático de Leads</h1>
+    <p class="mt-1 text-sm text-slate-500">Gere lembretes para retomar o contato com leads parados antes de descartá-los.</p>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-lg">
+    <form method="post" class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+        <div class="mb-4 rounded-lg bg-rose-50 border border-rose-200 p-3">
+            {% for error in form.non_field_errors %}<p class="text-sm text-rose-700">{{ error }}</p>{% endfor %}
+        </div>
+        {% endif %}
+
+        {% form_field form.enabled %}
+        <p class="text-xs text-slate-500 mb-4 -mt-2">
+            Quando um lead fica sem nenhum contato pelo número de dias abaixo, o sistema notifica o responsável.
+            Deixe um limiar em 0 para desativá-lo.
+        </p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+            {% form_field form.threshold_1_days %}
+            {% form_field form.threshold_2_days %}
+            {% form_field form.threshold_3_days %}
+            {% form_field form.threshold_4_days %}
+        </div>
+
+        <div class="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
+            <a href="{% url 'settings_app:index' %}" class="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">Cancelar</a>
+            <button type="submit" class="px-6 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">Salvar</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

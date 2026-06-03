@@ -56,5 +56,19 @@ def _proposal_post_save(sender, instance, created, **kwargs):
 
         transaction.on_commit(_run)
 
+    # RV07 (6.2) — notifica proposta enviada/aceita (transições de status).
+    if not created:
+        old = getattr(instance, _ORIGINAL_STATUS_ATTR, None)
+        new = instance.status
+        if old != new:
+            from apps.communications.notifications_events import (
+                notify_proposal_accepted,
+                notify_proposal_sent,
+            )
+            if new == Proposal.Status.SENT:
+                notify_proposal_sent(instance)
+            elif new == Proposal.Status.ACCEPTED:
+                notify_proposal_accepted(instance)
+
     # Atualiza estado memorizado para refletir o pós-save.
     setattr(instance, _ORIGINAL_STATUS_ATTR, instance.status)
