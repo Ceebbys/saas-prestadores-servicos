@@ -164,6 +164,23 @@
         </div>
     </a>
 
+    <!-- Notificações (RV07 6.2) -->
+    <a href="{% url 'settings_app:notification_settings' %}"
+       class="group bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6 hover:shadow-md hover:ring-indigo-200 transition-all duration-200">
+        <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 w-11 h-11 rounded-lg bg-indigo-50 flex items-center justify-center group-hover:bg-indigo-100 transition-colors">
+                {% icon "bell" "w-5 h-5 text-indigo-600" %}
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">Notificações</h3>
+                    {% icon "chevron-right" "w-4 h-4 text-slate-300 group-hover:text-indigo-400 transition-colors" %}
+                </div>
+                <p class="mt-1 text-sm text-slate-500">O que avisar, e liga/desliga do e-mail diário e do push no navegador</p>
+            </div>
+        </div>
+    </a>
+
     <!-- Follow-up de Leads (RV07 6.2) -->
     <a href="{% url 'settings_app:followup_settings' %}"
        class="group bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6 hover:shadow-md hover:ring-indigo-200 transition-all duration-200">

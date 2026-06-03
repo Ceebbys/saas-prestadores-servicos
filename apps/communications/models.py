@@ -487,3 +487,58 @@ class PushSubscription(TimestampedModel):
 
     def __str__(self):
         return f"Push subscription #{self.pk} → user {self.user_id}"
+
+
+class NotificationPreference(TimestampedModel):
+    """RV07 (6.2) — Preferências de notificação por usuário.
+
+    Modelo *opt-out*: por padrão tudo ligado. ``muted_types`` guarda os
+    ``Notification.Type`` que o usuário escolheu NÃO receber (suprime a
+    notificação in-app, o push e — por tabela — o resumo por e-mail, já que
+    tipos silenciados nem chegam a virar linha de ``Notification``).
+    ``email_digest`` e ``web_push`` são as chaves-mestras de cada canal.
+
+    Um usuário SEM registro equivale a "tudo ligado" — assim a feature não
+    muda o comportamento de quem nunca abriu a tela de preferências.
+    """
+
+    # Tipos que nunca podem ser silenciados (mensagens de sistema/segurança).
+    ALWAYS_ON = frozenset({Notification.Type.SYSTEM})
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notification_preference",
+        verbose_name="Usuário",
+    )
+    email_digest = models.BooleanField(
+        "Resumo diário por e-mail", default=True,
+        help_text="Receber um e-mail diário com as notificações não lidas.",
+    )
+    web_push = models.BooleanField(
+        "Notificações no navegador", default=True,
+        help_text="Receber notificações push no navegador, mesmo com a aba fechada.",
+    )
+    muted_types = models.JSONField(
+        "Tipos silenciados", default=list, blank=True,
+        help_text="Tipos de evento que o usuário optou por não receber.",
+    )
+
+    class Meta:
+        verbose_name = "Preferência de notificação"
+        verbose_name_plural = "Preferências de notificação"
+
+    def __str__(self):
+        return f"Preferências de notificação → user {self.user_id}"
+
+    def is_muted(self, type) -> bool:
+        """True se o usuário silenciou esse tipo. Tipos ALWAYS_ON nunca são.
+
+        Normaliza para ``str`` porque ``type`` pode chegar como membro de
+        ``Notification.Type`` (enum) ou string crua, e a comparação por hash
+        em set/frozenset não é confiável entre os dois.
+        """
+        value = str(type)
+        if value in {str(t) for t in self.ALWAYS_ON}:
+            return False
+        return value in {str(x) for x in (self.muted_types or [])}

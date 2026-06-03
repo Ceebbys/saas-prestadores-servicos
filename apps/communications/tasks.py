@@ -67,7 +67,22 @@ def send_daily_digest() -> dict:
     )
 
     from apps.accounts.models import User
-    users = User.objects.filter(pk__in=list(user_ids), is_active=True).exclude(email="")
+    user_ids = list(user_ids)
+
+    # RV07 (6.2) — respeita a preferência "resumo diário por e-mail" (opt-out).
+    # Usuários sem registro de preferência continuam recebendo (default ligado).
+    from apps.communications.models import NotificationPreference
+    opted_out = set(
+        NotificationPreference.objects.filter(
+            user_id__in=user_ids, email_digest=False,
+        ).values_list("user_id", flat=True)
+    )
+
+    users = (
+        User.objects.filter(pk__in=user_ids, is_active=True)
+        .exclude(email="")
+        .exclude(pk__in=opted_out)
+    )
     for user in users:
         try:
             notifs = list(

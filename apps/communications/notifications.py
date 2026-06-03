@@ -15,13 +15,26 @@ from typing import TYPE_CHECKING
 
 from asgiref.sync import async_to_sync
 
-from apps.communications.models import Notification
+from apps.communications.models import Notification, NotificationPreference
 
 if TYPE_CHECKING:
     from apps.accounts.models import Empresa, User
     from apps.communications.models import Conversation, ConversationMessage
 
 logger = logging.getLogger(__name__)
+
+
+def _get_preference(user):
+    """RV07 (6.2) — Retorna a NotificationPreference do usuário, ou None.
+
+    None significa "sem preferências salvas" = tudo ligado (default). Mantém
+    o comportamento anterior à feature para quem nunca abriu a tela.
+    """
+    try:
+        return NotificationPreference.objects.filter(user=user).first()
+    except Exception:  # noqa: BLE001 — DB indisponível não deve quebrar o notify
+        logger.exception("notification_preference_lookup_failed user_id=%s", getattr(user, "pk", None))
+        return None
 
 
 def notify(
@@ -35,8 +48,12 @@ def notify(
     empresa=None,
     payload: dict | None = None,
     push: bool = True,
-) -> Notification:
+) -> Notification | None:
     """Cria notificação na DB + broadcast WS + Web Push (best-effort).
+
+    RV07 (6.2): respeita as preferências do usuário (opt-out). Se o usuário
+    silenciou esse ``type``, NADA é criado e retorna ``None``. O Web Push é
+    adicionalmente condicionado a ``preference.web_push``.
 
     Args:
         user: instância do User destinatário
@@ -50,8 +67,13 @@ def notify(
         push: se True, tenta Web Push para subscriptions ativas
 
     Returns:
-        Notification persistida
+        Notification persistida, ou None se o usuário silenciou o tipo.
     """
+    # RV07 (6.2) — uma única consulta de preferência por destinatário.
+    pref = _get_preference(user)
+    if pref is not None and pref.is_muted(type):
+        return None
+
     if empresa is None:
         empresa = getattr(user, "active_empresa", None)
 
@@ -69,8 +91,9 @@ def notify(
     # Broadcast WS
     _broadcast_ws(notif)
 
-    # Web Push (best-effort, não bloqueia o fluxo se falhar)
-    if push:
+    # Web Push (best-effort, não bloqueia o fluxo se falhar). Respeita o
+    # canal web_push das preferências (default ligado quando não há registro).
+    if push and (pref is None or pref.web_push):
         try:
             _send_web_push(notif)
         except Exception:  # noqa: BLE001
@@ -209,7 +232,9 @@ def notify_new_message(conversation, message) -> list:
     assigned = conversation.assigned_to
     if assigned is not None:
         # Caminho 1: notifica apenas o atribuído
-        created.append(notify(assigned, **common_kwargs))
+        n = notify(assigned, **common_kwargs)
+        if n is not None:  # pode ser None se o usuário silenciou o tipo
+            created.append(n)
     else:
         # Caminho 2: broadcast aos decisores da empresa
         from apps.accounts.models import Membership
@@ -231,7 +256,9 @@ def notify_new_message(conversation, message) -> list:
         )
         for m in memberships:
             try:
-                created.append(notify(m.user, **common_kwargs))
+                n = notify(m.user, **common_kwargs)
+                if n is not None:  # None = usuário silenciou o tipo
+                    created.append(n)
             except Exception:  # noqa: BLE001
                 logger.exception(
                     "notify_new_message failed user=%s conv=%s",

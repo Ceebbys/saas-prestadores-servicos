@@ -183,7 +183,7 @@ def emit_lead_followup(lead, threshold_days, days_since):
     last = None
     url = _safe_reverse("crm:lead_detail", lead.pk)
     for user in _resolve_recipients(lead.empresa, lead):
-        last = notify(
+        notif = notify(
             user,
             type=Notification.Type.LEAD_FOLLOWUP,
             title=f"Lead sem contato há {days_since} dias: {lead.name}",
@@ -198,4 +198,9 @@ def emit_lead_followup(lead, threshold_days, days_since):
                 "days_since": days_since,
             },
         )
+        # RV07 (6.2) — mantém o último notif REAL (notify retorna None se o
+        # usuário silenciou o follow-up); a idempotência do reminder já foi
+        # registrada pela task antes desta chamada.
+        if notif is not None:
+            last = notif
     return last

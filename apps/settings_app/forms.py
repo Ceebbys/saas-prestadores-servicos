@@ -354,3 +354,73 @@ class FollowUpSettingsForm(TailwindFormMixin, forms.ModelForm):
                 break
             prev = value
         return cleaned
+
+
+# ---------------------------------------------------------------------------
+# RV07 (6.2) — Preferências de notificação por usuário
+# ---------------------------------------------------------------------------
+
+_NOTIF_CHECKBOX_ATTRS = {
+    "class": "h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500",
+}
+
+
+class NotificationPreferenceForm(forms.Form):
+    """Preferências de notificação do usuário (canais + por tipo de evento).
+
+    Não é ModelForm porque os checkboxes por evento são convertidos em
+    ``muted_types`` (opt-out) na view. Os campos ``evt_<tipo>`` são criados
+    dinamicamente a partir de ``Notification.Type``.
+    """
+
+    email_digest = forms.BooleanField(
+        required=False, label="Resumo diário por e-mail",
+        widget=forms.CheckboxInput(attrs=_NOTIF_CHECKBOX_ATTRS),
+        help_text="Um e-mail por dia com as notificações não lidas.",
+    )
+    web_push = forms.BooleanField(
+        required=False, label="Notificações no navegador (push)",
+        widget=forms.CheckboxInput(attrs=_NOTIF_CHECKBOX_ATTRS),
+        help_text="Receba avisos mesmo com a aba fechada, se o navegador permitir.",
+    )
+
+    @staticmethod
+    def _event_groups():
+        """(rótulo do grupo, [Notification.Type, ...]) — ordem/agrupamento na UI."""
+        from apps.communications.models import Notification
+
+        T = Notification.Type
+        return [
+            ("Comercial", [
+                T.PROPOSAL_SENT, T.PROPOSAL_ACCEPTED,
+                T.CONTRACT_SENT, T.CONTRACT_SIGNED,
+                T.LEAD_NEW, T.LEAD_MOVED, T.LEAD_WON, T.LEAD_FOLLOWUP,
+            ]),
+            ("Operacional", [
+                T.SERVICE_STARTED, T.SERVICE_COMPLETED,
+            ]),
+            ("Atendimento", [
+                T.MESSAGE_INBOUND, T.CONVERSATION_ASSIGNED,
+            ]),
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for _, types in self._event_groups():
+            for t in types:
+                self.fields[f"evt_{t}"] = forms.BooleanField(
+                    required=False, label=t.label,
+                    widget=forms.CheckboxInput(attrs=_NOTIF_CHECKBOX_ATTRS),
+                )
+
+    @classmethod
+    def all_event_values(cls):
+        """Lista plana dos valores de tipo (str) cobertos pelo formulário."""
+        return [str(t) for _, types in cls._event_groups() for t in types]
+
+    def grouped_event_fields(self):
+        """Para o template: [(rótulo, [BoundField, ...]), ...]."""
+        return [
+            (label, [self[f"evt_{t}"] for t in types])
+            for label, types in self._event_groups()
+        ]

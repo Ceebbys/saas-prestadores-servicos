@@ -1719,6 +1719,59 @@ class FollowUpSettingsView(EmpresaMixin, View):
         return render(request, "settings/followup_settings.html", {"form": form})
 
 
+class NotificationSettingsView(EmpresaMixin, View):
+    """RV07 (6.2) — Preferências de notificação do usuário logado.
+
+    Preferências são por USUÁRIO (não por empresa) — valem em todos os tenants
+    de que ele participa. EmpresaMixin garante login + request.empresa.
+    """
+
+    def _get_pref(self, request):
+        from apps.communications.models import NotificationPreference
+
+        obj, _ = NotificationPreference.objects.get_or_create(user=request.user)
+        return obj
+
+    def _initial(self, pref):
+        from .forms import NotificationPreferenceForm
+
+        initial = {
+            "email_digest": pref.email_digest,
+            "web_push": pref.web_push,
+        }
+        muted = set(pref.muted_types or [])
+        # Checkbox "receber" = marcado quando NÃO está silenciado (opt-out).
+        for value in NotificationPreferenceForm.all_event_values():
+            initial[f"evt_{value}"] = value not in muted
+        return initial
+
+    def get(self, request):
+        from .forms import NotificationPreferenceForm
+
+        pref = self._get_pref(request)
+        return render(request, "settings/notification_settings.html", {
+            "form": NotificationPreferenceForm(initial=self._initial(pref)),
+        })
+
+    def post(self, request):
+        from .forms import NotificationPreferenceForm
+
+        pref = self._get_pref(request)
+        form = NotificationPreferenceForm(request.POST)
+        if form.is_valid():
+            pref.email_digest = form.cleaned_data["email_digest"]
+            pref.web_push = form.cleaned_data["web_push"]
+            # Desmarcado => silenciado.
+            pref.muted_types = [
+                v for v in NotificationPreferenceForm.all_event_values()
+                if not form.cleaned_data.get(f"evt_{v}")
+            ]
+            pref.save()
+            messages.success(request, "Preferências de notificação salvas.")
+            return redirect("settings_app:notification_settings")
+        return render(request, "settings/notification_settings.html", {"form": form})
+
+
 # ---------------------------------------------------------------------------
 # RV07 (Epic 7 + 6.1) — Integrações (status read-only; groundwork)
 # ---------------------------------------------------------------------------

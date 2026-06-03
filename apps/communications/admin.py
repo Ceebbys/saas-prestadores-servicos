@@ -5,6 +5,7 @@ from .models import (
     ConversationMessage,
     MessageTemplate,
     Notification,
+    NotificationPreference,
     PushSubscription,
 )
 
@@ -47,6 +48,14 @@ class PushSubscriptionAdmin(admin.ModelAdmin):
     list_display = ["pk", "user", "last_used_at", "created_at"]
     search_fields = ["user__email", "endpoint", "user_agent"]
     readonly_fields = ["endpoint", "p256dh", "auth", "user_agent", "created_at", "updated_at"]
+
+
+@admin.register(NotificationPreference)
+class NotificationPreferenceAdmin(admin.ModelAdmin):
+    list_display = ["pk", "user", "email_digest", "web_push", "created_at"]
+    list_filter = ["email_digest", "web_push"]
+    search_fields = ["user__email"]
+    readonly_fields = ["created_at", "updated_at"]
 
 
 @admin.register(MessageTemplate)

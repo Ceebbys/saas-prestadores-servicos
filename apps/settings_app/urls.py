@@ -181,6 +181,12 @@ urlpatterns = [
     path("hour-rates/<int:pk>/delete/", views.HourRateDeleteView.as_view(), name="hour_rate_delete"),
     # RV07 (6.2) — Follow-up de leads
     path("followup/", views.FollowUpSettingsView.as_view(), name="followup_settings"),
+    # RV07 (6.2) — Preferências de notificação (por usuário)
+    path(
+        "notifications/",
+        views.NotificationSettingsView.as_view(),
+        name="notification_settings",
+    ),
     # RV07 (Epic 7 + 6.1) — Integrações (status read-only; groundwork)
     path("integrations/", views.IntegrationsSettingsView.as_view(), name="integrations"),
     # WhatsApp Config
