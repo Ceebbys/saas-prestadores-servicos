@@ -62,6 +62,10 @@ class LeadForm(TailwindFormMixin, forms.ModelForm):
     new_contato_email = forms.EmailField(
         required=False, label="E-mail do Contato",
     )
+    # RV07 (4.2) — múltiplos telefones no "criar novo contato" inline.
+    new_contato_telefones_json = forms.CharField(
+        required=False, widget=forms.HiddenInput,
+    )
     # RV07 (4.1) — Checklist do Lead (pós-venda/execução). Mesmo padrão do
     # checklist da OS: JSON serializado + Alpine.js controla o CRUD no template.
     checklist_json = forms.CharField(required=False, widget=forms.HiddenInput)
@@ -212,6 +216,7 @@ class LeadForm(TailwindFormMixin, forms.ModelForm):
                     new_phone=self.cleaned_data.get("new_contato_phone") or "",
                     new_email=self.cleaned_data.get("new_contato_email") or "",
                     source=self.cleaned_data.get("source") or "",
+                    telefones_json=self.cleaned_data.get("new_contato_telefones_json"),
                 )
             if contato:
                 lead.contato = contato
@@ -314,6 +319,10 @@ class OpportunityForm(TailwindFormMixin, forms.ModelForm):
     new_contato_email = forms.EmailField(
         required=False, label="E-mail do Contato",
     )
+    # RV07 (4.2) — múltiplos telefones no "criar novo contato" inline.
+    new_contato_telefones_json = forms.CharField(
+        required=False, widget=forms.HiddenInput,
+    )
 
     class Meta:
         model = Opportunity
@@ -410,6 +419,7 @@ class OpportunityForm(TailwindFormMixin, forms.ModelForm):
                 new_document=self.cleaned_data.get("new_contato_document") or "",
                 new_phone=self.cleaned_data.get("new_contato_phone") or "",
                 new_email=self.cleaned_data.get("new_contato_email") or "",
+                telefones_json=self.cleaned_data.get("new_contato_telefones_json"),
             )
             value = self.cleaned_data.get("value") or 0
             lead = Lead(

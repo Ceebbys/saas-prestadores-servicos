@@ -4,7 +4,7 @@ from django import forms
 
 from apps.core.forms import TailwindFormMixin
 
-from .models import Contato, ContatoTelefone
+from .models import Contato
 
 
 class ContatoForm(TailwindFormMixin, forms.ModelForm):
@@ -55,106 +55,21 @@ class ContatoForm(TailwindFormMixin, forms.ModelForm):
         return (self.cleaned_data.get("cpf_cnpj") or "").strip()
 
     def clean_telefones_json(self):
-        raw = self.cleaned_data.get("telefones_json", "")
-        if not raw:
-            return []
-        try:
-            items = json.loads(raw)
-        except (json.JSONDecodeError, TypeError):
-            raise forms.ValidationError("Formato inválido para os telefones.")
-        if not isinstance(items, list):
-            raise forms.ValidationError("Telefones devem ser uma lista.")
-
-        valid_tipos = {c[0] for c in ContatoTelefone.Tipo.choices}
-        cleaned = []
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            numero = (item.get("numero") or "").strip()
-            if not numero:
-                continue  # linha vazia — ignorada
-            tipo = item.get("tipo")
-            if tipo not in valid_tipos:
-                tipo = ContatoTelefone.Tipo.CELULAR
-            entry = {
-                "tipo": tipo,
-                "numero": numero[:20],
-                "is_principal": bool(item.get("is_principal", False)),
-            }
-            raw_id = item.get("id")
-            if raw_id not in (None, "", 0):
-                try:
-                    entry["id"] = int(raw_id)
-                except (TypeError, ValueError):
-                    pass
-            cleaned.append(entry)
-
-        # Garante no máximo 1 principal; se nenhum, o primeiro vira principal.
-        principal_seen = False
-        for entry in cleaned:
-            if entry["is_principal"] and not principal_seen:
-                principal_seen = True
-            elif entry["is_principal"]:
-                entry["is_principal"] = False
-        if cleaned and not principal_seen:
-            cleaned[0]["is_principal"] = True
-        return cleaned
-
-    @staticmethod
-    def _derive_primary(tels):
-        """Deriva (phone, whatsapp) principais a partir da lista de telefones,
-        para manter os campos legados sincronizados (compatibilidade)."""
-        phone = ""
-        whatsapp = ""
-        principal = next((t for t in tels if t.get("is_principal")), None)
-        whats = next(
-            (t for t in tels if t.get("tipo") == "whatsapp" and t.get("numero")),
-            None,
-        )
-        if principal and principal.get("numero"):
-            phone = principal["numero"]
-        elif tels:
-            phone = tels[0].get("numero", "")
-        if whats:
-            whatsapp = whats["numero"]
-        return phone[:20], whatsapp[:20]
+        # RV07 (4.2) — usa o parser compartilhado (mesma regra do inline).
+        from .services import parse_telefones_json
+        return parse_telefones_json(self.cleaned_data.get("telefones_json", ""))
 
     def save(self, commit=True):
+        from .services import derive_primary_phones, sync_contato_telefones
+
         instance = super().save(commit=False)
         tels = self.cleaned_data.get("telefones_json", [])
-        instance.phone, instance.whatsapp = self._derive_primary(tels)
+        instance.phone, instance.whatsapp = derive_primary_phones(tels)
         if commit:
             instance.save()
-            self._sync_telefones(instance, tels)
+            # phone/whatsapp já setados acima → não precisa re-sincronizar.
+            sync_contato_telefones(instance, tels, update_primary=False)
         return instance
-
-    def _sync_telefones(self, instance, tels):
-        """Reconcilia ContatoTelefone com o JSON enviado (mesma estratégia do
-        checklist da OS): mantém IDs presentes, deleta removidos, cria novos."""
-        kept_ids = {t["id"] for t in tels if "id" in t}
-        instance.telefones.exclude(id__in=kept_ids).delete()
-        existing = {
-            obj.id: obj for obj in instance.telefones.filter(id__in=kept_ids)
-        }
-        for idx, t in enumerate(tels):
-            tid = t.get("id")
-            if tid and tid in existing:
-                obj = existing[tid]
-                obj.tipo = t["tipo"]
-                obj.numero = t["numero"]
-                obj.is_principal = t["is_principal"]
-                obj.order = idx
-                obj.save(update_fields=[
-                    "tipo", "numero", "is_principal", "order", "updated_at",
-                ])
-            else:
-                ContatoTelefone.objects.create(
-                    contato=instance,
-                    tipo=t["tipo"],
-                    numero=t["numero"],
-                    is_principal=t["is_principal"],
-                    order=idx,
-                )
 
     def validate_unique_for_empresa(self, empresa):
         """Custom uniqueness check used by views (since Form has no `empresa`)."""

@@ -23,48 +23,7 @@
     </div>
 
     {# RV07 (4.2) — Telefones múltiplos (celular, WhatsApp, comercial...). #}
-    <div class="mt-4 pt-4 border-t border-slate-200"
-         x-data="{ telefones: {{ form.telefones_json.value|default:'[]' }} }">
-        <div class="flex items-center justify-between mb-1">
-            <h3 class="text-sm font-semibold text-slate-700">Telefones</h3>
-            <span class="text-xs text-slate-400"
-                  x-text="telefones.length + ' número' + (telefones.length === 1 ? '' : 's')"></span>
-        </div>
-        <p class="text-xs text-slate-500 mb-3">
-            Adicione quantos números quiser. Marque qual é o principal.
-        </p>
-        <input type="hidden" name="telefones_json" :value="JSON.stringify(telefones)">
-        <template x-for="(tel, idx) in telefones" :key="idx">
-            <div class="flex items-center gap-2 mb-2">
-                <select x-model="tel.tipo"
-                        class="rounded-lg border-slate-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500 w-32 shrink-0">
-                    <option value="celular">Celular</option>
-                    <option value="whatsapp">WhatsApp</option>
-                    <option value="comercial">Comercial</option>
-                    <option value="fixo">Fixo</option>
-                    <option value="outro">Outro</option>
-                </select>
-                <input type="text" x-model="tel.numero" placeholder="(00) 00000-0000" maxlength="20"
-                       class="flex-1 rounded-lg border-slate-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                <label class="flex items-center gap-1 text-xs text-slate-500 cursor-pointer shrink-0" title="Número principal">
-                    <input type="radio" :checked="tel.is_principal"
-                           @change="telefones.forEach((t, i) => t.is_principal = (i === idx))"
-                           class="text-indigo-600 focus:ring-indigo-500">
-                    Principal
-                </label>
-                <button type="button" @click="telefones.splice(idx, 1)"
-                        class="p-1.5 text-slate-400 hover:text-red-500 transition-colors" title="Remover">
-                    {% icon "x-mark" "w-4 h-4" %}
-                </button>
-            </div>
-        </template>
-        <button type="button"
-                @click="telefones.push({tipo: 'celular', numero: '', is_principal: telefones.length === 0})"
-                class="inline-flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-800 font-medium mt-1">
-            {% icon "plus" "w-4 h-4" %}
-            Adicionar telefone
-        </button>
-    </div>
+    {% include "contacts/partials/_telefones_editor.html" with field_name="telefones_json" initial_json=form.telefones_json.value %}
 
     <div class="mt-2">
         {% form_field form.notes %}

@@ -102,6 +102,63 @@ class LeadFormDualModeTests(TestCase):
         self.assertEqual(lead.contato.name, "Novo Cliente")
         self.assertEqual(lead.contato.cpf_cnpj_normalized, "52998224725")
 
+    def test_lead_create_page_renders_multiphone_editor(self):
+        # RV07 (4.2) — Novo Lead deve renderizar o editor de múltiplos telefones
+        # no "criar novo contato" (e não vazar tags de template).
+        resp = self.client.get(reverse("crm:lead_create"))
+        self.assertEqual(resp.status_code, 200)
+        html = resp.content.decode()
+        self.assertIn('name="new_contato_telefones_json"', html)
+        self.assertIn("Adicionar telefone", html)
+        self.assertNotIn("{% comment", html)
+        self.assertNotIn("endcomment", html)
+
+    def test_opportunity_create_page_renders_multiphone_editor(self):
+        # RV07 (4.2) — Nova Oportunidade (inline contact picker) idem.
+        resp = self.client.get(reverse("crm:opportunity_create"))
+        self.assertEqual(resp.status_code, 200)
+        html = resp.content.decode()
+        self.assertIn('name="new_contato_telefones_json"', html)
+        self.assertIn("Adicionar telefone", html)
+        self.assertNotIn("{% comment", html)
+        self.assertNotIn("endcomment", html)
+
+    def test_create_lead_new_contato_with_multiple_phones(self):
+        # RV07 (4.2) — o "criar novo contato" inline (Novo Lead) agora aceita
+        # vários telefones via new_contato_telefones_json (editor Alpine).
+        import json
+        tels = [
+            {"tipo": "celular", "numero": "11988887777", "is_principal": False},
+            {"tipo": "whatsapp", "numero": "11999990000", "is_principal": True},
+            {"tipo": "comercial", "numero": "1133334444", "is_principal": False},
+        ]
+        self.client.post(reverse("crm:lead_create"), {
+            "contact_mode": "new",
+            "new_contato_name": "Cliente Multifone",
+            "new_contato_telefones_json": json.dumps(tels),
+            "name": "Projeto Multifone",
+            "source": "whatsapp",
+        })
+        lead = Lead.objects.filter(name="Projeto Multifone").first()
+        self.assertIsNotNone(lead)
+        contato = lead.contato
+        self.assertIsNotNone(contato)
+        self.assertEqual(contato.name, "Cliente Multifone")
+        # Os 3 telefones foram persistidos, na ordem do editor.
+        self.assertEqual(contato.telefones.count(), 3)
+        self.assertEqual(
+            list(contato.telefones.order_by("order").values_list("numero", flat=True)),
+            ["11988887777", "11999990000", "1133334444"],
+        )
+        # Exatamente 1 principal (o whatsapp marcado).
+        self.assertEqual(contato.telefones.filter(is_principal=True).count(), 1)
+        self.assertEqual(
+            contato.telefones.get(is_principal=True).numero, "11999990000",
+        )
+        # phone/whatsapp denormalizados: principal -> phone; tipo whatsapp -> whatsapp.
+        self.assertEqual(contato.phone, "11999990000")
+        self.assertEqual(contato.whatsapp, "11999990000")
+
     def test_create_lead_new_contato_blocks_duplicate_doc(self):
         Contato.objects.create(
             empresa=self.empresa, name="Já existe", cpf_cnpj="529.982.247-25",

@@ -63,6 +63,32 @@ class OpportunityInlineLeadTests(TestCase):
         self.assertEqual(Opportunity.objects.filter(lead=lead).count(), 1)
         self.assertEqual(opp.lead_id, lead.pk)
 
+    def test_new_lead_new_contact_with_multiple_phones(self):
+        # RV07 (4.2) — o "criar novo contato" inline da Nova Oportunidade
+        # também aceita múltiplos telefones (mesmo editor do Novo Lead).
+        import json
+        tels = [
+            {"tipo": "celular", "numero": "11911112222", "is_principal": True},
+            {"tipo": "whatsapp", "numero": "11933334444", "is_principal": False},
+        ]
+        data = self._base_data(
+            lead_mode="new",
+            contact_mode="new",
+            new_contato_name="Multi Fone",
+            new_contato_telefones_json=json.dumps(tels),
+        )
+        form = OpportunityForm(data=data, empresa=self.empresa)
+        self.assertTrue(form.is_valid(), form.errors)
+        opp = self._save(form)
+
+        contato = opp.lead.contato
+        self.assertIsNotNone(contato)
+        self.assertEqual(contato.telefones.count(), 2)
+        # principal = celular -> phone; o de tipo whatsapp -> whatsapp.
+        self.assertEqual(contato.phone, "11911112222")
+        self.assertEqual(contato.whatsapp, "11933334444")
+        self.assertEqual(contato.telefones.filter(is_principal=True).count(), 1)
+
     def test_new_lead_with_existing_contact(self):
         from apps.contacts.models import Contato
         contato = Contato.objects.create(empresa=self.empresa, name="João Velho")

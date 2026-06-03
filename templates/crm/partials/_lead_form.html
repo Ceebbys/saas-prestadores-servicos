@@ -70,9 +70,10 @@
                 <div x-data x-init="$el.querySelector('input').addEventListener('input', (e) => { let v = e.target.value.replace(/\D/g,''); if (v.length <= 11) { v = v.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2'); } else { v = v.slice(0,14).replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d)/, '.$1/$2').replace(/(\d{4})(\d)/, '$1-$2'); } e.target.value = v; })">
                     {% form_field form.new_contato_document %}
                 </div>
-                {% form_field form.new_contato_phone %}
                 {% form_field form.new_contato_email %}
             </div>
+            {# RV07 (4.2) — Múltiplos telefones já na criação inline do contato. #}
+            {% include "contacts/partials/_telefones_editor.html" with field_name="new_contato_telefones_json" initial_json=form.new_contato_telefones_json.value %}
         </div>
     </div>
 
