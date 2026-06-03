@@ -14,34 +14,59 @@
 {% block page_header %}
 <div class="mb-6">
     <h1 class="text-2xl font-bold text-slate-900">Integrações</h1>
-    <p class="mt-1 text-sm text-slate-500">Conecte o sistema ao Google e à Microsoft (Calendário e Armazenamento). Em desenvolvimento.</p>
+    <p class="mt-1 text-sm text-slate-500">Conecte sua conta Google (Calendário e Drive). Microsoft e Assistente IA em breve.</p>
 </div>
 {% endblock %}
 
 {% block content %}
 <div class="max-w-2xl space-y-4">
     {% for p in providers %}
-    <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5 flex items-center justify-between gap-4">
-        <div class="flex items-center gap-3">
-            <div class="w-11 h-11 rounded-lg bg-slate-50 flex items-center justify-center">
-                {% icon "squares-plus" "w-5 h-5 text-slate-500" %}
+    <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+        <div class="flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-11 h-11 rounded-lg bg-slate-50 flex items-center justify-center">
+                    {% icon "squares-plus" "w-5 h-5 text-slate-500" %}
+                </div>
+                <div>
+                    <p class="text-sm font-semibold text-slate-900">{{ p.label }}</p>
+                    <p class="text-xs text-slate-500">
+                        {% if p.connected %}
+                        <span class="inline-flex items-center gap-1 text-emerald-600">{% icon "check-circle" "w-3.5 h-3.5" %} Conectado{% if p.account_email %} · {{ p.account_email }}{% endif %}</span>
+                        {% else %}
+                        <span class="inline-flex items-center gap-1 text-slate-400">Não conectado</span>
+                        {% endif %}
+                        <span class="ml-1 text-slate-400">· Calendário · Armazenamento</span>
+                    </p>
+                </div>
             </div>
-            <div>
-                <p class="text-sm font-semibold text-slate-900">{{ p.label }}</p>
-                <p class="text-xs text-slate-500">
-                    {% if p.connected %}
-                    <span class="inline-flex items-center gap-1 text-emerald-600">{% icon "check-circle" "w-3.5 h-3.5" %} Conectado{% if p.account_email %} · {{ p.account_email }}{% endif %}</span>
-                    {% else %}
-                    <span class="inline-flex items-center gap-1 text-slate-400">Não conectado</span>
-                    {% endif %}
-                    <span class="ml-1 text-slate-400">· Calendário · Armazenamento</span>
-                </p>
-            </div>
+            {% if p.connected %}
+            <form method="post" action="{{ p.disconnect_url }}">
+                {% csrf_token %}
+                <button type="submit"
+                        class="px-4 py-2 text-sm font-medium text-rose-600 bg-rose-50 rounded-lg hover:bg-rose-100 transition-colors">
+                    Desconectar
+                </button>
+            </form>
+            {% elif p.available %}
+            <a href="{{ p.connect_url }}"
+               class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
+                {% icon "squares-plus" "w-4 h-4" %} Conectar
+            </a>
+            {% elif p.needs_credentials %}
+            <button type="button" disabled title="Configure as credenciais OAuth do Google no servidor (.env)"
+                    class="px-4 py-2 text-sm font-medium text-slate-400 bg-slate-100 rounded-lg cursor-not-allowed opacity-60">
+                Configurar credenciais
+            </button>
+            {% else %}
+            <button type="button" disabled title="Integração em desenvolvimento"
+                    class="px-4 py-2 text-sm font-medium text-slate-400 bg-slate-100 rounded-lg cursor-not-allowed opacity-60">
+                Em breve
+            </button>
+            {% endif %}
         </div>
-        <button type="button" disabled title="Integração em desenvolvimento"
-                class="px-4 py-2 text-sm font-medium text-slate-400 bg-slate-100 rounded-lg cursor-not-allowed opacity-60">
-            Em breve
-        </button>
+        {% if p.last_error %}
+        <p class="mt-3 text-xs text-rose-600">Último erro: {{ p.last_error|truncatechars:120 }}</p>
+        {% endif %}
     </div>
     {% endfor %}
 
@@ -65,8 +90,9 @@
     </div>
 
     <p class="text-xs text-slate-400 px-1">
-        Estas integrações estão em preparação (groundwork). A conexão OAuth, a sincronização de agenda
-        e o armazenamento em nuvem serão habilitados em uma próxima atualização.
+        Conecte sua conta Google para sincronizar a agenda (lembretes de follow-up viram eventos)
+        e guardar arquivos no Drive. Microsoft (Outlook/OneDrive) e o Assistente IA chegam nas
+        próximas atualizações.
     </p>
 </div>
 {% endblock %}

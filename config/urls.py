@@ -29,6 +29,7 @@ urlpatterns = [
     path("automation/", include("apps.automation.urls")),
     path("settings/", include("apps.settings_app.urls")),
     path("inbox/", include("apps.communications.urls")),
+    path("integrations/", include("apps.integrations.urls")),
 ]
 
 if settings.DEBUG:

@@ -84,11 +84,24 @@ def evaluate_lead_followups() -> dict:
                 if notif is not None:
                     obj.notification = notif
                     obj.save(update_fields=["notification"])
-                # EPIC 7 hook (groundwork — deferido): criar um evento na agenda
-                # (Google/Outlook) do responsável para lembrar do follow-up.
-                # No-op até haver provedor conectado.
-                # from apps.integrations.services import create_calendar_event_for_followup
-                # create_calendar_event_for_followup(lead, when=now, title=f"Follow-up: {lead.name}")
+                # EPIC 7 — cria um evento na agenda conectada (Google) p/ o
+                # follow-up. Best-effort: no-op seguro se não houver integração,
+                # e uma falha aqui jamais derruba a avaliação de follow-ups.
+                try:
+                    from apps.integrations.services import (
+                        create_calendar_event_for_followup,
+                    )
+                    create_calendar_event_for_followup(
+                        lead, when=now, title=f"Follow-up: {lead.name}",
+                        description=(
+                            f"Lead sem contato há {days} dias. "
+                            "Retome antes de descartá-lo."
+                        ),
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "followup calendar hook failed lead=%s", lead.pk,
+                    )
                 summary["reminders"] += 1
             summary["empresas"] += 1
         except Exception as exc:  # noqa: BLE001

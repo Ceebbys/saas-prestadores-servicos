@@ -1,38 +1,206 @@
-"""STUBS Google (Calendar / Drive). Não-funcionais neste round.
+"""RV07 (Epic 7) — Provedores Google reais (Calendar v3 / Drive v3).
 
-Cada método retorna um ProviderResult "not_configured" e NÃO faz chamada de
-rede. A integração real (google-api-python-client + OAuth) substitui o corpo
-destes métodos numa rodada futura.
+Usa httpx + o access_token (renovado on-demand por ``oauth.ensure_fresh``).
+Cada chamada é defensiva: erro de rede/HTTP vira ``ProviderResult`` status
+"error" (e grava ``last_error`` na conexão p/ diagnóstico) — nunca levanta, pra
+não derrubar o fluxo de negócio que chamou (ex.: a task de follow-up).
 """
 from __future__ import annotations
 
+import datetime as _dt
+import json
+import logging
+
+import httpx
+from django.conf import settings
+from django.utils import timezone
+
 from .base import CalendarProvider, ProviderResult, StorageProvider
 
+logger = logging.getLogger(__name__)
 
-def _not_configured(capability: str) -> ProviderResult:
+_TIMEOUT = 20.0
+_CALENDAR_EVENTS = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+_DRIVE_FILES = "https://www.googleapis.com/drive/v3/files"
+_DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files"
+
+
+def _ok(capability: str, **extra) -> ProviderResult:
     return ProviderResult(
-        status="not_configured", integration_ready=False,
-        provider="google", capability=capability,
+        status="ok", integration_ready=True,
+        provider="google", capability=capability, **extra,
     )
 
 
-class GoogleCalendarProvider(CalendarProvider):
+def _error(capability: str, detail: str) -> ProviderResult:
+    return ProviderResult(
+        status="error", integration_ready=False,
+        provider="google", capability=capability, detail=detail[:300],
+    )
+
+
+def _format_when(value) -> dict:
+    """Converte datetime/date/str p/ o objeto start|end do Calendar v3."""
+    if isinstance(value, _dt.datetime):
+        return {"dateTime": value.isoformat(), "timeZone": settings.TIME_ZONE}
+    if isinstance(value, _dt.date):
+        return {"date": value.isoformat()}
+    return {"dateTime": str(value), "timeZone": settings.TIME_ZONE}
+
+
+class _GoogleMixin:
+    """Plumbing comum: request autorizado com refresh + retry único no 401."""
+
+    def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
+        from .. import oauth
+
+        token = oauth.ensure_fresh(self.connection)
+        headers = kwargs.pop("headers", {}) or {}
+        headers["Authorization"] = f"Bearer {token}"
+        resp = httpx.request(method, url, headers=headers, timeout=_TIMEOUT, **kwargs)
+        if resp.status_code == 401:
+            # token pode ter sido revogado/expirado fora da janela — força refresh
+            try:
+                token = oauth.refresh_access_token(self.connection)
+            except oauth.OAuthError:
+                return resp
+            headers["Authorization"] = f"Bearer {token}"
+            resp = httpx.request(method, url, headers=headers, timeout=_TIMEOUT, **kwargs)
+        return resp
+
+    def _record_ok(self):
+        self.connection.last_synced_at = timezone.now()
+        self.connection.last_error = ""
+        self.connection.save(update_fields=["last_synced_at", "last_error", "updated_at"])
+
+    def _record_error(self, detail: str):
+        self.connection.last_error = (detail or "")[:500]
+        self.connection.save(update_fields=["last_error", "updated_at"])
+
+
+class GoogleCalendarProvider(_GoogleMixin, CalendarProvider):
     def create_event(self, *, title, start, end, description="", attendees=None, **kwargs):
-        # STUB: futuro → google-api-python-client (calendar v3) com
-        # self.connection.get_access_token().
-        return _not_configured("calendar")
+        body = {
+            "summary": title,
+            "description": description or "",
+            "start": _format_when(start),
+            "end": _format_when(end),
+        }
+        if attendees:
+            body["attendees"] = [{"email": e} for e in attendees if e]
+        try:
+            resp = self._request("POST", _CALENDAR_EVENTS, json=body)
+        except httpx.HTTPError as exc:
+            self._record_error(str(exc))
+            return _error("calendar", f"rede: {exc}")
+        if resp.status_code not in (200, 201):
+            self._record_error(f"HTTP {resp.status_code}: {resp.text[:200]}")
+            return _error("calendar", f"HTTP {resp.status_code}")
+        data = resp.json()
+        self._record_ok()
+        return _ok(
+            "calendar", event_id=data.get("id", ""),
+            html_link=data.get("htmlLink", ""),
+        )
 
     def delete_event(self, event_id):
-        return _not_configured("calendar")
+        url = f"{_CALENDAR_EVENTS}/{event_id}"
+        try:
+            resp = self._request("DELETE", url)
+        except httpx.HTTPError as exc:
+            self._record_error(str(exc))
+            return _error("calendar", f"rede: {exc}")
+        # 204 = apagado; 410 = já não existe (idempotente)
+        if resp.status_code in (200, 204, 404, 410):
+            self._record_ok()
+            return _ok("calendar", event_id=event_id)
+        self._record_error(f"HTTP {resp.status_code}: {resp.text[:200]}")
+        return _error("calendar", f"HTTP {resp.status_code}")
 
 
-class GoogleStorageProvider(StorageProvider):
+class GoogleStorageProvider(_GoogleMixin, StorageProvider):
     def create_folder(self, *, name, parent_id=None, **kwargs):
-        # STUB: futuro → Google Drive API (files.create, mimeType folder).
-        return _not_configured("drive")
+        body = {"name": name, "mimeType": "application/vnd.google-apps.folder"}
+        if parent_id:
+            body["parents"] = [parent_id]
+        try:
+            resp = self._request(
+                "POST", _DRIVE_FILES,
+                params={"fields": "id,name,webViewLink"}, json=body,
+            )
+        except httpx.HTTPError as exc:
+            self._record_error(str(exc))
+            return _error("drive", f"rede: {exc}")
+        if resp.status_code not in (200, 201):
+            self._record_error(f"HTTP {resp.status_code}: {resp.text[:200]}")
+            return _error("drive", f"HTTP {resp.status_code}")
+        data = resp.json()
+        self._record_ok()
+        return _ok(
+            "drive", file_id=data.get("id", ""), name=data.get("name", ""),
+            web_link=data.get("webViewLink", ""),
+        )
 
-    def upload_file(self, *, folder_id, filename, content, **kwargs):
-        return _not_configured("drive")
+    def upload_file(self, *, folder_id, filename, content, mime="application/octet-stream", **kwargs):
+        # Upload multipart/related (metadata JSON + bytes) num único POST.
+        if isinstance(content, str):
+            content = content.encode("utf-8")
+        metadata = {"name": filename}
+        if folder_id:
+            metadata["parents"] = [folder_id]
+        boundary = "servicopro-boundary-7e3f"
+        body = (
+            f"--{boundary}\r\n"
+            "Content-Type: application/json; charset=UTF-8\r\n\r\n"
+            f"{json.dumps(metadata)}\r\n"
+            f"--{boundary}\r\n"
+            f"Content-Type: {mime}\r\n\r\n"
+        ).encode("utf-8") + content + f"\r\n--{boundary}--".encode("utf-8")
+        headers = {"Content-Type": f"multipart/related; boundary={boundary}"}
+        try:
+            resp = self._request(
+                "POST", _DRIVE_UPLOAD,
+                params={"uploadType": "multipart", "fields": "id,name,webViewLink"},
+                headers=headers, content=body,
+            )
+        except httpx.HTTPError as exc:
+            self._record_error(str(exc))
+            return _error("drive", f"rede: {exc}")
+        if resp.status_code not in (200, 201):
+            self._record_error(f"HTTP {resp.status_code}: {resp.text[:200]}")
+            return _error("drive", f"HTTP {resp.status_code}")
+        data = resp.json()
+        self._record_ok()
+        return _ok(
+            "drive", file_id=data.get("id", ""), name=data.get("name", ""),
+            web_link=data.get("webViewLink", ""),
+        )
 
     def share_link(self, *, file_or_folder_id, **kwargs):
-        return _not_configured("drive")
+        # Concede leitura pública e devolve o link de visualização.
+        perm_url = f"{_DRIVE_FILES}/{file_or_folder_id}/permissions"
+        try:
+            presp = self._request(
+                "POST", perm_url, json={"role": "reader", "type": "anyone"},
+            )
+        except httpx.HTTPError as exc:
+            self._record_error(str(exc))
+            return _error("drive", f"rede: {exc}")
+        if presp.status_code not in (200, 201):
+            self._record_error(f"HTTP {presp.status_code}: {presp.text[:200]}")
+            return _error("drive", f"HTTP {presp.status_code}")
+        # Busca o webViewLink (link amigável)
+        link = ""
+        try:
+            gresp = self._request(
+                "GET", f"{_DRIVE_FILES}/{file_or_folder_id}",
+                params={"fields": "webViewLink"},
+            )
+            if gresp.status_code == 200:
+                link = gresp.json().get("webViewLink", "")
+        except httpx.HTTPError:
+            pass
+        if not link:
+            link = f"https://drive.google.com/file/d/{file_or_folder_id}/view"
+        self._record_ok()
+        return _ok("drive", web_link=link, file_id=file_or_folder_id)

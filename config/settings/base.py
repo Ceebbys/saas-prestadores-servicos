@@ -248,6 +248,22 @@ VAPID_CONTACT_EMAIL = os.getenv(
 )
 
 # ---------------------------------------------------------------------------
+# RV07 (Epic 7) — Integração Google (OAuth 2.0). UM app OAuth do SaaS; cada
+# tenant conecta SUA conta Google ao app. Sem as credenciais abaixo o botão
+# "Conectar" fica desabilitado (a integração é um no-op seguro até conectar).
+# Registre o app em https://console.cloud.google.com/ (OAuth client "Web") e
+# autorize o redirect_uri abaixo.
+# ---------------------------------------------------------------------------
+GOOGLE_OAUTH_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
+GOOGLE_OAUTH_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
+# Deve bater EXATAMENTE com o registrado no Google Cloud. Default derivado do
+# SITE_URL (ex.: https://servicos.cebs-server.cloud/integrations/google/callback/).
+GOOGLE_OAUTH_REDIRECT_URI = os.getenv(
+    "GOOGLE_OAUTH_REDIRECT_URI",
+    SITE_URL.rstrip("/") + "/integrations/google/callback/",
+)
+
+# ---------------------------------------------------------------------------
 # RV06 — Limites do construtor visual de fluxos (chatbot builder)
 # ---------------------------------------------------------------------------
 CHATBOT_BUILDER_MAX_NODES = int(os.getenv("CHATBOT_BUILDER_MAX_NODES", "200"))

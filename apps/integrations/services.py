@@ -68,9 +68,16 @@ def get_storage_provider(empresa, provider=None):
 
 # --- Stubs de conveniência usados pelos hooks documentados -------------------
 
-def create_calendar_event_for_followup(lead_contact, *, when, title="") -> ProviderResult:
-    """STUB: cria evento de calendário para um lembrete de follow-up (item 6.2).
-    Sem provedor conectado → no-op seguro."""
+def create_calendar_event_for_followup(
+    lead_contact, *, when, title="", description="",
+) -> ProviderResult:
+    """Cria um evento de agenda para um lembrete de follow-up (item 6.2).
+
+    Sem provedor conectado → no-op seguro (status "not_configured"). Quando há
+    Google conectado, cria um bloco de 30 min na agenda do tenant.
+    """
+    import datetime as _dt
+
     empresa = getattr(getattr(lead_contact, "lead", None), "empresa", None) or getattr(
         lead_contact, "empresa", None
     )
@@ -78,7 +85,14 @@ def create_calendar_event_for_followup(lead_contact, *, when, title="") -> Provi
     if provider is None:
         logger.debug("integrations: nenhum provedor de calendário conectado")
         return ProviderResult(status="not_configured", integration_ready=False)
-    return provider.create_event(title=title, start=when, end=when)
+
+    end = when
+    if isinstance(when, _dt.datetime):
+        end = when + _dt.timedelta(minutes=30)
+    return provider.create_event(
+        title=title or "Follow-up de lead",
+        start=when, end=end, description=description,
+    )
 
 
 def create_workorder_folder(work_order) -> ProviderResult:

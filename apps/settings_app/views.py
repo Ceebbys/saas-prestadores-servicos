@@ -1781,20 +1781,33 @@ class IntegrationsSettingsView(EmpresaMixin, TemplateView):
     template_name = "settings/integrations.html"
 
     def get_context_data(self, **kwargs):
+        from django.urls import reverse
+
+        from apps.integrations import oauth as google_oauth
         from apps.integrations.models import AssistantConfig, IntegrationConnection
 
         context = super().get_context_data(**kwargs)
         empresa = self.request.empresa
+        google_configured = google_oauth.is_configured()
         providers = []
         for value, label in IntegrationConnection.Provider.choices:
             conn = IntegrationConnection.objects.filter(
                 empresa=empresa, provider=value,
             ).first()
+            is_google = value == IntegrationConnection.Provider.GOOGLE
             providers.append({
                 "value": value,
                 "label": label,
                 "connected": bool(conn and conn.is_connected),
                 "account_email": conn.account_email if conn else "",
+                "scopes": conn.scopes if conn else [],
+                "last_error": conn.last_error if conn else "",
+                "last_synced_at": conn.last_synced_at if conn else None,
+                # Só o Google tem fluxo real neste round; Microsoft segue "Em breve".
+                "available": is_google and google_configured,
+                "needs_credentials": is_google and not google_configured,
+                "connect_url": reverse("integrations:google_connect") if is_google else "",
+                "disconnect_url": reverse("integrations:disconnect", args=[value]),
             })
         context["providers"] = providers
         context["assistant"] = AssistantConfig.objects.filter(empresa=empresa).first()
