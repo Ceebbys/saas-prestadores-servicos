@@ -148,7 +148,54 @@ class WorkOrderDetailView(EmpresaMixin, DetailView):
         context["checklist_pct"] = int((completed / total) * 100) if total else 0
         # RV07 (3.1) — seção de Tempo / Horas
         context.update(time_section_context(self.object, self.request.user))
+        # RV07 (Epic 7) — botão "Enviar para o Drive" só quando há Drive conectado.
+        try:
+            from apps.integrations.services import get_storage_provider
+            context["drive_connected"] = (
+                get_storage_provider(self.request.empresa) is not None
+            )
+        except Exception:  # noqa: BLE001
+            context["drive_connected"] = False
         return context
+
+
+class WorkOrderDriveUploadView(EmpresaMixin, View):
+    """RV07 (Epic 7) — Sobe um arquivo da OS pro Google Drive conectado."""
+
+    MAX_BYTES = 25 * 1024 * 1024  # 25 MB
+
+    def post(self, request, pk):
+        wo = get_object_or_404(WorkOrder, pk=pk, empresa=request.empresa)
+        upload = request.FILES.get("file")
+        if upload is None:
+            messages.error(request, "Selecione um arquivo para enviar.")
+            return redirect("operations:work_order_detail", pk=pk)
+        if upload.size > self.MAX_BYTES:
+            messages.error(request, "Arquivo muito grande (máximo 25 MB).")
+            return redirect("operations:work_order_detail", pk=pk)
+
+        from apps.integrations.services import upload_file_to_workorder_drive
+        try:
+            res = upload_file_to_workorder_drive(
+                wo, filename=upload.name, content=upload.read(),
+                mime=getattr(upload, "content_type", "") or "application/octet-stream",
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("drive upload failed wo=%s", wo.pk)
+            messages.error(request, "Falha ao enviar o arquivo para o Drive. Tente novamente.")
+            return redirect("operations:work_order_detail", pk=pk)
+
+        status = res.get("status")
+        if status == "ok":
+            messages.success(request, f'"{upload.name}" enviado para o Google Drive.')
+        elif status == "not_configured":
+            messages.error(
+                request,
+                "Google Drive não está conectado. Conecte em Configurações → Integrações.",
+            )
+        else:
+            messages.error(request, "Não foi possível enviar o arquivo para o Drive.")
+        return redirect("operations:work_order_detail", pk=pk)
 
 
 def _service_type_prazos_json(empresa):

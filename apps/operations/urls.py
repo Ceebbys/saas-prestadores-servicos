@@ -41,6 +41,12 @@ urlpatterns = [
         views.WorkOrderPDFView.as_view(),
         name="work_order_pdf",
     ),
+    # RV07 (Epic 7) — upload de arquivo da OS para o Google Drive
+    path(
+        "work-orders/<int:pk>/drive-upload/",
+        views.WorkOrderDriveUploadView.as_view(),
+        name="work_order_drive_upload",
+    ),
     # Checklist toggle
     path(
         "work-orders/<int:wo_pk>/checklist/<int:item_pk>/toggle/",

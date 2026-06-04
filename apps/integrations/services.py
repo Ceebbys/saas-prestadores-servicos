@@ -189,3 +189,56 @@ def sync_work_order_to_calendar(work_order) -> ProviderResult:
         _store("")
         return res
     return ProviderResult(status="ok", integration_ready=True, detail="nothing_to_sync")
+
+
+def upload_file_to_workorder_drive(
+    work_order, *, filename, content, mime="application/octet-stream",
+) -> ProviderResult:
+    """RV07 (Epic 7) — Sobe um arquivo pro Drive conectado, numa pasta da OS.
+
+    Cria a pasta da OS no 1º upload e reaproveita depois (via
+    ``work_order.google_drive_folder_id``); sobe o arquivo, gera link
+    compartilhável e anexa ``{url, label}`` em ``cloud_storage_links`` (via
+    ``.update()`` — não dispara post_save). Sem provedor → no-op (not_configured).
+    """
+    from apps.operations.models import WorkOrder
+
+    empresa = getattr(work_order, "empresa", None)
+    provider = get_storage_provider(empresa) if empresa else None
+    if provider is None:
+        return ProviderResult(status="not_configured", integration_ready=False)
+
+    # 1) pasta da OS (cria-ou-reaproveita)
+    folder_id = work_order.google_drive_folder_id
+    if not folder_id:
+        fres = provider.create_folder(
+            name=f"{work_order.number} — {work_order.title}".strip(" —"),
+        )
+        if fres.get("status") != "ok" or not fres.get("file_id"):
+            return fres
+        folder_id = fres["file_id"]
+        WorkOrder.objects.filter(pk=work_order.pk).update(
+            google_drive_folder_id=folder_id,
+        )
+        work_order.google_drive_folder_id = folder_id
+
+    # 2) upload do arquivo
+    ures = provider.upload_file(
+        folder_id=folder_id, filename=filename, content=content, mime=mime,
+    )
+    if ures.get("status") != "ok" or not ures.get("file_id"):
+        return ures
+
+    # 3) link compartilhável (anyone-with-link)
+    sres = provider.share_link(file_or_folder_id=ures["file_id"])
+    link = sres.get("web_link") or ures.get("web_link") or ""
+
+    # 4) anexa em cloud_storage_links sem disparar signals
+    links = list(work_order.cloud_storage_links or [])
+    links.append({"url": link, "label": filename})
+    WorkOrder.objects.filter(pk=work_order.pk).update(cloud_storage_links=links)
+    work_order.cloud_storage_links = links
+
+    return ProviderResult(
+        status="ok", integration_ready=True, web_link=link, label=filename,
+    )

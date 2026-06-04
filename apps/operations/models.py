@@ -347,6 +347,11 @@ class WorkOrder(TenantOwnedModel):
         "ID do evento no Google", max_length=200, blank=True, default="",
         editable=False,
     )
+    # RV07 (Epic 7) — pasta da OS no Google Drive (criada no 1º upload e reusada).
+    google_drive_folder_id = models.CharField(
+        "ID da pasta no Google Drive", max_length=200, blank=True, default="",
+        editable=False,
+    )
     notes = models.TextField("Observações", blank=True)
 
     class Meta:
