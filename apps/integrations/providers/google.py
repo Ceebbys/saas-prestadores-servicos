@@ -19,7 +19,10 @@ from .base import CalendarProvider, ProviderResult, StorageProvider
 
 logger = logging.getLogger(__name__)
 
-_TIMEOUT = 20.0
+# Chamadas de dados rodam no caminho da requisição (carregar Calendário /
+# salvar OS) — timeout curto p/ não travar a página se o Google estiver lento.
+# A leitura é graciosa (cai p/ só as OS) e a escrita é best-effort.
+_TIMEOUT = 10.0
 _CALENDAR_EVENTS = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 _DRIVE_FILES = "https://www.googleapis.com/drive/v3/files"
 _DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files"
@@ -46,6 +49,15 @@ def _format_when(value) -> dict:
     if isinstance(value, _dt.date):
         return {"date": value.isoformat()}
     return {"dateTime": str(value), "timeZone": settings.TIME_ZONE}
+
+
+def _rfc3339(value) -> str:
+    """timeMin/timeMax do events.list (RFC3339). Espera datetime aware."""
+    if isinstance(value, _dt.datetime):
+        return value.isoformat()
+    if isinstance(value, _dt.date):
+        return _dt.datetime(value.year, value.month, value.day).isoformat() + "Z"
+    return str(value)
 
 
 class _GoogleMixin:
@@ -116,6 +128,67 @@ class GoogleCalendarProvider(_GoogleMixin, CalendarProvider):
             return _ok("calendar", event_id=event_id)
         self._record_error(f"HTTP {resp.status_code}: {resp.text[:200]}")
         return _error("calendar", f"HTTP {resp.status_code}")
+
+    def list_events(self, *, time_min, time_max, max_results=250, **kwargs):
+        params = {
+            "timeMin": _rfc3339(time_min),
+            "timeMax": _rfc3339(time_max),
+            "singleEvents": "true",   # expande recorrentes em ocorrências
+            "orderBy": "startTime",
+            "maxResults": max_results,
+        }
+        try:
+            resp = self._request("GET", _CALENDAR_EVENTS, params=params)
+        except httpx.HTTPError as exc:
+            self._record_error(str(exc))
+            return _error("calendar", f"rede: {exc}")
+        if resp.status_code != 200:
+            self._record_error(f"HTTP {resp.status_code}: {resp.text[:200]}")
+            return _error("calendar", f"HTTP {resp.status_code}")
+        data = resp.json()
+        items = []
+        for ev in data.get("items", []):
+            start = ev.get("start", {}) or {}
+            end = ev.get("end", {}) or {}
+            items.append({
+                "id": ev.get("id", ""),
+                "title": ev.get("summary") or "(sem título)",
+                "start": start.get("dateTime") or start.get("date") or "",
+                "end": end.get("dateTime") or end.get("date") or "",
+                "all_day": "date" in start,
+                "html_link": ev.get("htmlLink", ""),
+            })
+        self._record_ok()
+        return _ok("calendar", items=items)
+
+    def update_event(self, event_id, *, title, start, end,
+                     description="", attendees=None, **kwargs):
+        body = {
+            "summary": title,
+            "description": description or "",
+            "start": _format_when(start),
+            "end": _format_when(end),
+        }
+        if attendees:
+            body["attendees"] = [{"email": e} for e in attendees if e]
+        url = f"{_CALENDAR_EVENTS}/{event_id}"
+        try:
+            resp = self._request("PATCH", url, json=body)
+        except httpx.HTTPError as exc:
+            self._record_error(str(exc))
+            return _error("calendar", f"rede: {exc}")
+        if resp.status_code in (404, 410):
+            # evento foi apagado no Google → sinaliza p/ o caller recriar
+            return _error("calendar", "not_found")
+        if resp.status_code not in (200, 201):
+            self._record_error(f"HTTP {resp.status_code}: {resp.text[:200]}")
+            return _error("calendar", f"HTTP {resp.status_code}")
+        data = resp.json()
+        self._record_ok()
+        return _ok(
+            "calendar", event_id=data.get("id", event_id),
+            html_link=data.get("htmlLink", ""),
+        )
 
 
 class GoogleStorageProvider(_GoogleMixin, StorageProvider):

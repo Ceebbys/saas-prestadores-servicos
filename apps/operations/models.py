@@ -341,6 +341,12 @@ class WorkOrder(TenantOwnedModel):
         blank=True,
         help_text='Lista de links (Google Drive, Dropbox, etc.)',
     )
+    # RV07 (Epic 7) — id do evento espelhado na agenda Google (sync bidirecional).
+    # Preenchido automaticamente; permite atualizar/remover o evento sem duplicar.
+    google_event_id = models.CharField(
+        "ID do evento no Google", max_length=200, blank=True, default="",
+        editable=False,
+    )
     notes = models.TextField("Observações", blank=True)
 
     class Meta:

@@ -1,5 +1,12 @@
 {% load ui_tags %}
 
+{% if google_connected %}
+<div class="flex items-center gap-4 mb-3 text-xs text-slate-500">
+    <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-sky-400"></span> Ordens de Serviço</span>
+    <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Agenda Google</span>
+</div>
+{% endif %}
+
 <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 overflow-hidden">
     <!-- Header Row -->
     <div class="grid grid-cols-7 bg-slate-50 border-b border-slate-200">
@@ -37,6 +44,17 @@
                           {% else %}bg-sky-100 text-sky-700 hover:bg-sky-200{% endif %}"
                    title="{{ wo.number }} - {{ wo.title }}{% if wo.assigned_team %} [{{ wo.assigned_team.name }}]{% endif %}{% if wo.assigned_to %} — {{ wo.assigned_to.full_name }}{% endif %}">
                     {% if wo.assigned_team %}<span class="inline-block w-1.5 h-1.5 rounded-full bg-{{ wo.assigned_team.color }}-500 mr-0.5"></span>{% endif %}{{ wo.title|truncatechars:18 }}
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% if day in google_by_day %}
+            <div class="space-y-1 mt-1">
+                {% for ev in google_by_day|dict_key:day %}
+                <a href="{{ ev.html_link|default:'#' }}" target="_blank" rel="noopener"
+                   class="block px-1.5 py-0.5 rounded text-xs font-medium truncate bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
+                   title="Google Agenda: {{ ev.title }}">
+                    <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-0.5"></span>{{ ev.title|truncatechars:18 }}
                 </a>
                 {% endfor %}
             </div>

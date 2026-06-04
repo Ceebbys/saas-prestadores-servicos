@@ -21,19 +21,27 @@ from apps.operations.models import WorkOrder
 logger = logging.getLogger(__name__)
 
 _PREVIOUS_STATUS_ATTR = "_workorder_previous_status"
+_PREV_SCHED_ATTR = "_workorder_prev_sched"  # (scheduled_date, expected_end_date, title)
 
 
 @receiver(pre_save, sender=WorkOrder)
 def _capture_previous_status(sender, instance: WorkOrder, **kwargs) -> None:
-    """Lê o status atual no DB para detectar transições no post_save."""
+    """Lê status + campos de agenda atuais no DB p/ detectar mudanças no post_save."""
     if not instance.pk:
         setattr(instance, _PREVIOUS_STATUS_ATTR, None)
+        setattr(instance, _PREV_SCHED_ATTR, None)
         return
     try:
-        prev = WorkOrder.objects.only("status").get(pk=instance.pk)
+        prev = WorkOrder.objects.only(
+            "status", "scheduled_date", "expected_end_date", "title",
+        ).get(pk=instance.pk)
         setattr(instance, _PREVIOUS_STATUS_ATTR, prev.status)
+        setattr(instance, _PREV_SCHED_ATTR, (
+            prev.scheduled_date, prev.expected_end_date, prev.title,
+        ))
     except WorkOrder.DoesNotExist:
         setattr(instance, _PREVIOUS_STATUS_ATTR, None)
+        setattr(instance, _PREV_SCHED_ATTR, None)
 
 
 @receiver(post_save, sender=WorkOrder)
@@ -71,5 +79,35 @@ def _dispatch_pipeline_event(sender, instance: WorkOrder, created: bool, **kwarg
 
     def _run():
         execute_work_order_event(instance, event)
+
+    transaction.on_commit(_run)
+
+
+@receiver(post_save, sender=WorkOrder)
+def _sync_work_order_to_google(sender, instance: WorkOrder, created: bool, **kwargs) -> None:
+    """RV07 (Epic 7) — espelha a OS na agenda Google quando o agendamento muda.
+
+    Só dispara quando há algo a sincronizar (OS agendada, ou evento órfão a
+    remover) E quando campos de agenda/título mudaram — evita chamar a API do
+    Google em toda troca de status. No-op seguro quando não há integração
+    conectada. A gravação do id é feita com .update() lá no service, então
+    isto NÃO entra em loop.
+    """
+    if getattr(instance, "_suppress_calendar_sync", False):
+        return
+
+    prev = getattr(instance, _PREV_SCHED_ATTR, None)
+    cur = (instance.scheduled_date, instance.expected_end_date, instance.title)
+    if not created and prev == cur:
+        return  # nada relevante de agenda mudou
+    if not instance.scheduled_date and not instance.google_event_id:
+        return  # nada a criar nem a remover
+
+    def _run():
+        try:
+            from apps.integrations.services import sync_work_order_to_calendar
+            sync_work_order_to_calendar(instance)
+        except Exception:  # noqa: BLE001
+            logger.exception("wo google calendar sync failed wo=%s", instance.pk)
 
     transaction.on_commit(_run)

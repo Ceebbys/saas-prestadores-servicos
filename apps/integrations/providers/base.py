@@ -30,6 +30,19 @@ class CalendarProvider(ABC):
     def delete_event(self, event_id: str) -> ProviderResult:
         ...
 
+    # Não-abstratos: providers que não suportam herdam um no-op seguro
+    # (assim o stub da Microsoft continua instanciável sem implementar).
+    def list_events(self, *, time_min, time_max, **kwargs) -> ProviderResult:
+        return ProviderResult(
+            status="not_configured", integration_ready=False, capability="calendar",
+        )
+
+    def update_event(self, event_id, *, title, start, end,
+                     description="", attendees=None, **kwargs) -> ProviderResult:
+        return ProviderResult(
+            status="not_configured", integration_ready=False, capability="calendar",
+        )
+
 
 class StorageProvider(ABC):
     capability = "drive"

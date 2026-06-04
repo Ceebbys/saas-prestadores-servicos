@@ -1,4 +1,5 @@
 import calendar as cal_module
+import logging
 from datetime import date
 from decimal import Decimal
 
@@ -582,6 +583,43 @@ class WorkOrderPDFView(EmpresaMixin, DetailView):
 # ---------------------------------------------------------------------------
 
 
+logger = logging.getLogger(__name__)
+
+
+def _google_event_days(ev: dict, year: int, month: int) -> list[int]:
+    """RV07 (Epic 7) — dias (do mês) que um evento Google ocupa.
+
+    Aceita eventos all-day (fim exclusivo) e com horário (mostra no dia inicial).
+    Retorna a lista de números de dia que caem em (year, month).
+    """
+    import datetime as _dt
+
+    def _parse(s):
+        if not s:
+            return None
+        try:
+            return _dt.date.fromisoformat(str(s)[:10])  # 'YYYY-MM-DD' de date ou dateTime
+        except ValueError:
+            return None
+
+    start = _parse(ev.get("start"))
+    if start is None:
+        return []
+    if ev.get("all_day"):
+        end = _parse(ev.get("end")) or (start + _dt.timedelta(days=1))
+        last = end - _dt.timedelta(days=1)  # all-day: fim é exclusivo
+    else:
+        last = start
+
+    days = []
+    cur = start
+    while cur <= last:
+        if cur.year == year and cur.month == month:
+            days.append(cur.day)
+        cur += _dt.timedelta(days=1)
+    return days
+
+
 class CalendarView(EmpresaMixin, HtmxResponseMixin, TemplateView):
     template_name = "operations/calendar.html"
     partial_template_name = "operations/partials/_calendar.html"
@@ -680,6 +718,33 @@ class CalendarView(EmpresaMixin, HtmxResponseMixin, TemplateView):
         else:
             next_month, next_year = month + 1, year
 
+        # RV07 (Epic 7) — sobrepõe eventos da agenda Google conectada (leitura).
+        # Falha/ausência de integração → Calendário segue mostrando só as OS.
+        google_by_day: dict = {}
+        google_connected = False
+        try:
+            import datetime as _dtmod
+
+            from apps.integrations.services import (
+                get_calendar_provider,
+                list_calendar_events,
+            )
+
+            google_connected = get_calendar_provider(self.request.empresa) is not None
+            if google_connected:
+                tmin = timezone.make_aware(_dtmod.datetime(year, month, 1))
+                if month == 12:
+                    tmax = timezone.make_aware(_dtmod.datetime(year + 1, 1, 1))
+                else:
+                    tmax = timezone.make_aware(_dtmod.datetime(year, month + 1, 1))
+                for ev in list_calendar_events(
+                    self.request.empresa, time_min=tmin, time_max=tmax,
+                ):
+                    for day_num in _google_event_days(ev, year, month):
+                        google_by_day.setdefault(day_num, []).append(ev)
+        except Exception:  # noqa: BLE001
+            logger.exception("calendar google overlay failed")
+
         context.update(
             {
                 "year": year,
@@ -687,6 +752,8 @@ class CalendarView(EmpresaMixin, HtmxResponseMixin, TemplateView):
                 "month_name": MONTH_NAMES_PT[month],
                 "month_days": month_days,
                 "wo_by_day": wo_by_day,
+                "google_by_day": google_by_day,
+                "google_connected": google_connected,
                 "today": today,
                 "prev_month": prev_month,
                 "prev_year": prev_year,
