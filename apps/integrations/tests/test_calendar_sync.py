@@ -245,6 +245,20 @@ class CalendarViewOverlayTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertNotContains(resp, "Agenda Google")
 
+    def test_htmx_partial_includes_nav_and_month_name(self):
+        # Correção do bug de navegação: a resposta PARCIAL (HTMX) precisa conter
+        # o título do mês e os botões ◀▶ com alvos frescos — antes ficavam fora
+        # do #calendar-container e defasavam ("não muda o nome nem o mês").
+        resp = self.client.get(
+            reverse("operations:calendar"), {"year": 2026, "month": 7},
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(resp.status_code, 200)
+        html = resp.content.decode()
+        self.assertIn("Julho 2026", html)   # título dentro do parcial
+        self.assertIn("month=8", html)       # ▶ aponta p/ agosto (mês seguinte)
+        self.assertIn("month=6", html)       # ◀ aponta p/ junho (mês anterior)
+
 
 class GoogleEventDaysHelperTests(TestCase):
     def test_all_day_multi_day_spread_clamped_to_month(self):
