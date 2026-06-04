@@ -457,6 +457,17 @@ def _process_evolution_message(flow, sender_id, message_text):
         _mirror_to_inbox(flow, sender_id, message_text, "", session=None)
         return "", [], False, None
 
+    # RV07 (6.1) — Se o assistente IA está ativo para a empresa, ELE assume a
+    # conversa (no lugar do fluxo scriptado de nós).
+    try:
+        from apps.integrations.assistant import get_assistant_service
+        assistant = get_assistant_service(flow.empresa)
+    except Exception:  # noqa: BLE001
+        logger.exception("assistant: falha resolvendo serviço")
+        assistant = None
+    if assistant is not None:
+        return _process_with_assistant(assistant, flow, sender_id, message_text)
+
     # Buscar sessão ativa para este sender
     session = ChatbotSession.objects.filter(
         flow=flow, sender_id=sender_id, status=ChatbotSession.Status.ACTIVE,
@@ -553,6 +564,47 @@ def _process_evolution_message(flow, sender_id, message_text):
         return reply, result["step"].get("choices", []), False, None
 
     return "", [], False, None
+
+
+def _process_with_assistant(assistant, flow, sender_id, message_text):
+    """RV07 (6.1) — Roteia a mensagem para o assistente IA (Claude).
+
+    Resolve o lead (lazy), busca a conversa p/ histórico, chama o assistente e
+    registra inbound+outbound na inbox. Best-effort: qualquer falha do LLM cai
+    num fallback amigável e o humano vê a mensagem na inbox.
+    """
+    lead = _resolve_or_create_lead_lazy(flow, sender_id)
+
+    conversation = None
+    if lead is not None:
+        try:
+            from apps.communications.models import Conversation
+            conversation = (
+                Conversation.objects.filter(empresa=flow.empresa, lead=lead)
+                .order_by("-created_at").first()
+            )
+        except Exception:  # noqa: BLE001
+            conversation = None
+
+    try:
+        result = assistant.handle_inbound_message(
+            sender=sender_id, text=message_text,
+            lead=lead, conversation=conversation,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("assistant: handle_inbound_message falhou")
+        result = {"status": "error", "reply": ""}
+
+    reply = (result.get("reply") or "").strip()
+    if not reply:
+        # LLM falhou / sem chave / silêncio → fallback (humano assume pela inbox)
+        reply = "Recebi sua mensagem! 🙏 Já já um atendente te responde."
+
+    _mirror_to_inbox(
+        flow, sender_id, message_text, reply,
+        lead_id=lead.pk if lead is not None else None,
+    )
+    return reply, [], False, (lead.pk if lead is not None else None)
 
 
 def _resolve_or_create_lead_lazy(flow, sender_id, session=None, lead_id=None):

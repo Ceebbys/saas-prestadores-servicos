@@ -78,15 +78,15 @@
             <div>
                 <p class="text-sm font-semibold text-slate-900">Assistente IA (WhatsApp)</p>
                 <p class="text-xs text-slate-500">
-                    {% if assistant and assistant.is_enabled %}Ativo{% else %}Não configurado{% endif %} ·
+                    {% if assistant and assistant.is_enabled %}<span class="text-emerald-600">Ativo</span>{% else %}Não configurado{% endif %} ·
                     Criação de leads/propostas por conversa
                 </p>
             </div>
         </div>
-        <button type="button" disabled title="Em desenvolvimento"
-                class="px-4 py-2 text-sm font-medium text-slate-400 bg-slate-100 rounded-lg cursor-not-allowed opacity-60">
-            Em breve
-        </button>
+        <a href="{% url 'settings_app:assistant_settings' %}"
+           class="px-4 py-2 text-sm font-medium text-violet-700 bg-violet-50 rounded-lg hover:bg-violet-100 transition-colors">
+            Configurar
+        </a>
     </div>
 
     <p class="text-xs text-slate-400 px-1">

@@ -189,6 +189,8 @@ urlpatterns = [
     ),
     # RV07 (Epic 7 + 6.1) — Integrações (status read-only; groundwork)
     path("integrations/", views.IntegrationsSettingsView.as_view(), name="integrations"),
+    # RV07 (6.1) — Assistente IA (WhatsApp)
+    path("assistant/", views.AssistantSettingsView.as_view(), name="assistant_settings"),
     # WhatsApp Config
     path("whatsapp/", views.WhatsAppConfigView.as_view(), name="whatsapp_config"),
     path("whatsapp/save/", views.WhatsAppConfigSaveView.as_view(), name="whatsapp_config_save"),

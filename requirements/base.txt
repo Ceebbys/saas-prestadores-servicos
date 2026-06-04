@@ -30,3 +30,7 @@ daphne>=4.1
 
 # Web Push (notificações dispatch para browser fora da página)
 pywebpush>=2.0
+
+# Assistente IA (RV07 6.1) — SDK oficial da Anthropic (Claude). Chave BYO por
+# tenant (criptografada). Só é importado quando o assistente está habilitado.
+anthropic>=0.49

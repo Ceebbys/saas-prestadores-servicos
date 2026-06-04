@@ -424,3 +424,41 @@ class NotificationPreferenceForm(forms.Form):
             (label, [self[f"evt_{t}"] for t in types])
             for label, types in self._event_groups()
         ]
+
+
+# ---------------------------------------------------------------------------
+# RV07 (6.1) — Assistente IA (Claude) no WhatsApp
+# ---------------------------------------------------------------------------
+
+class AssistantConfigForm(TailwindFormMixin, forms.Form):
+    """Config do assistente IA. A chave de API é write-only (não exibida)."""
+
+    MODEL_CHOICES = [
+        ("claude-opus-4-8", "Claude Opus 4.8 — mais inteligente (mais caro)"),
+        ("claude-sonnet-4-6", "Claude Sonnet 4.6 — equilíbrio"),
+        ("claude-haiku-4-5", "Claude Haiku 4.5 — mais rápido e barato"),
+    ]
+
+    is_enabled = forms.BooleanField(
+        required=False, label="Ativar o assistente IA no WhatsApp",
+    )
+    model_name = forms.ChoiceField(
+        choices=MODEL_CHOICES, required=False, label="Modelo",
+    )
+    api_key = forms.CharField(
+        required=False, label="Chave de API da Anthropic",
+        widget=forms.PasswordInput(
+            render_value=False, attrs={"placeholder": "sk-ant-..."},
+        ),
+        help_text="Cole para definir/atualizar. Deixe em branco para manter a atual.",
+    )
+    whatsapp_number = forms.CharField(
+        required=False, max_length=32, label="Número WhatsApp do assistente",
+        help_text="Opcional — número dedicado (formato E.164).",
+    )
+    system_prompt = forms.CharField(
+        required=False, label="Instruções da empresa (opcional)",
+        widget=forms.Textarea(attrs={"rows": 5}),
+        help_text="Tom de voz, regras, o que oferecer/evitar. O assistente já "
+                  "sabe qualificar leads e preparar propostas.",
+    )

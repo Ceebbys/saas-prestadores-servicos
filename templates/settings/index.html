@@ -215,6 +215,23 @@
         </div>
     </a>
 
+    <!-- Assistente IA (RV07 6.1) -->
+    <a href="{% url 'settings_app:assistant_settings' %}"
+       class="group bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6 hover:shadow-md hover:ring-violet-200 transition-all duration-200">
+        <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 w-11 h-11 rounded-lg bg-violet-50 flex items-center justify-center group-hover:bg-violet-100 transition-colors">
+                {% icon "bolt" "w-5 h-5 text-violet-600" %}
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-slate-900 group-hover:text-violet-700 transition-colors">Assistente IA (WhatsApp)</h3>
+                    {% icon "chevron-right" "w-4 h-4 text-slate-300 group-hover:text-violet-400 transition-colors" %}
+                </div>
+                <p class="mt-1 text-sm text-slate-500">Atende, qualifica leads e prepara propostas por conversa (Claude)</p>
+            </div>
+        </div>
+    </a>
+
     <!-- WhatsApp -->
     <a href="{% url 'settings_app:whatsapp_config' %}"
        class="group bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-6 hover:shadow-md hover:ring-green-200 transition-all duration-200">

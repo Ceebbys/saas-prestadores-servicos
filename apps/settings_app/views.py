@@ -1812,3 +1812,61 @@ class IntegrationsSettingsView(EmpresaMixin, TemplateView):
         context["providers"] = providers
         context["assistant"] = AssistantConfig.objects.filter(empresa=empresa).first()
         return context
+
+
+class AssistantSettingsView(EmpresaMixin, View):
+    """RV07 (6.1) — Configura o assistente IA do WhatsApp (por empresa)."""
+
+    def _get_config(self, request):
+        from apps.integrations.models import AssistantConfig
+
+        obj, _ = AssistantConfig.objects.get_or_create(empresa=request.empresa)
+        return obj
+
+    def _initial(self, config):
+        return {
+            "is_enabled": config.is_enabled,
+            "model_name": config.model_name or "claude-opus-4-8",
+            "whatsapp_number": config.whatsapp_number,
+            "system_prompt": config.system_prompt,
+        }
+
+    def get(self, request):
+        from .forms import AssistantConfigForm
+
+        config = self._get_config(request)
+        return render(request, "settings/assistant_settings.html", {
+            "form": AssistantConfigForm(initial=self._initial(config)),
+            "has_key": bool(config.api_key_encrypted),
+        })
+
+    def post(self, request):
+        from apps.integrations.models import AssistantConfig
+
+        from .forms import AssistantConfigForm
+
+        config = self._get_config(request)
+        form = AssistantConfigForm(request.POST)
+        if form.is_valid():
+            new_key = (form.cleaned_data.get("api_key") or "").strip()
+            config.model_name = form.cleaned_data.get("model_name") or "claude-opus-4-8"
+            config.whatsapp_number = (form.cleaned_data.get("whatsapp_number") or "").strip()
+            config.system_prompt = form.cleaned_data.get("system_prompt") or ""
+            config.llm_provider = AssistantConfig.Provider.ANTHROPIC
+            if new_key:
+                config.set_api_key(new_key)
+            config.is_enabled = form.cleaned_data["is_enabled"]
+            # Não dá pra ativar sem chave de API.
+            if config.is_enabled and not new_key and not config.api_key_encrypted:
+                config.is_enabled = False
+                messages.error(
+                    request,
+                    "Para ativar o assistente, informe a chave de API da Anthropic.",
+                )
+            else:
+                messages.success(request, "Configurações do assistente IA salvas.")
+            config.save()
+            return redirect("settings_app:assistant_settings")
+        return render(request, "settings/assistant_settings.html", {
+            "form": form, "has_key": bool(config.api_key_encrypted),
+        })
