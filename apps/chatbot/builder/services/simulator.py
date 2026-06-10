@@ -211,6 +211,27 @@ def _step_through(graph: dict, state: dict, *, start_node: dict) -> dict:
                 state["messages"].append({"direction": "outbound", "content": msg, "node_id": node["id"]})
             return _complete_sim(state, node["id"], reason="handoff")
 
+        if ntype == "action":
+            # RV08 — Sandbox: ação NÃO é executada de verdade (não toca banco).
+            # Mostra o que aconteceria e segue, para o preview não travar em
+            # "unknown_node_type:action" (o nó 'action' não tinha tratamento).
+            at = (data.get("action_type") or "").strip()
+            if data.get("is_active", True):
+                detalhe = (
+                    f" → consulta '{data.get('query_type', '')}'"
+                    if at == "query_status" else ""
+                )
+                state["messages"].append({
+                    "direction": "system",
+                    "content": f"⚙ [Simulação] ação '{at or '?'}'{detalhe} seria executada aqui.",
+                    "node_id": node["id"],
+                })
+            nxt = _advance_from_sim(graph, node, state)
+            if nxt is None:
+                return _complete_sim(state, node["id"], reason="action_no_next")
+            node = nxt
+            continue
+
         if ntype == "end":
             return _complete_sim(state, node["id"], reason="end_node")
 

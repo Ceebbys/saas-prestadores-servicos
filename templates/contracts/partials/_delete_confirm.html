@@ -1,0 +1,93 @@
+{% load humanize %}
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60">
+    <div class="bg-white rounded-xl shadow-xl ring-1 ring-slate-200/60 max-w-md w-full mx-4 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-start justify-between">
+            <div class="flex items-start gap-3">
+                <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="text-base font-semibold text-slate-900">Excluir contrato</h3>
+                    <p class="text-sm text-slate-500 mt-0.5">O contrato vai para a lixeira — você pode restaurá-lo depois.</p>
+                </div>
+            </div>
+            <button type="button"
+                    onclick="document.getElementById('modal-container').innerHTML=''"
+                    class="p-1 rounded-lg text-slate-400 hover:bg-slate-100">
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="px-6 py-4">
+            <dl class="space-y-2 text-sm">
+                <div class="flex justify-between"><dt class="text-slate-500">Número</dt><dd class="font-mono">{{ contract.number }}</dd></div>
+                <div class="flex justify-between"><dt class="text-slate-500">Título</dt><dd>{{ contract.title|truncatechars:40 }}</dd></div>
+                <div class="flex justify-between"><dt class="text-slate-500">Status</dt><dd>{{ contract.get_status_display }}</dd></div>
+                <div class="flex justify-between"><dt class="text-slate-500">Valor</dt><dd class="font-medium">R$ {{ contract.value|floatformat:"2"|intcomma }}</dd></div>
+                {% if contract.lead %}
+                <div class="flex justify-between"><dt class="text-slate-500">Lead</dt><dd>{{ contract.lead.name|truncatechars:30 }}</dd></div>
+                {% endif %}
+            </dl>
+
+            {% if not can_delete %}
+            <div class="mt-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                <strong>Não permitido:</strong> só é possível excluir contratos em
+                <strong>Rascunho</strong> ou <strong>Cancelado</strong>. Cancele o
+                contrato antes de excluí-lo.
+            </div>
+            {% else %}
+            {# RV08 — Mostra lançamentos vinculados e oferece cascata #}
+            {% if pending_entries_count or paid_entries_count %}
+            <div class="mt-4 rounded-lg bg-blue-50 border border-blue-200 px-3 py-3 text-xs text-blue-900">
+                <p class="font-semibold mb-2">🔗 Lançamentos financeiros vinculados</p>
+                {% if pending_entries_count %}
+                <p class="mb-1">{{ pending_entries_count }} pendente{{ pending_entries_count|pluralize:"s" }}:</p>
+                <ul class="list-disc pl-5 mb-2 space-y-0.5">
+                    {% for e in pending_entries|slice:":3" %}
+                    <li>{{ e.description|truncatechars:40 }} — R$ {{ e.amount|floatformat:"2" }} ({{ e.date|date:"d/m/y" }})</li>
+                    {% endfor %}
+                    {% if pending_entries_count > 3 %}
+                    <li class="italic">… e mais {{ pending_entries_count|add:"-3" }}</li>
+                    {% endif %}
+                </ul>
+                <label class="flex items-start gap-2 cursor-pointer mt-2 p-2 rounded bg-white border border-blue-200 hover:bg-blue-50">
+                    <input type="checkbox" name="delete_entries" value="1" form="delete-contract-form"
+                           class="mt-0.5 rounded border-blue-300 text-red-600 focus:ring-red-500">
+                    <span>
+                        <span class="font-semibold">Também excluir os {{ pending_entries_count }} lançamento{{ pending_entries_count|pluralize:"s" }} pendente{{ pending_entries_count|pluralize:"s" }}</span>
+                        <span class="block text-blue-700 mt-0.5">Marque se a negociação não avançou e os pendentes não devem ser cobrados.</span>
+                    </span>
+                </label>
+                {% endif %}
+                {% if paid_entries_count %}
+                <p class="mt-2 text-blue-700 italic">
+                    {{ paid_entries_count }} já pago{{ paid_entries_count|pluralize:"s" }} — esse{{ paid_entries_count|pluralize:"s" }} NÃO {{ paid_entries_count|pluralize:"serão,será" }} excluído{{ paid_entries_count|pluralize:"s" }} (preservam o histórico de caixa).
+                </p>
+                {% endif %}
+            </div>
+            {% endif %}
+            {% endif %}
+        </div>
+
+        <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+            <button type="button"
+                    onclick="document.getElementById('modal-container').innerHTML=''"
+                    class="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
+                {% if can_delete %}Cancelar{% else %}Fechar{% endif %}
+            </button>
+            {% if can_delete %}
+            <form id="delete-contract-form" method="post" action="{% url 'contracts:delete' contract.pk %}">
+                {% csrf_token %}
+                <button type="submit"
+                        class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors shadow-sm cursor-pointer">
+                    Excluir
+                </button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</div>

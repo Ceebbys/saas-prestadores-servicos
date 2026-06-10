@@ -72,7 +72,8 @@ class ActionNodeCatalogTests(TestCase):
         self.assertIn("is_active", names)
 
     def test_action_type_enum_includes_all_types(self):
-        """RV06 — 10 tipos: 8 originais + send_proposal + send_contract."""
+        """RV06 — 8 originais + send_proposal + send_contract.
+        RV08 (5.2) — + query_status (Consultas ao Sistema) = 11 tipos."""
         entry = get_node_type("action")
         action_type_field = next(f for f in entry["data_fields"] if f["name"] == "action_type")
         # Os 8 originais
@@ -82,7 +83,9 @@ class ActionNodeCatalogTests(TestCase):
         # RV06: 2 novos
         self.assertIn("send_proposal", action_type_field["options"])
         self.assertIn("send_contract", action_type_field["options"])
-        self.assertEqual(len(action_type_field["options"]), 10)
+        # RV08 (5.2): Consultas ao Sistema
+        self.assertIn("query_status", action_type_field["options"])
+        self.assertEqual(len(action_type_field["options"]), 11)
 
     def test_data_fields_per_action_type_exists(self):
         """RV06 — catálogo declara campos extras condicionais por action_type."""

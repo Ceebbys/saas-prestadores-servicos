@@ -48,6 +48,7 @@ def notify(
     empresa=None,
     payload: dict | None = None,
     push: bool = True,
+    lead=None,
 ) -> Notification | None:
     """Cria notificação na DB + broadcast WS + Web Push (best-effort).
 
@@ -80,6 +81,7 @@ def notify(
     notif = Notification.objects.create(
         user=user,
         empresa=empresa,
+        lead=lead,  # RV08 (3.1) — vincula ao lead p/ o "ponto roxo" da Pipeline
         type=type,
         title=title[:200],
         body=body or "",
@@ -222,6 +224,7 @@ def notify_new_message(conversation, message) -> list:
         "url": f"/inbox/{conversation.pk}/",
         "icon": "chat-bubble-left-right",
         "empresa": conversation.empresa,
+        "lead": conversation.lead,
         "payload": {
             "conversation_id": conversation.pk,
             "channel": message.channel,
@@ -288,5 +291,6 @@ def notify_conversation_assigned(conversation, assigned_user, assigned_by) -> No
         url=f"/inbox/{conversation.pk}/",
         icon="user-plus",
         empresa=conversation.empresa,
+        lead=conversation.lead,
         payload={"conversation_id": conversation.pk},
     )

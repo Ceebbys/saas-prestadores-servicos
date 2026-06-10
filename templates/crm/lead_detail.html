@@ -182,25 +182,34 @@
         </div>
         {% endif %}
 
-        <!-- Checklist (RV07 4.1) -->
+        {% comment %}RV08 (2.1) — Checklist saiu da tela de Lead: agora vive no card
+           da Pipeline (Oportunidade) e na Ordem de Serviço, associado à execução
+           do serviço.{% endcomment %}
+
+        <!-- Histórico de Movimentações (RV08 3.2) -->
         <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60">
             <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-                <h3 class="text-sm font-semibold text-slate-700">Checklist</h3>
-                {% with n=lead.checklist_items.count %}
-                {% if n %}<span class="text-xs text-slate-400">{{ n }} {{ n|pluralize:"item,itens" }}</span>{% endif %}
-                {% endwith %}
+                <h3 class="text-sm font-semibold text-slate-700">Histórico de Movimentações</h3>
+                <span class="text-xs text-slate-400">{{ lead_events|length }} evento{{ lead_events|length|pluralize:"s" }}</span>
             </div>
-            {% if lead.checklist_items.exists %}
-            <ul class="divide-y divide-slate-100">
-                {% for item in lead.checklist_items.all %}
-                <li>{% include "crm/partials/_lead_checklist_item.html" %}</li>
+            {% if lead_events %}
+            <ol class="px-5 py-4 space-y-0">
+                {% for ev in lead_events %}
+                <li class="relative pl-6 pb-4 border-l-2 border-slate-100 last:border-l-transparent last:pb-0">
+                    <span class="absolute -left-[7px] top-0.5 w-3 h-3 rounded-full bg-indigo-500 ring-4 ring-white"></span>
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <p class="text-sm text-slate-800">{{ ev.title }}</p>
+                            {% if ev.description %}<p class="text-xs text-slate-500 mt-0.5">{{ ev.description }}</p>{% endif %}
+                            {% if ev.actor %}<p class="text-xs text-slate-400 mt-0.5">por {{ ev.actor.full_name|default:ev.actor.email }}</p>{% endif %}
+                        </div>
+                        <time class="text-xs text-slate-400 whitespace-nowrap flex-shrink-0">{{ ev.created_at|date:"d/m/y H:i" }}</time>
+                    </div>
+                </li>
                 {% endfor %}
-            </ul>
+            </ol>
             {% else %}
-            <p class="px-5 py-4 text-sm text-slate-400">
-                Nenhum item no checklist.
-                <a href="{% url 'crm:lead_update' lead.pk %}" class="text-indigo-600 hover:underline">Adicionar na edição do lead</a>.
-            </p>
+            <div class="px-5 py-6 text-center text-sm text-slate-400">Nenhuma movimentação registrada ainda</div>
             {% endif %}
         </div>
 
@@ -270,13 +279,16 @@
             </div>
             <form method="post" action="{% url 'crm:lead_contact_create' lead.pk %}" class="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
                 {% csrf_token %}
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
                     <select name="channel" class="rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
                         {% for value, label in contact_form.fields.channel.choices %}
                         <option value="{{ value }}">{{ label }}</option>
                         {% endfor %}
                     </select>
-                    <input type="text" name="note" placeholder="Observação (opcional)"
+                    <input type="datetime-local" name="contacted_at"
+                           title="Data/hora do contato (opcional — usa agora se vazio)"
+                           class="rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    <input type="text" name="note" placeholder="Observação (ex.: não atendeu, retornar amanhã)"
                            class="rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500 sm:col-span-2">
                 </div>
                 <div class="mt-3 flex justify-end">

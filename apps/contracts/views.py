@@ -3,10 +3,9 @@ from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.template.loader import render_to_string
-from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views import View
-from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
+from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
 from apps.core.mixins import EmpresaMixin, HtmxResponseMixin
 from apps.contracts.forms import ContractForm
@@ -156,14 +155,175 @@ class ContractUpdateView(EmpresaMixin, UpdateView):
         return self.object.get_absolute_url()
 
 
-class ContractDeleteView(EmpresaMixin, DeleteView):
-    model = Contract
-    success_url = reverse_lazy("contracts:list")
-    http_method_names = ["post"]
+class ContractDeleteView(EmpresaMixin, View):
+    """RV08 (1.1) — Exclui contrato (soft-delete) com confirmação.
 
-    def post(self, request, *args, **kwargs):
-        messages.success(request, "Contrato excluído com sucesso.")
-        return self.delete(request, *args, **kwargs)
+    Só permite excluir contratos em **Rascunho** ou **Cancelado** (proteção
+    contra exclusão acidental de contratos ativos/assinados). Espelha a UX de
+    `ProposalDeleteView`:
+
+    - GET  → modal de confirmação (HTMX) com cascata opcional de lançamentos.
+    - POST → valida status, cascata opcional de financeiros pendentes,
+      `AutomationLog` de auditoria e soft-delete (restaurável na lixeira).
+    """
+
+    ALLOWED_STATUSES = {Contract.Status.DRAFT, Contract.Status.CANCELLED}
+
+    def get(self, request, pk):
+        contract = get_object_or_404(Contract, pk=pk, empresa=request.empresa)
+        pending_entries = contract.financial_entries.filter(
+            status__in=("pending", "overdue"),
+        )
+        paid_entries_count = contract.financial_entries.filter(
+            status="paid",
+        ).count()
+        html = render_to_string(
+            "contracts/partials/_delete_confirm.html",
+            {
+                "contract": contract,
+                "can_delete": contract.status in self.ALLOWED_STATUSES,
+                "pending_entries": pending_entries,
+                "pending_entries_count": pending_entries.count(),
+                "paid_entries_count": paid_entries_count,
+            },
+            request=request,
+        )
+        return HttpResponse(html)
+
+    def post(self, request, pk):
+        from apps.automation.models import AutomationLog
+
+        contract = get_object_or_404(Contract, pk=pk, empresa=request.empresa)
+        if contract.status not in self.ALLOWED_STATUSES:
+            messages.error(
+                request,
+                "Só é possível excluir contratos em Rascunho ou Cancelado. "
+                "Cancele o contrato antes de excluí-lo.",
+            )
+            return redirect(contract.get_absolute_url())
+
+        # Cascata opcional: exclui também os lançamentos pendentes vinculados.
+        delete_entries = request.POST.get("delete_entries") == "1"
+        entries_deleted = 0
+        if delete_entries:
+            deleted_total, _by_model = contract.financial_entries.filter(
+                status__in=("pending", "overdue"),
+            ).delete()
+            entries_deleted = deleted_total
+
+        snapshot = {
+            "number": contract.number,
+            "title": contract.title,
+            "status": contract.status,
+            "value": str(contract.value),
+            "lead_id": contract.lead_id,
+            "lead_name": contract.lead.name if contract.lead_id else None,
+            "deleted_by_user_id": (
+                request.user.pk if request.user.is_authenticated else None
+            ),
+            "deleted_at": timezone.now().isoformat(),
+            "soft": True,
+            "cascaded_entries_deleted": entries_deleted,
+        }
+        AutomationLog.objects.create(
+            empresa=request.empresa,
+            action=AutomationLog.Action.CONTRACT_DELETED,
+            entity_type=AutomationLog.EntityType.CONTRACT,
+            entity_id=contract.pk,
+            status=AutomationLog.Status.SUCCESS,
+            metadata={"event": "contract_deleted", **snapshot},
+        )
+        number = contract.number
+        contract.delete()  # soft-delete: seta deleted_at
+        msg = (
+            f"Contrato {number} movido para a lixeira. "
+            f"Você pode restaurá-lo em Contratos › Lixeira."
+        )
+        if entries_deleted:
+            msg += (
+                f" {entries_deleted} lançamento(s) financeiro(s) pendente(s) "
+                f"também foram excluído(s)."
+            )
+        messages.success(request, msg)
+        return redirect("contracts:list")
+
+
+class ContractTrashView(EmpresaMixin, ListView):
+    """RV08 (1.1) — Lixeira: contratos soft-deleted da empresa."""
+
+    template_name = "contracts/contract_trash.html"
+    context_object_name = "contracts"
+    paginate_by = 30
+
+    def get_queryset(self):
+        return (
+            Contract.all_objects.filter(
+                empresa=self.request.empresa,
+                deleted_at__isnull=False,
+            )
+            .select_related("lead")
+            .order_by("-deleted_at")
+        )
+
+
+class ContractRestoreView(EmpresaMixin, View):
+    """RV08 (1.1) — Restaura um contrato soft-deleted."""
+
+    def post(self, request, pk):
+        from apps.automation.models import AutomationLog
+
+        contract = get_object_or_404(
+            Contract.all_objects, pk=pk,
+            empresa=request.empresa, deleted_at__isnull=False,
+        )
+        contract.restore()
+        AutomationLog.objects.create(
+            empresa=request.empresa,
+            action=AutomationLog.Action.CONTRACT_DELETED,  # reusa enum
+            entity_type=AutomationLog.EntityType.CONTRACT,
+            entity_id=contract.pk,
+            status=AutomationLog.Status.SUCCESS,
+            metadata={
+                "event": "contract_restored",
+                "number": contract.number,
+                "restored_by_user_id": (
+                    request.user.pk if request.user.is_authenticated else None
+                ),
+                "restored_at": timezone.now().isoformat(),
+            },
+        )
+        messages.success(request, f"Contrato {contract.number} restaurado.")
+        return redirect("contracts:trash")
+
+
+class ContractHardDeleteView(EmpresaMixin, View):
+    """RV08 (1.1) — Exclusão definitiva (apenas a partir da lixeira)."""
+
+    def post(self, request, pk):
+        from apps.automation.models import AutomationLog
+
+        contract = get_object_or_404(
+            Contract.all_objects, pk=pk,
+            empresa=request.empresa, deleted_at__isnull=False,
+        )
+        AutomationLog.objects.create(
+            empresa=request.empresa,
+            action=AutomationLog.Action.CONTRACT_DELETED,
+            entity_type=AutomationLog.EntityType.CONTRACT,
+            entity_id=contract.pk,
+            status=AutomationLog.Status.SUCCESS,
+            metadata={
+                "event": "contract_hard_deleted",
+                "number": contract.number,
+                "hard_deleted_by_user_id": (
+                    request.user.pk if request.user.is_authenticated else None
+                ),
+            },
+        )
+        number = contract.number
+        contract.hard_delete()
+        messages.success(request, f"Contrato {number} excluído definitivamente.")
+        return redirect("contracts:trash")
 
 
 class ContractStatusView(EmpresaMixin, View):

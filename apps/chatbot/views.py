@@ -51,9 +51,17 @@ class FlowCreateView(EmpresaMixin, HtmxResponseMixin, CreateView):
     success_url = reverse_lazy("chatbot:flow_list")
 
     def form_valid(self, form):
-        response = super().form_valid(form)
-        messages.success(self.request, "Fluxo de chatbot criado com sucesso.")
-        return response
+        # RV08 (5.1) — O formulário tradicional de montagem por etapas foi
+        # descontinuado: todo fluxo novo nasce no construtor visual. A criação
+        # coleta só os metadados (nome, canal, mensagens) e leva direto ao
+        # builder. Fluxos legacy existentes continuam executando normalmente.
+        form.instance.use_visual_builder = True
+        super().form_valid(form)
+        messages.success(
+            self.request,
+            "Fluxo criado. Monte o atendimento no construtor visual.",
+        )
+        return redirect("chatbot:flow_builder", pk=self.object.pk)
 
 
 class FlowDetailView(EmpresaMixin, DetailView):

@@ -18,6 +18,11 @@
         <p class="mt-1 text-sm text-slate-500">Visão geral das finanças · {{ period_label }}</p>
     </div>
     <div class="flex items-center gap-3">
+        <a href="{% url 'finance:open_finance' %}"
+           class="inline-flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-indigo-700 transition-colors">
+            {% icon "building-office" "w-4 h-4" %}
+            Open Finance
+        </a>
         <a href="{% url 'finance:entry_list' %}"
            class="text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors">
             Ver lançamentos

@@ -70,6 +70,9 @@ def start_session_v2(flow: ChatbotFlow, channel: str = "webchat", sender_id: str
         "schema_version": version.schema_version,
     })
 
+    # RV08 (5.2) — acumulador de respostas de ação do turno (ver _emit_action_reply)
+    session._turn_replies = []
+
     # RV08 — Inline actions no próprio bloco 'start' também disparam (cliente
     # pediu 'em todos os blocos'). _enter_node não é chamado no start porque
     # avançamos direto, então precisamos rodar manualmente aqui.
@@ -88,7 +91,7 @@ def start_session_v2(flow: ChatbotFlow, channel: str = "webchat", sender_id: str
         "welcome_message": welcome,
         "step": response.get("step"),  # nome legado para compat — equivale a "prompt do node atual"
         "is_complete": response.get("is_complete", False),
-        "message": response.get("message", ""),
+        "message": _merge_turn_replies(session, response).get("message", ""),
         "lead_id": response.get("lead_id"),
     }
 
@@ -112,6 +115,9 @@ def process_response_v2(session_key: str, user_response: str) -> dict:
     current = nodes_by_id.get(session.current_node_id)
     if current is None:
         return {"error": True, "message": "Nó atual não encontrado no grafo."}
+
+    # RV08 (5.2) — acumulador de respostas de ação do turno (ver _emit_action_reply)
+    session._turn_replies = []
 
     # Registra inbound
     _msg_in(session, current["id"], user_response)
@@ -138,9 +144,11 @@ def process_response_v2(session_key: str, user_response: str) -> dict:
     # Avança para próximo node (com edge handle correto se aplicável)
     next_node = _advance_from(graph, current, session, validation=validation)
     if next_node is None:
-        return _complete(session, graph, reason="no_outgoing_edge")
+        return _merge_turn_replies(
+            session, _complete(session, graph, reason="no_outgoing_edge"),
+        )
 
-    return _enter_node(graph, next_node, session)
+    return _merge_turn_replies(session, _enter_node(graph, next_node, session))
 
 
 # ---------------------------------------------------------------------------
@@ -381,6 +389,8 @@ def _run_inline_actions(node: dict, session: ChatbotSession) -> None:
             "message": (result.get("message") or "")[:200],
             **(result.get("extra") or {}),
         })
+        # RV08 (5.2) — ações que retornam reply_text respondem ao cliente.
+        _emit_action_reply(node, session, result)
 
 
 def _execute_action_node(node: dict, session: ChatbotSession) -> None:
@@ -420,6 +430,9 @@ def _execute_action_node(node: dict, session: ChatbotSession) -> None:
         "message": result.get("message", "")[:200],
         **(result.get("extra") or {}),
     })
+    # RV08 (5.2) — Se a ação produziu um texto de resposta (ex.: "Consultas ao
+    # Sistema"), o bot responde ao cliente.
+    _emit_action_reply(node, session, result)
 
 
 def _execute_api_call(node: dict, session: ChatbotSession) -> bool:
@@ -800,6 +813,34 @@ def _msg_out(session: ChatbotSession, node_id: str, content: str, payload: dict 
         node_id=node_id or "",
         payload=payload or {},
     )
+
+
+def _emit_action_reply(node: dict, session: ChatbotSession, result: dict) -> None:
+    """RV08 (5.2) — Resposta ao cliente vinda de uma ação (``extra.reply_text``).
+
+    Persiste a mensagem (log) E acumula no turno. O acumulador é essencial: o
+    canal (WhatsApp/webchat) entrega apenas o ``message`` retornado pelo motor;
+    sem acumular, a resposta da consulta ficaria só no banco e nunca chegaria
+    ao cliente (o motor avança e sobrescreve ``message`` com o próximo nó)."""
+    reply = (result.get("extra") or {}).get("reply_text")
+    if not reply:
+        return
+    reply = str(reply)
+    _msg_out(session, node.get("id", ""), reply)
+    pending = getattr(session, "_turn_replies", None)
+    if isinstance(pending, list):
+        pending.append(reply)
+
+
+def _merge_turn_replies(session: ChatbotSession, response: dict) -> dict:
+    """RV08 (5.2) — Prefixa as respostas de ação do turno ao ``message`` que o
+    canal vai entregar, para que as "Consultas ao Sistema" cheguem ao cliente."""
+    pending = getattr(session, "_turn_replies", None)
+    if pending:
+        base = (response.get("message") or "").strip()
+        joined = "\n\n".join(p for p in pending if p)
+        response["message"] = f"{joined}\n\n{base}".strip() if base else joined
+    return response
 
 
 def _log(session: ChatbotSession, node_id: str, event: str, level: str, payload: dict | None = None) -> None:

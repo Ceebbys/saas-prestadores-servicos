@@ -337,6 +337,15 @@ class Notification(TimestampedModel):
         related_name="notifications",
         help_text="Tenant; null para notificações pessoais (sistema).",
     )
+    # RV08 (3.1) — Lead relacionado (quando aplicável). Usado para exibir o
+    # "ponto roxo" de pendência/notificação diretamente no card da Pipeline.
+    lead = models.ForeignKey(
+        "crm.Lead",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="notifications",
+        verbose_name="Lead relacionado",
+    )
     type = models.CharField(
         "Tipo", max_length=40, choices=Type.choices, default=Type.SYSTEM,
     )

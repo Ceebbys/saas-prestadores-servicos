@@ -48,4 +48,26 @@ urlpatterns = [
         views.CategoryListView.as_view(),
         name="category_list",
     ),
+    # RV08 (6.1) — Open Finance: conectar/importar + classificar
+    path("open-finance/", views.OpenFinanceView.as_view(), name="open_finance"),
+    path(
+        "open-finance/connect-sandbox/",
+        views.OpenFinanceConnectSandboxView.as_view(),
+        name="open_finance_connect_sandbox",
+    ),
+    path(
+        "open-finance/import/",
+        views.OpenFinanceImportView.as_view(),
+        name="open_finance_import",
+    ),
+    path(
+        "open-finance/<int:pk>/classify/",
+        views.OpenFinanceClassifyView.as_view(),
+        name="open_finance_classify",
+    ),
+    path(
+        "open-finance/<int:pk>/ignore/",
+        views.OpenFinanceIgnoreView.as_view(),
+        name="open_finance_ignore",
+    ),
 ]

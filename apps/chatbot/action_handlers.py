@@ -18,6 +18,8 @@ Tipos suportados (RV06):
 - send_whatsapp        → Evolution API via apps.chatbot.whatsapp
 - send_proposal        → reusa apps.proposals.services.whatsapp.send_proposal_whatsapp
 - send_contract        → reusa apps.contracts.services.whatsapp.send_contract_whatsapp
+- query_status         → RV08 (5.2) "Consultas ao Sistema": responde status de
+                          serviço/proposta/contrato/previsão/responsável ao cliente
 - create_task          → placeholder (V2 — não implementado)
 """
 from __future__ import annotations
@@ -510,12 +512,24 @@ def _handle_send_proposal(session: "ChatbotSession", config: dict) -> dict:
             "message": "send_proposal: Lead ainda não criado",
             "extra": {"skipped": True, "reason": "no_lead"},
         }
+    # RV08 — defesa cross-tenant (consistente com os demais handlers)
+    cross = _check_lead_same_tenant(session)
+    if cross is not None:
+        return cross
 
     empresa = session.flow.empresa
-    # Busca proposta DRAFT do lead (idempotência)
+    # RV08 — Reutiliza só propostas "vivas" (rascunho/enviada/visualizada).
+    # Aceitas/rejeitadas/expiradas/canceladas NÃO são reenviadas — cria nova.
     proposal = (
         Proposal.objects
-        .filter(empresa=empresa, lead=session.lead)
+        .filter(
+            empresa=empresa, lead=session.lead,
+            status__in=(
+                Proposal.Status.DRAFT,
+                Proposal.Status.SENT,
+                Proposal.Status.VIEWED,
+            ),
+        )
         .order_by("-created_at")
         .first()
     )
@@ -575,11 +589,20 @@ def _handle_send_contract(session: "ChatbotSession", config: dict) -> dict:
             "message": "send_contract: Lead ainda não criado",
             "extra": {"skipped": True, "reason": "no_lead"},
         }
+    # RV08 — defesa cross-tenant (consistente com os demais handlers)
+    cross = _check_lead_same_tenant(session)
+    if cross is not None:
+        return cross
 
     empresa = session.flow.empresa
+    # RV08 — Reutiliza só contratos "vivos" (rascunho/enviado); assinados/ativos/
+    # concluídos/cancelados NÃO são reenviados — cria novo.
     contract = (
         Contract.objects
-        .filter(empresa=empresa, lead=session.lead)
+        .filter(
+            empresa=empresa, lead=session.lead,
+            status__in=(Contract.Status.DRAFT, Contract.Status.SENT),
+        )
         .order_by("-created_at")
         .first()
     )
@@ -624,6 +647,119 @@ def _handle_send_contract(session: "ChatbotSession", config: dict) -> dict:
         "message": f"send_contract: {msg}",
         "extra": {"contract_id": contract.pk, "mode": mode},
     }
+
+
+def _handle_query_status(session: "ChatbotSession", config: dict) -> dict:
+    """RV08 (5.2) — "Consultas ao Sistema".
+
+    Responde ao cliente com informações que JÁ existem no sistema sobre o lead
+    da sessão (andamento do serviço, status da proposta/contrato, previsão de
+    entrega, responsável). A resposta vai em ``extra['reply_text']`` e o motor
+    do chatbot a envia como mensagem do bot.
+    """
+    query_type = (config.get("query_type") or "service_progress").strip()
+    if not session.lead_id:
+        return {
+            "ok": False,
+            "message": "query_status: lead não identificado",
+            "extra": {
+                "reply_text": (
+                    "Para consultar essa informação eu preciso identificar seu "
+                    "cadastro. Pode me informar seu nome ou e-mail?"
+                ),
+                "skipped": True,
+                "reason": "no_lead",
+            },
+        }
+    # Defesa cross-tenant (mesma usada nos demais handlers)
+    cross = _check_lead_same_tenant(session)
+    if cross is not None:
+        return cross
+
+    reply = _build_query_reply(session.flow.empresa, session.lead, query_type)
+    return {
+        "ok": True,
+        "message": f"query_status: {query_type}",
+        "extra": {"reply_text": reply, "query_type": query_type},
+    }
+
+
+def _build_query_reply(empresa, lead, query_type: str) -> str:
+    """Monta a resposta amigável da consulta a partir dos dados do lead."""
+    from apps.contracts.models import Contract
+    from apps.operations.models import WorkOrder
+    from apps.proposals.models import Proposal
+
+    def _latest_wo():
+        return (
+            WorkOrder.objects.filter(empresa=empresa, lead=lead)
+            .order_by("-created_at")
+            .first()
+        )
+
+    if query_type == "proposal_status":
+        p = (
+            Proposal.objects.filter(empresa=empresa, lead=lead)
+            .order_by("-created_at")
+            .first()
+        )
+        if not p:
+            return "Ainda não há proposta registrada no seu cadastro."
+        return f"Sua proposta {p.number} está com status: {p.get_status_display()}."
+
+    if query_type == "contract_status":
+        c = (
+            Contract.objects.filter(empresa=empresa, lead=lead)
+            .order_by("-created_at")
+            .first()
+        )
+        if not c:
+            return "Ainda não há contrato registrado no seu cadastro."
+        return f"Seu contrato {c.number} está com status: {c.get_status_display()}."
+
+    if query_type == "responsible":
+        resp = ""
+        if lead.assigned_to_id:
+            resp = lead.assigned_to.full_name or lead.assigned_to.email
+        if not resp:
+            wo = _latest_wo()
+            if wo and wo.assigned_to_id:
+                resp = wo.assigned_to.full_name or wo.assigned_to.email
+        if resp:
+            return f"O responsável pelo seu atendimento é {resp}."
+        return "Seu atendimento ainda não tem um responsável atribuído."
+
+    if query_type in ("delivery_forecast", "completion_date"):
+        wo = _latest_wo()
+        if not wo:
+            return (
+                "Ainda não há ordem de serviço aberta para informar a previsão "
+                "de entrega."
+            )
+        if wo.status == WorkOrder.Status.COMPLETED:
+            when = wo.completed_at.strftime("%d/%m/%Y") if wo.completed_at else ""
+            sufixo = f" em {when}" if when else ""
+            return f"Seu serviço (OS {wo.number}) foi concluído{sufixo}."
+        if wo.expected_end_date:
+            return (
+                f"A previsão de conclusão do seu serviço (OS {wo.number}) é "
+                f"{wo.expected_end_date.strftime('%d/%m/%Y')}."
+            )
+        if wo.scheduled_date:
+            return (
+                f"Seu serviço (OS {wo.number}) está agendado para "
+                f"{wo.scheduled_date.strftime('%d/%m/%Y')}."
+            )
+        return (
+            f"Seu serviço (OS {wo.number}) está {wo.get_status_display().lower()}, "
+            "ainda sem data de conclusão definida."
+        )
+
+    # default → service_progress
+    wo = _latest_wo()
+    if not wo:
+        return "Ainda não há ordem de serviço aberta no seu cadastro."
+    return f"O status do seu serviço (OS {wo.number}) é: {wo.get_status_display()}."
 
 
 def _handle_create_task(session: "ChatbotSession", config: dict) -> dict:
@@ -678,15 +814,47 @@ def _create_proposal_from_template(empresa, lead, template_id, lead_data):
         terms = template.terms or ""
         content = template.content or ""
 
+    # RV08 (5.3) — BUG corrigido: `Proposal` NÃO tem campo `content` (esse é do
+    # ProposalTemplate). O conteúdo vai para `body`. Antes, `content=content`
+    # levantava TypeError em Proposal.objects.create(), que `dispatch_action`
+    # capturava e devolvia como "Erro executando ação…" — a automação nunca
+    # conseguia enviar a proposta auto-criada.
+    servico_snap = (lead_data or {}).get("servico_snapshot") or {}
+    servico_id = servico_snap.get("id")
+    # RV08 — Revalida que o serviço é da própria empresa antes de vincular
+    # (defesa contra snapshot adulterado/antigo apontando para outro tenant).
+    if servico_id:
+        from apps.operations.models import ServiceType
+        if not ServiceType.objects.filter(pk=servico_id, empresa=empresa).exists():
+            servico_id = None
     proposal = Proposal.objects.create(
         empresa=empresa,
         lead=lead,
         title=f"Proposta — {lead.name}",
         introduction=intro,
         terms=terms,
-        content=content,
+        body=content,
+        template=template,
+        servico_id=servico_id or None,
         status=Proposal.Status.DRAFT,
     )
+
+    # RV08 — Dá valor à proposta a partir do serviço vinculado (quando houver),
+    # evitando enviar uma proposta R$ 0,00.
+    from decimal import Decimal, InvalidOperation
+    try:
+        default_price = Decimal(str(servico_snap.get("default_price") or "0"))
+    except (InvalidOperation, TypeError, ValueError):
+        default_price = Decimal("0")
+    if default_price > 0:
+        from apps.proposals.models import ProposalItem
+        ProposalItem.objects.create(
+            proposal=proposal,
+            description=servico_snap.get("name") or proposal.title,
+            unit_price=default_price,
+        )
+        proposal.recalculate_totals()
+
     logger.info(
         "Proposta #%s criada automaticamente para lead=%s (template=%s)",
         proposal.pk, lead.pk, template.pk if template else None,
@@ -743,5 +911,6 @@ _HANDLERS = {
     "send_whatsapp": _handle_send_whatsapp,
     "send_proposal": _handle_send_proposal,
     "send_contract": _handle_send_contract,
+    "query_status": _handle_query_status,  # RV08 (5.2) — Consultas ao Sistema
     "create_task": _handle_create_task,
 }

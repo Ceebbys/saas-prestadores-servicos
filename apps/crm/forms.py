@@ -224,7 +224,11 @@ class LeadForm(TailwindFormMixin, forms.ModelForm):
         if commit:
             lead.save()
             self.save_m2m()
-            self._sync_checklist(lead)
+            # RV08 (2.1) — O editor de checklist saiu da tela de Lead. Só
+            # reconcilia se o campo veio no POST (compat. com integrações que
+            # ainda o enviem); sem o campo, preserva itens legados sem apagá-los.
+            if "checklist_json" in self.data:
+                self._sync_checklist(lead)
         return lead
 
     def _sync_checklist(self, lead):
@@ -271,6 +275,16 @@ class LeadContactForm(TailwindFormMixin, forms.ModelForm):
                 attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"
             ),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # RV08 (4.1) — BUG: o model `LeadContact.contacted_at` tem
+        # `default=timezone.now` mas SEM `blank=True`, então o campo nascia
+        # OBRIGATÓRIO no form. O formulário no template só envia `channel`+`note`,
+        # então `is_valid()` sempre falhava e nenhum contato/ligação era gravado.
+        # Tornamos opcional; a view preenche com `timezone.now()` quando vazio.
+        self.fields["contacted_at"].required = False
+        self.fields["note"].required = False
 
 
 class OpportunityForm(TailwindFormMixin, forms.ModelForm):

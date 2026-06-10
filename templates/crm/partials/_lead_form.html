@@ -90,51 +90,8 @@
         {% form_field form.notes %}
     </div>
 
-    {# RV07 (4.1) — Checklist do Lead (pós-venda / execução) #}
-    <div class="mt-4 pt-4 border-t border-slate-200"
-         x-data="{ items: {{ form.checklist_json.value|default:'[]' }} }">
-        <div class="flex items-center justify-between mb-1">
-            <h3 class="text-sm font-semibold text-slate-700">Checklist</h3>
-            <span class="text-xs text-slate-400"
-                  x-text="items.length + ' item' + (items.length === 1 ? '' : 'ns')"></span>
-        </div>
-        <p class="text-xs text-slate-500 mb-3">
-            Tarefas do lead (ex.: pós-venda, revisões). Você marca como concluído depois, na página do lead.
-        </p>
-        <input type="hidden" name="checklist_json" :value="JSON.stringify(items)">
-        <template x-for="(it, idx) in items" :key="idx">
-            <div class="flex items-center gap-2 mb-2">
-                <span class="text-xs text-slate-400 w-6 text-right shrink-0" x-text="(idx + 1) + '.'"></span>
-                <input type="text" x-model="it.description" placeholder="Ex: Revisão técnica" maxlength="500"
-                       class="flex-1 rounded-lg border-slate-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                       :class="it.is_completed ? 'line-through text-slate-400' : ''">
-                <button type="button"
-                        @click="if (idx > 0) { [items[idx-1], items[idx]] = [items[idx], items[idx-1]]; }"
-                        :disabled="idx === 0"
-                        class="p-1.5 text-slate-400 hover:text-slate-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                        title="Subir">
-                    {% icon "chevron-up" "w-4 h-4" %}
-                </button>
-                <button type="button"
-                        @click="if (idx < items.length - 1) { [items[idx+1], items[idx]] = [items[idx], items[idx+1]]; }"
-                        :disabled="idx === items.length - 1"
-                        class="p-1.5 text-slate-400 hover:text-slate-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                        title="Descer">
-                    {% icon "chevron-down" "w-4 h-4" %}
-                </button>
-                <button type="button" @click="items.splice(idx, 1)"
-                        class="p-1.5 text-slate-400 hover:text-red-500 transition-colors" title="Remover">
-                    {% icon "x-mark" "w-4 h-4" %}
-                </button>
-            </div>
-        </template>
-        <button type="button"
-                @click="items.push({description: '', is_completed: false})"
-                class="inline-flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-800 font-medium mt-1">
-            {% icon "plus" "w-4 h-4" %}
-            Adicionar item ao checklist
-        </button>
-    </div>
+    {% comment %}RV08 (2.1) — Checklist removido da tela de Lead. Agora é criado no
+       card da Pipeline (Oportunidade) e na Ordem de Serviço, ligado à execução.{% endcomment %}
 
     <div class="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
         <a href="{{ cancel_url|default:'/crm/leads/' }}"

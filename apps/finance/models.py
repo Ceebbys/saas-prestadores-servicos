@@ -193,3 +193,144 @@ class FinancialEntry(TenantOwnedModel):
 
     def __str__(self):
         return f"{self.description} - R$ {self.amount}"
+
+
+# ---------------------------------------------------------------------------
+# RV08 (6.1) — Open Finance: conexão bancária + movimentações importadas
+# ---------------------------------------------------------------------------
+
+
+class BankConnection(TenantOwnedModel):
+    """Conexão de importação de movimentações bancárias (Open Finance).
+
+    MVP: provider ``sandbox`` (gera movimentações demo) e ``manual`` (importação
+    de extrato CSV/OFX). A interface é plugável — Pluggy/Belvo entram depois via
+    settings, reusando o mesmo fluxo de classificação. Credenciais/tokens de um
+    agregador real ficam criptografados (Fernet) em ``credentials_encrypted``.
+    """
+
+    class Provider(models.TextChoices):
+        SANDBOX = "sandbox", "Sandbox (demonstração)"
+        MANUAL = "manual", "Importação manual (CSV/OFX)"
+        PLUGGY = "pluggy", "Pluggy"
+        BELVO = "belvo", "Belvo"
+
+    class Status(models.TextChoices):
+        CONNECTED = "connected", "Conectado"
+        DISCONNECTED = "disconnected", "Desconectado"
+        ERROR = "error", "Erro"
+
+    provider = models.CharField(
+        "Provedor", max_length=20, choices=Provider.choices,
+        default=Provider.MANUAL,
+    )
+    bank_account = models.ForeignKey(
+        BankAccount,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="connections",
+        verbose_name="Conta bancária",
+    )
+    status = models.CharField(
+        "Status", max_length=20, choices=Status.choices, default=Status.CONNECTED,
+    )
+    credentials_encrypted = models.TextField(
+        "Credenciais (cifradas)", blank=True,
+        help_text="Token/credenciais do agregador, cifrados com Fernet.",
+    )
+    last_synced_at = models.DateTimeField("Última sincronização", null=True, blank=True)
+    metadata = models.JSONField("Metadados", default=dict, blank=True)
+
+    class Meta:
+        verbose_name = "Conexão bancária (Open Finance)"
+        verbose_name_plural = "Conexões bancárias (Open Finance)"
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["empresa", "provider"],
+                name="uniq_bankconnection_empresa_provider",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.get_provider_display()} ({self.get_status_display()})"
+
+
+class ImportedTransaction(TenantOwnedModel):
+    """Movimentação bancária importada, pendente de classificação.
+
+    Idempotência por ``(empresa, external_id)``: re-importar o mesmo extrato não
+    duplica. Ao classificar, gera um :class:`FinancialEntry` e fica vinculada a
+    ele (``classified_entry``)."""
+
+    class Direction(models.TextChoices):
+        CREDIT = "credit", "Entrada"
+        DEBIT = "debit", "Saída"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pendente"
+        CLASSIFIED = "classified", "Classificada"
+        IGNORED = "ignored", "Ignorada"
+
+    connection = models.ForeignKey(
+        BankConnection,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="transactions",
+        verbose_name="Conexão",
+    )
+    bank_account = models.ForeignKey(
+        BankAccount,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="imported_transactions",
+        verbose_name="Conta bancária",
+    )
+    external_id = models.CharField(
+        "ID externo", max_length=200, db_index=True,
+        help_text="Identificador da transação no banco/agregador (idempotência).",
+    )
+    date = models.DateField("Data")
+    amount = models.DecimalField("Valor", max_digits=12, decimal_places=2)
+    description = models.CharField("Descrição", max_length=500, blank=True)
+    direction = models.CharField(
+        "Sentido", max_length=10, choices=Direction.choices,
+    )
+    classification_status = models.CharField(
+        "Classificação", max_length=12, choices=Status.choices,
+        default=Status.PENDING,
+    )
+    classified_entry = models.ForeignKey(
+        FinancialEntry,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="+",
+        verbose_name="Lançamento gerado",
+    )
+    raw_payload = models.JSONField("Payload bruto", default=dict, blank=True)
+
+    class Meta:
+        verbose_name = "Movimentação importada"
+        verbose_name_plural = "Movimentações importadas"
+        ordering = ["-date", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["empresa", "external_id"],
+                name="uniq_imported_txn_empresa_external_id",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["empresa", "classification_status", "-date"]),
+        ]
+
+    def __str__(self):
+        return f"{self.date} {self.get_direction_display()} R$ {self.amount}"
+
+    @property
+    def suggested_type(self) -> str:
+        """Sugere receita/despesa a partir do sentido (crédito→receita)."""
+        return (
+            FinancialEntry.Type.INCOME
+            if self.direction == self.Direction.CREDIT
+            else FinancialEntry.Type.EXPENSE
+        )

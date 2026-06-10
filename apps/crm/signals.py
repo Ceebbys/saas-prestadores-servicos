@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 _LEAD_PREVIOUS_STAGE_ATTR = "_lead_previous_stage_id"
+_LEAD_PREVIOUS_ASSIGNED_ATTR = "_lead_previous_assigned_id"
 
 
 @receiver(pre_save, sender=Lead)
@@ -34,16 +35,20 @@ def _lead_capture_previous_stage(sender, instance: Lead, **kwargs) -> None:
     """RV10 — Lê o pipeline_stage_id anterior para detectar transições.
 
     Necessário no post_save para decidir se dispara LEAD_GANHO/LEAD_PERDIDO
-    (transições para stage com is_won/is_lost).
+    (transições para stage com is_won/is_lost). RV08 (3.2) — também captura o
+    responsável anterior para registrar "mudança de responsável" na timeline.
     """
     if not instance.pk:
         setattr(instance, _LEAD_PREVIOUS_STAGE_ATTR, None)
+        setattr(instance, _LEAD_PREVIOUS_ASSIGNED_ATTR, None)
         return
     try:
-        prev = Lead.objects.only("pipeline_stage_id").get(pk=instance.pk)
+        prev = Lead.objects.only("pipeline_stage_id", "assigned_to_id").get(pk=instance.pk)
         setattr(instance, _LEAD_PREVIOUS_STAGE_ATTR, prev.pipeline_stage_id)
+        setattr(instance, _LEAD_PREVIOUS_ASSIGNED_ATTR, prev.assigned_to_id)
     except Lead.DoesNotExist:
         setattr(instance, _LEAD_PREVIOUS_STAGE_ATTR, None)
+        setattr(instance, _LEAD_PREVIOUS_ASSIGNED_ATTR, None)
 
 
 def _get_default_first_stage(empresa) -> PipelineStage | None:
@@ -91,6 +96,11 @@ def lead_post_save(sender, instance: Lead, created: bool, **kwargs):
             )
         # Lead criado já em stage de ganho? gera entry mesmo assim
         _maybe_generate_finance_entry(instance)
+        # RV08 (3.2) — primeiro evento da timeline
+        _log_lead_event_safe(
+            instance, "lead_created",
+            f"Lead criado: {instance.name}", icon="user-plus",
+        )
         # RV10 — dispara automação de pipeline (LEAD_CRIADO + possível LEAD_GANHO)
         _maybe_dispatch_lead_pipeline_event(instance, created=True, previous_stage_id=None)
         return
@@ -101,6 +111,20 @@ def lead_post_save(sender, instance: Lead, created: bool, **kwargs):
             current_stage_id=instance.pipeline_stage_id
         ).update(current_stage_id=instance.pipeline_stage_id)
 
+    # RV08 (3.2) — mudança de responsável na timeline
+    prev_assigned = getattr(instance, _LEAD_PREVIOUS_ASSIGNED_ATTR, None)
+    if prev_assigned != instance.assigned_to_id:
+        new_name = "Ninguém"
+        if instance.assigned_to_id:
+            try:
+                new_name = instance.assigned_to.full_name or instance.assigned_to.email
+            except Exception:  # noqa: BLE001
+                new_name = "—"
+        _log_lead_event_safe(
+            instance, "assignee_changed",
+            f"Responsável alterado para {new_name}", icon="user",
+        )
+
     # RV06 — Gera entry financeira se virou WON (idempotente)
     _maybe_generate_finance_entry(instance)
     # RV10 — dispara automação de pipeline em update (LEAD_GANHO/LEAD_PERDIDO)
@@ -108,6 +132,19 @@ def lead_post_save(sender, instance: Lead, created: bool, **kwargs):
     _maybe_dispatch_lead_pipeline_event(
         instance, created=False, previous_stage_id=previous_stage_id,
     )
+
+
+def _log_lead_event_safe(lead, event_type, title, *, description="", icon=""):
+    """RV08 (3.2) — wrapper best-effort para registrar evento na timeline."""
+    try:
+        from apps.crm.events import log_lead_event
+
+        log_lead_event(
+            lead, event_type=event_type, title=title,
+            description=description, icon=icon,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("lead_timeline_log_failed type=%s lead=%s", event_type, lead.pk)
 
 
 def _maybe_dispatch_lead_pipeline_event(
@@ -149,8 +186,18 @@ def _maybe_dispatch_lead_pipeline_event(
             stage = lead.pipeline_stage
             if stage and stage.is_won:
                 events_to_fire.append(PipelineAutomationRule.Event.LEAD_GANHO)
+                _log_lead_event_safe(
+                    lead, "lead_won",
+                    f"Lead movido para Fechado Ganho ({stage.name})",
+                    icon="check-circle",
+                )
             elif stage and stage.is_lost:
                 events_to_fire.append(PipelineAutomationRule.Event.LEAD_PERDIDO)
+                _log_lead_event_safe(
+                    lead, "lead_lost",
+                    f"Lead movido para Fechado Perdido ({stage.name})",
+                    icon="x-circle",
+                )
             # RV07 (6.2) — "lead movimentado" só em transições reais de etapa
             # que NÃO sejam ganho/perdido (won já notifica LEAD_WON) e nunca na
             # criação. Como estamos após o guard de `_suppress_automation`, um

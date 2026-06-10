@@ -204,8 +204,12 @@ class WorkOrderForm(TailwindFormMixin, forms.ModelForm):
         )
         if commit:
             instance.save()
-            # RV09 — Sincroniza checklist DEPOIS do save (precisa de instance.pk)
-            self._sync_checklist(instance)
+            # RV08 (2.2) — O editor de checklist saiu do formulário da OS (agora é
+            # multi-checklist na página da OS). Só reconcilia o checklist legado se
+            # o campo veio no POST; sem ele, preserva os itens legados (evita
+            # apagar dados ao salvar o form sem o editor).
+            if "checklist_json" in self.data:
+                self._sync_checklist(instance)
         return instance
 
     def _sync_checklist(self, instance):

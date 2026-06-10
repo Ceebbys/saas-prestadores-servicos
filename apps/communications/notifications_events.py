@@ -62,11 +62,23 @@ def _emit(source, empresa, *, type, title, body, icon, url, payload,
         return
 
     def _run():
+        # RV08 (3.2) — Registra UMA entrada na timeline do Lead por evento
+        # (antes de notificar cada destinatário), quando há lead vinculado.
+        if lead is not None:
+            try:
+                from apps.crm.events import log_lead_event
+
+                log_lead_event(
+                    lead, event_type=type, title=title,
+                    description=body, icon=icon, metadata=payload or {},
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("lead_event_log_failed type=%s", type)
         try:
             for user in _resolve_recipients(empresa, lead, extra_user=extra_user):
                 notify(
                     user, type=type, title=title, body=body, url=url,
-                    icon=icon, empresa=empresa, payload=payload,
+                    icon=icon, empresa=empresa, payload=payload, lead=lead,
                 )
         except Exception:  # noqa: BLE001
             logger.exception("notify_event_failed type=%s", type)

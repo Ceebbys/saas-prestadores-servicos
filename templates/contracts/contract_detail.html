@@ -112,6 +112,16 @@
             Editar
         </a>
         {% endif %}
+        {# RV08 (1.1) — Excluir só para Rascunho/Cancelado, com modal de confirmação #}
+        {% if contract.status == 'draft' or contract.status == 'cancelled' %}
+        <button type="button"
+                hx-get="{% url 'contracts:delete' contract.pk %}"
+                hx-target="#modal-container" hx-swap="innerHTML"
+                class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-sm font-medium text-red-600 ring-1 ring-red-200 hover:bg-red-50 transition-colors">
+            {% icon "trash" "w-4 h-4" %}
+            Excluir
+        </button>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

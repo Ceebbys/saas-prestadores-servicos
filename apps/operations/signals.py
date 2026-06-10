@@ -16,7 +16,7 @@ from django.db import transaction
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
-from apps.operations.models import WorkOrder
+from apps.operations.models import HourRate, WorkOrder
 
 logger = logging.getLogger(__name__)
 
@@ -109,5 +109,33 @@ def _sync_work_order_to_google(sender, instance: WorkOrder, created: bool, **kwa
             sync_work_order_to_calendar(instance)
         except Exception:  # noqa: BLE001
             logger.exception("wo google calendar sync failed wo=%s", instance.pk)
+
+    transaction.on_commit(_run)
+
+
+@receiver(post_save, sender=HourRate)
+def _resync_labor_on_rate_change(sender, instance: HourRate, **kwargs) -> None:
+    """RV08 (7.1) — Ao configurar/alterar o valor-hora, aplica a tarifa aos
+    apontamentos antigos que ficaram sem valor e atualiza o custo operacional
+    (despesa) das OS afetadas. Resolve o bug "configurei o valor-hora mas a OS
+    seguia dizendo que não estava configurado / custo R$ 0".
+
+    Roda no commit (para enxergar a tarifa recém-salva) e nunca derruba o save.
+    """
+    empresa = instance.empresa
+
+    def _run():
+        try:
+            from apps.finance.services import generate_labor_cost_entry
+            from apps.operations.services import backfill_null_rates
+
+            affected_ids = backfill_null_rates(empresa)
+            for wo in WorkOrder.objects.filter(pk__in=affected_ids):
+                generate_labor_cost_entry(wo)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "RV08 7.1 — falha ao re-sincronizar custos após mudança de "
+                "valor-hora (empresa=%s)", empresa.pk,
+            )
 
     transaction.on_commit(_run)

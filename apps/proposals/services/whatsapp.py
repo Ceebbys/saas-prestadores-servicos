@@ -37,11 +37,16 @@ def _client_for_empresa(empresa):
 
 
 def _build_public_link(proposal: Proposal, request) -> str:
+    path = f"/p/{proposal.public_token}/"
     if request is not None:
-        path = f"/p/{proposal.public_token}/"
         return request.build_absolute_uri(path)
-    # Fallback sem request — link relativo (caller deve completar)
-    return f"/p/{proposal.public_token}/"
+    # RV08 (5.3) — Sem request (envio pela automação do chatbot via webhook):
+    # monta URL absoluta a partir de settings.SITE_URL para o link no WhatsApp
+    # ser clicável (antes saía relativo "/p/<token>/" e era inútil).
+    from django.conf import settings
+
+    base = (getattr(settings, "SITE_URL", "") or "").rstrip("/")
+    return f"{base}{path}" if base else path
 
 
 def send_proposal_whatsapp(

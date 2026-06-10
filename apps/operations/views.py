@@ -48,9 +48,23 @@ def _format_hm(seconds: int) -> str:
 def time_section_context(work_order, user):
     """Contexto consistente da seção 'Tempo / Horas' da OS — usado pela
     DetailView e pelas ações de cronômetro/manual (HTMX)."""
+    from apps.operations.services import backfill_null_rates
+
+    # RV08 (7.1) — auto-cura: aplica o valor-hora a apontamentos antigos que
+    # ficaram sem tarifa (registrados antes de configurar). Idempotente e só
+    # escreve quando há tarifa resolvível — resolve "configurei mas dá R$ 0 /
+    # diz que não está configurado".
+    backfill_null_rates(work_order.empresa, work_order=work_order)
+
     logs = list(work_order.time_logs.select_related("user").all())
     total_seconds = sum(log.live_duration_seconds for log in logs)
     billable_total = sum((log.billable_value for log in logs), Decimal("0.00"))
+    # Custo operacional = horas encerradas × valor-hora (espelha o lançamento
+    # de despesa gerado em finance.services.generate_labor_cost_entry).
+    operational_cost = sum(
+        (log.billable_value for log in logs if not log.is_running),
+        Decimal("0.00"),
+    )
     user_id = getattr(user, "id", None)
     running = next(
         (log for log in logs if log.is_running and log.user_id == user_id), None,
@@ -61,6 +75,7 @@ def time_section_context(work_order, user):
         "time_total_seconds": total_seconds,
         "time_total_display": _format_hm(total_seconds),
         "time_billable_total": billable_total,
+        "time_operational_cost": operational_cost,
         "running_log": running,
         "running_started_ts": int(running.started_at.timestamp()) if running else 0,
         "time_no_rate": bool(logs) and not any(log.rate_source for log in logs),
@@ -73,6 +88,23 @@ def _render_time_section(request, work_order):
         time_section_context(work_order, request.user),
         request=request,
     )
+
+
+def _sync_labor_cost(work_order):
+    """RV08 (7.1) — Mantém a despesa operacional de mão de obra da OS em dia
+    após qualquer alteração nos apontamentos. Falhas aqui não derrubam a ação
+    principal (apenas logam)."""
+    try:
+        from apps.finance.services import generate_labor_cost_entry
+
+        generate_labor_cost_entry(work_order)
+    except Exception:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).exception(
+            "RV08 7.1 — falha ao sincronizar custo de mão de obra da OS %s",
+            work_order.pk,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +167,7 @@ class WorkOrderDetailView(EmpresaMixin, DetailView):
             super()
             .get_queryset()
             .select_related("lead", "proposal", "contract", "service_type", "assigned_to", "assigned_team")
-            .prefetch_related("checklist_items", "time_logs__user")
+            .prefetch_related("checklist_items", "time_logs__user", "checklists__items")
         )
 
     def get_context_data(self, **kwargs):
@@ -463,6 +495,7 @@ class WorkOrderTimerStopView(EmpresaMixin, View):
             work_order.empresa, log.user,
         )
         log.save()
+        _sync_labor_cost(work_order)
 
         if request.htmx:
             return HttpResponse(_render_time_section(request, work_order))
@@ -496,6 +529,7 @@ class WorkOrderTimeLogCreateView(EmpresaMixin, View):
             work_order.empresa, log.user,
         )
         log.save()
+        _sync_labor_cost(work_order)
         messages.success(request, "Horas lançadas com sucesso.")
         return redirect("operations:work_order_detail", pk=work_order.pk)
 
@@ -535,6 +569,7 @@ class WorkOrderTimeLogUpdateView(EmpresaMixin, View):
                 work_order.empresa, log.user,
             )
         log.save()
+        _sync_labor_cost(work_order)
         messages.success(request, "Apontamento atualizado.")
         return redirect("operations:work_order_detail", pk=work_order.pk)
 
@@ -548,6 +583,7 @@ class WorkOrderTimeLogDeleteView(EmpresaMixin, View):
         work_order = get_object_or_404(WorkOrder, pk=wo_pk, empresa=request.empresa)
         log = get_object_or_404(WorkOrderTimeLog, pk=log_pk, work_order=work_order)
         log.delete()
+        _sync_labor_cost(work_order)
         if request.htmx:
             return HttpResponse(_render_time_section(request, work_order))
         messages.success(request, "Apontamento removido.")
@@ -569,7 +605,7 @@ class WorkOrderPDFView(EmpresaMixin, DetailView):
             super()
             .get_queryset()
             .select_related("lead", "proposal", "contract", "service_type", "assigned_to")
-            .prefetch_related("checklist_items")
+            .prefetch_related("checklist_items", "checklists__items")
         )
 
     def get(self, request, *args, **kwargs):
@@ -577,7 +613,11 @@ class WorkOrderPDFView(EmpresaMixin, DetailView):
 
         self.object = self.get_object()
         wo = self.object
-        items = list(wo.checklist_items.all())
+        # RV08 (2.2) — Checklist do PDF vem da nova estrutura multi-checklist;
+        # fallback para o checklist legado (OS antigas não migradas).
+        items = [it for cl in wo.checklists.all() for it in cl.items.all()]
+        if not items:
+            items = list(wo.checklist_items.all())
         total = len(items)
         completed = sum(1 for i in items if i.is_completed)
 

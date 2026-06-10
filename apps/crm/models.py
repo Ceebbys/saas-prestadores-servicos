@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.contrib.contenttypes.fields import GenericRelation
 from django.db import models
 from django.utils import timezone
 
@@ -279,6 +280,13 @@ class Opportunity(TenantOwnedModel):
     won_at = models.DateTimeField("Data de ganho", null=True, blank=True)
     lost_at = models.DateTimeField("Data de perda", null=True, blank=True)
     lost_reason = models.TextField("Motivo da perda", blank=True)
+    # RV08 (2.1/2.2) — checklists múltiplos do card da Pipeline (relação genérica).
+    checklists = GenericRelation(
+        "checklists.Checklist",
+        content_type_field="content_type",
+        object_id_field="object_id",
+        related_query_name="opportunity",
+    )
 
     class Meta:
         verbose_name = "Oportunidade"
@@ -290,6 +298,17 @@ class Opportunity(TenantOwnedModel):
 
     def __str__(self):
         return self.title
+
+    def checklist_progress(self):
+        """RV08 — (concluídos, total) somando todos os checklists do card.
+        Query-free quando ``checklists__items`` está em prefetch."""
+        completed = total = 0
+        for cl in self.checklists.all():
+            for item in cl.items.all():
+                total += 1
+                if item.is_completed:
+                    completed += 1
+        return {"completed": completed, "total": total}
 
 
 class LeadContact(TenantOwnedModel):
@@ -343,6 +362,66 @@ class LeadContact(TenantOwnedModel):
 
     def __str__(self):
         return f"{self.lead.name} — {self.get_channel_display()} ({self.contacted_at:%d/%m/%Y %H:%M})"
+
+
+class LeadEvent(TenantOwnedModel):
+    """RV08 (3.2) — Linha do tempo (histórico de movimentações) de um Lead.
+
+    Registra eventos comerciais e operacionais: criação, proposta enviada,
+    contrato enviado/assinado, mudança de etapa/responsável, serviço
+    iniciado/concluído, fechado ganho/perdido e contatos registrados. Permite
+    rastrear todo o histórico do atendimento numa única timeline.
+    """
+
+    class Type(models.TextChoices):
+        LEAD_CREATED = "lead_created", "Lead criado"
+        PROPOSAL_SENT = "proposal_sent", "Proposta enviada"
+        PROPOSAL_ACCEPTED = "proposal_accepted", "Proposta aceita"
+        CONTRACT_SENT = "contract_sent", "Contrato enviado"
+        CONTRACT_SIGNED = "contract_signed", "Contrato assinado"
+        STAGE_CHANGED = "lead_moved", "Mudança de etapa"
+        ASSIGNEE_CHANGED = "assignee_changed", "Mudança de responsável"
+        SERVICE_STARTED = "service_started", "Serviço iniciado"
+        SERVICE_COMPLETED = "service_completed", "Serviço concluído"
+        LEAD_WON = "lead_won", "Fechado Ganho"
+        LEAD_LOST = "lead_lost", "Fechado Perdido"
+        CONTACT_LOGGED = "contact_logged", "Contato registrado"
+        MESSAGE_INBOUND = "message_inbound", "Mensagem recebida"
+        CONVERSATION_ASSIGNED = "conversation_assigned", "Conversa atribuída"
+        OTHER = "other", "Evento"
+
+    lead = models.ForeignKey(
+        Lead,
+        on_delete=models.CASCADE,
+        related_name="events",
+        verbose_name="Lead",
+    )
+    event_type = models.CharField(
+        "Tipo", max_length=40, choices=Type.choices, default=Type.OTHER,
+    )
+    title = models.CharField("Título", max_length=200)
+    description = models.CharField("Descrição", max_length=500, blank=True)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="+",
+        verbose_name="Autor",
+    )
+    icon = models.CharField("Ícone", max_length=40, blank=True)
+    metadata = models.JSONField("Metadados", default=dict, blank=True)
+
+    class Meta:
+        verbose_name = "Evento do Lead"
+        verbose_name_plural = "Eventos do Lead"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["lead", "-created_at"]),
+            models.Index(fields=["empresa", "event_type"]),
+        ]
+
+    def __str__(self):
+        return f"{self.get_event_type_display()} — {self.lead_id}"
 
 
 class LeadTag(TenantOwnedModel):

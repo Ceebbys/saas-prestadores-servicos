@@ -48,3 +48,37 @@ def resolve_hour_rate(empresa, user) -> tuple[Decimal | None, str]:
         return team_rate.hourly_value, "equipe"
 
     return None, ""
+
+
+def backfill_null_rates(empresa, work_order=None) -> set[int]:
+    """RV08 (7.1) — Aplica a tarifa horária a apontamentos que ficaram SEM valor.
+
+    Bug reportado: o valor-hora é "fixado" (snapshot) no apontamento no momento
+    do start/stop/lançamento. Quem registrou horas ANTES de configurar o
+    valor-hora ficou com ``rate_applied=NULL`` e, mesmo depois de configurar, a
+    OS seguia dizendo "valor-hora não configurado" e o faturável/custo dava 0.
+
+    Esta função preenche ``rate_applied``/``rate_source`` desses apontamentos
+    resolvendo a tarifa atual. É **idempotente**: só toca logs com
+    ``rate_applied IS NULL`` e só persiste quando há tarifa resolvível —
+    portanto NÃO re-precifica históricos já fixados (preserva o snapshot).
+
+    Retorna o conjunto de IDs de OS que tiveram apontamentos atualizados.
+    """
+    from ..models import WorkOrderTimeLog
+
+    qs = WorkOrderTimeLog.objects.filter(
+        work_order__empresa=empresa, rate_applied__isnull=True,
+    ).select_related("user")
+    if work_order is not None:
+        qs = qs.filter(work_order=work_order)
+
+    affected: set[int] = set()
+    for log in qs:
+        rate, source = resolve_hour_rate(empresa, log.user)
+        if rate is not None:
+            log.rate_applied = rate
+            log.rate_source = source
+            log.save(update_fields=["rate_applied", "rate_source", "updated_at"])
+            affected.add(log.work_order_id)
+    return affected

@@ -111,6 +111,92 @@ def _default_account(empresa):
     )
 
 
+# ---------------------------------------------------------------------------
+# RV08 (7.1) — Custo operacional de mão de obra a partir das horas da OS
+# ---------------------------------------------------------------------------
+
+LABOR_COST_CATEGORY_NAME = "Mão de obra (horas)"
+
+
+def _get_or_create_labor_category(empresa):
+    """Categoria de despesa para o custo de horas da OS (get_or_create)."""
+    from .models import FinancialCategory
+
+    cat, _created = FinancialCategory.objects.get_or_create(
+        empresa=empresa,
+        name=LABOR_COST_CATEGORY_NAME,
+        type=FinancialCategory.Type.EXPENSE,
+        defaults={"is_active": True},
+    )
+    return cat
+
+
+@transaction.atomic
+def generate_labor_cost_entry(work_order):
+    """RV08 (7.1) — Gera/atualiza a despesa operacional de mão de obra da OS.
+
+    Soma ``billable_value`` dos apontamentos **encerrados** (horas × valor-hora)
+    e mantém UM lançamento de despesa ``auto_generated`` por OS:
+
+    - total > 0  → cria ou atualiza o lançamento (categoria "Mão de obra (horas)").
+    - total == 0 → remove o lançamento auto-gerado (se existir).
+
+    Idempotente. Antes de somar, aplica a tarifa a apontamentos antigos sem
+    valor-hora (``backfill_null_rates``), resolvendo o caso "configurei o
+    valor-hora mas o custo continuava R$ 0".
+
+    Retorna o ``FinancialEntry`` (ou ``None`` quando não há custo).
+    """
+    from apps.operations.services import backfill_null_rates
+
+    empresa = work_order.empresa
+    backfill_null_rates(empresa, work_order=work_order)
+
+    logs = [log for log in work_order.time_logs.all() if not log.is_running]
+    total = sum((log.billable_value for log in logs), Decimal("0.00"))
+    total_hours = sum((log.duration_hours for log in logs), Decimal("0.00"))
+
+    existing = FinancialEntry.objects.filter(
+        empresa=empresa,
+        related_work_order=work_order,
+        auto_generated=True,
+        type=FinancialEntry.Type.EXPENSE,
+    ).first()
+
+    if total <= 0:
+        if existing:
+            existing.delete()
+        return None
+
+    description = (
+        f"Custo de mão de obra — OS {work_order.number or work_order.pk} "
+        f"({total_hours:.1f}h)"
+    )
+
+    if existing:
+        if existing.amount != total or existing.description != description:
+            existing.amount = total
+            existing.description = description
+            existing.save(update_fields=["amount", "description", "updated_at"])
+        return existing
+
+    return FinancialEntry.objects.create(
+        empresa=empresa,
+        type=FinancialEntry.Type.EXPENSE,
+        description=description,
+        amount=total,
+        date=timezone.now().date(),
+        status=FinancialEntry.Status.PENDING,
+        category=_get_or_create_labor_category(empresa),
+        related_work_order=work_order,
+        related_lead_id=getattr(work_order, "lead_id", None),
+        auto_generated=True,
+        notes=(
+            "Gerado automaticamente a partir das horas apontadas na OS (RV08 7.1)."
+        ),
+    )
+
+
 def _resolve_lead_value(lead) -> Decimal:
     """RV07 — Valor do negócio do lead, na ordem de precedência:
       1. ``lead.estimated_value`` (valor próprio do lead)

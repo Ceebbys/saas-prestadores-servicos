@@ -24,6 +24,18 @@ urlpatterns = [
         views.ContractDeleteView.as_view(),
         name="delete",
     ),
+    # RV08 (1.1) — lixeira (soft-delete) de contratos
+    path("trash/", views.ContractTrashView.as_view(), name="trash"),
+    path(
+        "<int:pk>/restore/",
+        views.ContractRestoreView.as_view(),
+        name="restore",
+    ),
+    path(
+        "<int:pk>/hard-delete/",
+        views.ContractHardDeleteView.as_view(),
+        name="hard_delete",
+    ),
     # RV05 #11 — render compartilhado
     path(
         "<int:pk>/preview/",

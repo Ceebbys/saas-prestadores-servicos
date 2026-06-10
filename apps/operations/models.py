@@ -2,6 +2,7 @@ from decimal import Decimal
 from urllib.parse import quote
 
 from django.conf import settings
+from django.contrib.contenttypes.fields import GenericRelation
 from django.core.exceptions import ValidationError
 from django.db import models
 
@@ -353,6 +354,13 @@ class WorkOrder(TenantOwnedModel):
         editable=False,
     )
     notes = models.TextField("Observações", blank=True)
+    # RV08 (2.2) — checklists múltiplos da OS (mesma estrutura da Pipeline).
+    checklists = GenericRelation(
+        "checklists.Checklist",
+        content_type_field="content_type",
+        object_id_field="object_id",
+        related_query_name="work_order",
+    )
 
     class Meta:
         verbose_name = "Ordem de Serviço"

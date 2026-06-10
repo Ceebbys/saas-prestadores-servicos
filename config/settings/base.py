@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "apps.settings_app",
     "apps.communications",
     "apps.integrations",
+    "apps.checklists",
 ]
 
 MIDDLEWARE = [

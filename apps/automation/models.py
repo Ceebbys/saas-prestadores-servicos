@@ -119,6 +119,7 @@ class AutomationLog(TenantOwnedModel):
             "proposal_pipeline_trigger", "Proposta → Pipeline (regra)",
         )
         PROPOSAL_DELETED = "proposal_deleted", "Proposta excluída"
+        CONTRACT_DELETED = "contract_deleted", "Contrato excluído"
 
     class Status(models.TextChoices):
         SUCCESS = "success", "Sucesso"

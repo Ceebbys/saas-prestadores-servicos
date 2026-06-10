@@ -265,9 +265,10 @@
            "send_whatsapp",
            "send_proposal",
            "send_contract",
+           "query_status",
            "create_task"
          ],
-         "help": "Tipo de ação executada quando o fluxo chega neste bloco."},
+         "help": "Tipo de ação executada quando o fluxo chega neste bloco. 'query_status' = Consultas ao Sistema (responde status ao cliente)."},
         {"name": "order", "type": "integer", "required": false, "default": 0, "min": 0, "max": 999,
          "help": "Ordem de execução (útil quando há múltiplas ações encadeadas)."},
         {"name": "is_active", "type": "boolean", "required": false, "default": true,
@@ -321,6 +322,18 @@
            "help": "Template de contrato. Se vazio, usa o padrão da empresa OU do serviço vinculado."},
           {"name": "auto_create_if_missing", "type": "boolean", "required": false, "default": true,
            "help": "Se não houver contrato para este lead, cria automaticamente via template."}
+        ],
+        "query_status": [
+          {"name": "query_type", "type": "enum", "required": true, "default": "service_progress",
+           "options": [
+             "service_progress",
+             "proposal_status",
+             "contract_status",
+             "delivery_forecast",
+             "responsible",
+             "completion_date"
+           ],
+           "help": "Consultas ao Sistema: o que o cliente quer saber — andamento do serviço, status da proposta/contrato, previsão de entrega/conclusão ou responsável pelo atendimento. O bot responde com o dado já existente no sistema."}
         ],
         "create_task": [
           {"name": "_unimplemented_warning", "type": "string", "required": false,

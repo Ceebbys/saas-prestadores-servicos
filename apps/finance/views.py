@@ -4,7 +4,7 @@ from django.contrib import messages
 from django.db.models import Case, F, Q, Sum, When
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, redirect
 from django.template.loader import render_to_string
 from django.urls import reverse_lazy
 from django.utils import timezone
@@ -19,7 +19,13 @@ from django.views.generic import (
 from apps.core.mixins import EmpresaMixin, HtmxResponseMixin
 
 from .forms import FinancialCategoryForm, FinancialEntryForm
-from .models import BankAccount, FinancialCategory, FinancialEntry
+from .models import (
+    BankAccount,
+    BankConnection,
+    FinancialCategory,
+    FinancialEntry,
+    ImportedTransaction,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -723,3 +729,188 @@ class CategoryListView(EmpresaMixin, HtmxResponseMixin, ListView):
     partial_template_name = "finance/partials/_category_table.html"
     context_object_name = "categories"
     paginate_by = 25
+
+
+# ---------------------------------------------------------------------------
+# RV08 (6.1) — Open Finance: conectar/importar + inbox de classificação
+# ---------------------------------------------------------------------------
+
+
+class OpenFinanceView(EmpresaMixin, TemplateView):
+    """Tela do Open Finance: conexão, importação e classificação."""
+
+    template_name = "finance/open_finance.html"
+
+    def get_context_data(self, **kwargs):
+        from apps.crm.models import Lead
+        from apps.operations.models import WorkOrder
+
+        context = super().get_context_data(**kwargs)
+        empresa = self.request.empresa
+        context["connection"] = (
+            BankConnection.objects.filter(empresa=empresa).order_by("-created_at").first()
+        )
+        context["pending"] = (
+            ImportedTransaction.objects.filter(
+                empresa=empresa,
+                classification_status=ImportedTransaction.Status.PENDING,
+            )
+            .select_related("bank_account")
+            .order_by("-date", "-id")
+        )
+        context["recent_classified"] = (
+            ImportedTransaction.objects.filter(
+                empresa=empresa,
+                classification_status=ImportedTransaction.Status.CLASSIFIED,
+            )
+            .select_related("classified_entry")
+            .order_by("-updated_at")[:10]
+        )
+        context["categories"] = FinancialCategory.objects.filter(
+            empresa=empresa, is_active=True,
+        ).order_by("type", "name")
+        context["work_orders"] = WorkOrder.objects.filter(empresa=empresa).order_by(
+            "-created_at",
+        )[:200]
+        context["leads"] = Lead.objects.filter(empresa=empresa).order_by("name")[:200]
+        return context
+
+
+class OpenFinanceConnectSandboxView(EmpresaMixin, View):
+    """Conecta o provider de demonstração e importa movimentações fictícias."""
+
+    http_method_names = ["post"]
+
+    def post(self, request):
+        from .open_finance import get_provider, import_transactions
+
+        empresa = request.empresa
+        provider = get_provider("sandbox")
+        if provider is None:
+            messages.error(request, "Provedor de demonstração indisponível.")
+            return redirect("finance:open_finance")
+        conn, _created = BankConnection.objects.get_or_create(
+            empresa=empresa,
+            provider=BankConnection.Provider.SANDBOX,
+            defaults={"status": BankConnection.Status.CONNECTED},
+        )
+        rows = provider.fetch_transactions()
+        res = import_transactions(empresa, rows, connection=conn)
+        messages.success(
+            request,
+            f"Banco de demonstração conectado. {res['created']} movimentação(ões) "
+            f"importada(s) ({res['skipped']} já existia(m)).",
+        )
+        return redirect("finance:open_finance")
+
+
+class OpenFinanceImportView(EmpresaMixin, View):
+    """Importa um extrato CSV/OFX enviado pelo usuário."""
+
+    http_method_names = ["post"]
+    MAX_BYTES = 5 * 1024 * 1024  # 5 MB
+
+    def post(self, request):
+        from .open_finance import import_transactions, parse_statement
+
+        empresa = request.empresa
+        upload = request.FILES.get("file")
+        if not upload:
+            messages.error(request, "Selecione um arquivo CSV ou OFX.")
+            return redirect("finance:open_finance")
+        if upload.size > self.MAX_BYTES:
+            messages.error(request, "Arquivo muito grande (máx. 5 MB).")
+            return redirect("finance:open_finance")
+
+        try:
+            rows = parse_statement(upload.name, upload.read())
+        except Exception:  # noqa: BLE001
+            messages.error(
+                request,
+                "Não foi possível ler o arquivo. Confira se é um CSV/OFX válido.",
+            )
+            return redirect("finance:open_finance")
+
+        if not rows:
+            messages.warning(
+                request,
+                "Nenhuma movimentação reconhecida no arquivo. Para CSV use as "
+                "colunas: data, descrição, valor.",
+            )
+            return redirect("finance:open_finance")
+
+        conn, _created = BankConnection.objects.get_or_create(
+            empresa=empresa,
+            provider=BankConnection.Provider.MANUAL,
+            defaults={"status": BankConnection.Status.CONNECTED},
+        )
+        res = import_transactions(empresa, rows, connection=conn)
+        messages.success(
+            request,
+            f"Extrato importado: {res['created']} nova(s) movimentação(ões) "
+            f"({res['skipped']} já existia(m)).",
+        )
+        return redirect("finance:open_finance")
+
+
+class OpenFinanceClassifyView(EmpresaMixin, View):
+    """Classifica uma movimentação, gerando um lançamento financeiro."""
+
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        from apps.crm.models import Lead
+        from apps.operations.models import WorkOrder
+
+        from .open_finance import classify_transaction
+
+        empresa = request.empresa
+        txn = get_object_or_404(
+            ImportedTransaction, pk=pk, empresa=empresa,
+            classification_status=ImportedTransaction.Status.PENDING,
+        )
+        entry_type = request.POST.get("type") or txn.suggested_type
+        if entry_type not in (FinancialEntry.Type.INCOME, FinancialEntry.Type.EXPENSE):
+            entry_type = txn.suggested_type
+
+        category = None
+        category_id = request.POST.get("category")
+        if category_id:
+            category = FinancialCategory.objects.filter(
+                pk=category_id, empresa=empresa,
+            ).first()
+
+        work_order = None
+        wo_id = request.POST.get("work_order")
+        if wo_id:
+            work_order = WorkOrder.objects.filter(pk=wo_id, empresa=empresa).first()
+
+        lead = None
+        lead_id = request.POST.get("lead")
+        if lead_id:
+            lead = Lead.objects.filter(pk=lead_id, empresa=empresa).first()
+        if lead is None and work_order is not None:
+            lead = work_order.lead
+
+        classify_transaction(
+            txn, entry_type=entry_type, category=category,
+            related_work_order=work_order, related_lead=lead,
+        )
+        messages.success(request, "Movimentação classificada e lançada no financeiro.")
+        return redirect("finance:open_finance")
+
+
+class OpenFinanceIgnoreView(EmpresaMixin, View):
+    """Marca uma movimentação como ignorada (não vira lançamento)."""
+
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        txn = get_object_or_404(
+            ImportedTransaction, pk=pk, empresa=request.empresa,
+            classification_status=ImportedTransaction.Status.PENDING,
+        )
+        txn.classification_status = ImportedTransaction.Status.IGNORED
+        txn.save(update_fields=["classification_status", "updated_at"])
+        messages.success(request, "Movimentação ignorada.")
+        return redirect("finance:open_finance")

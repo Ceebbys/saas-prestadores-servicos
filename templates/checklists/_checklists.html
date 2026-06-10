@@ -1,0 +1,71 @@
+{% load ui_tags %}
+{% comment %}RV08 (2.1/2.2) — Bloco de checklists múltiplos (Trello-style).
+Cada ação HTMX re-renderiza este bloco inteiro (swap outerHTML no contêiner).
+Reutilizado em Pipeline (Opportunity) e OS (WorkOrder).{% endcomment %}
+<div id="checklists-{{ owner_type }}-{{ owner_id }}" class="space-y-4"
+     hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+    {% for checklist in checklists %}
+    <div class="border border-slate-200 rounded-lg p-4">
+        <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2 min-w-0">
+                {% icon "check-circle" "w-4 h-4 text-indigo-500 flex-shrink-0" %}
+                <h4 class="text-sm font-semibold text-slate-800 truncate">{{ checklist.name }}</h4>
+                <span class="text-xs text-slate-400 flex-shrink-0">{{ checklist.completed }}/{{ checklist.total }}</span>
+            </div>
+            <button type="button"
+                    hx-post="{% url 'checklists:delete' checklist.pk %}"
+                    hx-target="#checklists-{{ owner_type }}-{{ owner_id }}" hx-swap="outerHTML"
+                    hx-confirm="Excluir este checklist e todos os seus itens?"
+                    class="flex-shrink-0 text-slate-300 hover:text-red-500 transition-colors" title="Excluir checklist">
+                {% icon "trash" "w-4 h-4" %}
+            </button>
+        </div>
+        {% if checklist.total %}
+        <div class="w-full bg-slate-100 rounded-full h-1.5 mb-3">
+            <div class="h-1.5 rounded-full transition-all {% if checklist.progress_pct == 100 %}bg-emerald-500{% else %}bg-indigo-500{% endif %}"
+                 style="width: {{ checklist.progress_pct }}%"></div>
+        </div>
+        {% endif %}
+        <ul class="space-y-1 mb-2">
+            {% for item in checklist.items.all %}
+            <li class="flex items-center gap-2 group">
+                <button type="button"
+                        hx-post="{% url 'checklists:item_toggle' item.pk %}"
+                        hx-target="#checklists-{{ owner_type }}-{{ owner_id }}" hx-swap="outerHTML"
+                        class="flex-shrink-0 w-4 h-4 rounded border-2 flex items-center justify-center transition-colors
+                               {% if item.is_completed %}bg-indigo-600 border-indigo-600{% else %}border-slate-300 hover:border-indigo-400{% endif %}">
+                    {% if item.is_completed %}{% icon "check" "w-3 h-3 text-white" %}{% endif %}
+                </button>
+                <span class="text-sm flex-1 {% if item.is_completed %}text-slate-400 line-through{% else %}text-slate-700{% endif %}">{{ item.description }}</span>
+                <button type="button"
+                        hx-post="{% url 'checklists:item_delete' item.pk %}"
+                        hx-target="#checklists-{{ owner_type }}-{{ owner_id }}" hx-swap="outerHTML"
+                        class="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition" title="Remover item">
+                    {% icon "x-mark" "w-3.5 h-3.5" %}
+                </button>
+            </li>
+            {% endfor %}
+        </ul>
+        <form hx-post="{% url 'checklists:item_add' checklist.pk %}"
+              hx-target="#checklists-{{ owner_type }}-{{ owner_id }}" hx-swap="outerHTML"
+              hx-on::after-request="this.reset()" class="flex items-center gap-2">
+            <input type="text" name="description" placeholder="Adicionar item…" required
+                   class="flex-1 text-sm rounded-md border-slate-300 focus:border-indigo-500 focus:ring-indigo-500">
+            <button type="submit" class="text-xs font-medium text-indigo-600 hover:text-indigo-700 px-2 py-1">Adicionar</button>
+        </form>
+    </div>
+    {% empty %}
+    <p class="text-sm text-slate-400">Nenhum checklist ainda. Crie um abaixo (ex.: "Revisão Técnica 01", "Documentação", "Entrega Final").</p>
+    {% endfor %}
+
+    <form hx-post="{% url 'checklists:add' owner_type owner_id %}"
+          hx-target="#checklists-{{ owner_type }}-{{ owner_id }}" hx-swap="outerHTML"
+          hx-on::after-request="this.reset()" class="flex items-center gap-2 pt-1">
+        <input type="text" name="name" placeholder="Novo checklist…" required
+               class="flex-1 text-sm rounded-md border-slate-300 focus:border-indigo-500 focus:ring-indigo-500">
+        <button type="submit"
+                class="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-700 px-2 py-1">
+            {% icon "plus" "w-4 h-4" %} Checklist
+        </button>
+    </form>
+</div>

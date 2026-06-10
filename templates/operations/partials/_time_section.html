@@ -7,8 +7,8 @@
         <h3 class="text-sm font-semibold text-slate-700">Tempo / Horas</h3>
         <div class="text-right">
             <p class="text-sm font-semibold text-slate-900">{{ time_total_display }}</p>
-            {% if time_billable_total %}
-            <p class="text-xs text-emerald-600">Faturável: {{ time_billable_total|currency }}</p>
+            {% if time_operational_cost %}
+            <p class="text-xs text-emerald-600">Custo operacional: {{ time_operational_cost|currency }}</p>
             {% endif %}
         </div>
     </div>
@@ -86,7 +86,12 @@
 
     {% if time_no_rate %}
     <p class="px-5 py-3 text-xs text-amber-600 border-t border-slate-100">
-        ⚠ Valor-hora não configurado — defina em Configurações › Valores Hora para calcular o faturável.
+        ⚠ Valor-hora não configurado — defina em Configurações › Valores Hora para calcular o custo das horas.
+    </p>
+    {% elif time_operational_cost %}
+    <p class="px-5 py-3 text-xs text-slate-500 border-t border-slate-100">
+        💰 Custo operacional lançado automaticamente como
+        <a href="{% url 'finance:entry_list' %}" class="text-indigo-600 hover:underline">despesa no Financeiro</a>.
     </p>
     {% endif %}
 </div>

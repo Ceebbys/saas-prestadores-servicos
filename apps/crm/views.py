@@ -108,6 +108,8 @@ class LeadDetailView(EmpresaMixin, DetailView):
         context["stage_choices"] = _get_stage_choices(self.request.empresa)
         context["contacts"] = self.object.contacts.select_related("user")[:50]
         context["contact_form"] = LeadContactForm()
+        # RV08 (3.2) — timeline de movimentações do lead
+        context["lead_events"] = self.object.events.select_related("actor")[:60]
         return context
 
 
@@ -300,13 +302,41 @@ class PipelineBoardView(EmpresaMixin, HtmxResponseMixin, TemplateView):
                     "opportunities",
                     "opportunities__lead",
                     "opportunities__lead__contato",
+                    "opportunities__checklists__items",
                 )
                 .order_by("order")
             )
 
         context["pipeline"] = pipeline
         context["stages"] = stages
+        context["leads_with_alerts"] = self._leads_with_unread_alerts()
         return context
+
+    def _leads_with_unread_alerts(self):
+        """RV08 (3.1) — IDs de leads com notificação NÃO lida do usuário atual.
+
+        Usa o FK ``Notification.lead`` (preenchido a partir do RV08) e, como
+        fallback, o ``payload['lead_id']`` (notificações antigas / lead_moved).
+        Renderiza o "ponto roxo" no card da Pipeline.
+        """
+        from apps.communications.models import Notification
+
+        user = getattr(self.request, "user", None)
+        if user is None or not user.is_authenticated:
+            return set()
+        rows = (
+            Notification.objects.filter(
+                user=user, read_at__isnull=True, empresa=self.request.empresa,
+            )
+            .values_list("lead_id", "payload")
+        )
+        lead_ids = set()
+        for lead_id, payload in rows:
+            if lead_id:
+                lead_ids.add(lead_id)
+            elif isinstance(payload, dict) and payload.get("lead_id"):
+                lead_ids.add(payload["lead_id"])
+        return lead_ids
 
 
 class OpportunityCreateView(EmpresaMixin, HtmxResponseMixin, CreateView):
@@ -376,6 +406,14 @@ class OpportunityDetailView(EmpresaMixin, DetailView):
     template_name = "crm/opportunity_detail.html"
     context_object_name = "opportunity"
 
+    def get_queryset(self):
+        return (
+            super()
+            .get_queryset()
+            .select_related("lead", "pipeline", "current_stage")
+            .prefetch_related("checklists__items")
+        )
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         if self.object.pipeline:
@@ -443,7 +481,18 @@ class LeadContactCreateView(EmpresaMixin, View):
         contact.empresa = request.empresa
         contact.lead = lead
         contact.user = request.user if request.user.is_authenticated else None
+        # RV08 (4.1) — `contacted_at` é opcional no form; usa "agora" se vazio.
+        if not contact.contacted_at:
+            contact.contacted_at = timezone.now()
         contact.save()
+        # RV08 (3.2) — registra o contato na timeline do lead.
+        from apps.crm.events import log_lead_event
+
+        log_lead_event(
+            lead, event_type="contact_logged",
+            title=f"Contato registrado: {contact.get_channel_display()}",
+            description=contact.note, actor=request.user, icon="phone",
+        )
         messages.success(request, "Contato registrado com sucesso.")
         return redirect("crm:lead_detail", pk=lead.pk)
 
@@ -483,6 +532,7 @@ class OpportunityMoveView(EmpresaMixin, View):
         opportunity = get_object_or_404(
             Opportunity, pk=pk, empresa=request.empresa
         )
+        previous_stage_id = opportunity.current_stage_id
         stage_id = request.POST.get("stage_id")
         stage = get_object_or_404(
             PipelineStage, pk=stage_id, pipeline=opportunity.pipeline
@@ -505,6 +555,12 @@ class OpportunityMoveView(EmpresaMixin, View):
 
         opportunity.save()
 
+        # RV08 (3.2) — Mover pelo board/oportunidade sincroniza o Lead via
+        # .update() (não dispara Lead.post_save), então a timeline + a
+        # notificação de movimentação são registradas aqui.
+        if opportunity.lead_id and previous_stage_id != stage.id:
+            self._log_lead_timeline(opportunity.lead, stage)
+
         if request.htmx:
             view = PipelineBoardView()
             view.request = request
@@ -519,6 +575,38 @@ class OpportunityMoveView(EmpresaMixin, View):
             return HttpResponse(html)
 
         return redirect("crm:pipeline_board")
+
+    @staticmethod
+    def _log_lead_timeline(lead, stage):
+        """RV08 (3.2) — Registra o evento de movimentação do lead na timeline
+        (e notifica) quando o card é movido pelo board/oportunidade."""
+        try:
+            from apps.crm.events import log_lead_event
+
+            if stage.is_won:
+                log_lead_event(
+                    lead, "lead_won",
+                    f"Lead movido para Fechado Ganho ({stage.name})",
+                    icon="check-circle",
+                )
+            elif stage.is_lost:
+                log_lead_event(
+                    lead, "lead_lost",
+                    f"Lead movido para Fechado Perdido ({stage.name})",
+                    icon="x-circle",
+                )
+            else:
+                # notify_lead_moved registra o evento "lead_moved" (via _emit) e notifica
+                from apps.communications.notifications_events import notify_lead_moved
+
+                notify_lead_moved(lead, None, stage)
+        except Exception:  # noqa: BLE001
+            import logging
+
+            logging.getLogger(__name__).exception(
+                "RV08 3.2 — falha ao registrar timeline no move da oportunidade (lead=%s)",
+                getattr(lead, "pk", None),
+            )
 
 
 # ---------------------------------------------------------------------------

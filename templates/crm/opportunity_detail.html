@@ -177,6 +177,12 @@
         </div>
         {% endif %}
 
+        <!-- Checklists (RV08 2.1/2.2 — direto no card da Pipeline) -->
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-4">Checklists</h3>
+            {% include "checklists/_checklists.html" with checklists=opportunity.checklists.all owner_type="opportunity" owner_id=opportunity.pk %}
+        </div>
+
         <!-- Stage Actions -->
         {% if not opportunity.won_at and not opportunity.lost_at and stages %}
         <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 p-5">
